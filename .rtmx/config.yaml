@@ -3,8 +3,9 @@
 
 rtmx:
   database: .rtmx/database.csv
-  requirements_dir: .rtmx/requirements
   schema: core
-  pytest:
-    marker_prefix: "req"
-    register_markers: true
+  markers:
+    rust:
+      pattern: '#\[req\("(REQ-[A-Z]+-\d+)"\)\]'
+    comment:
+      pattern: '// @req (REQ-[A-Z]+-\d+)'
