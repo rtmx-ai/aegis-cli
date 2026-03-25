@@ -4,6 +4,8 @@
 //! for deterministic LLM testing, and common test fixtures.
 
 pub mod fixtures;
+pub mod mock_executor;
+pub mod mock_filter;
 pub mod mock_gate;
 pub mod mock_ledger;
 pub mod mock_provider;
