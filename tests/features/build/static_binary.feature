@@ -338,3 +338,27 @@ Feature: Static Binary Build Pipeline
     When the build accesses the sccache layer
     Then the cache should be read-only
     And no cache writes should occur from the untrusted PR build
+
+  # ---------------------------------------------------------------------------
+  # REQ-BUILD-014: VHS demo tape scripts
+  # ---------------------------------------------------------------------------
+
+  # @req REQ-BUILD-014
+  Scenario: All VHS tape scripts parse without errors
+    Given VHS is installed
+    When each tape file in docs/demos/tapes/ is validated
+    Then vhs validate should exit 0 for every tape
+
+  # @req REQ-BUILD-015
+  Scenario: CI generates GIFs from tape scripts on release tag
+    Given a release tag is pushed
+    When the demo-gifs CI job runs
+    Then each tape should produce a GIF in docs/demos/gifs/
+    And all GIFs should be under 5MB
+    And GIFs should be attached to the GitHub release
+
+  # @req REQ-BUILD-016
+  Scenario: README embeds demo GIFs with valid links
+    Given the README.md file
+    When all image links are extracted
+    Then each GIF link should point to an existing file in docs/demos/gifs/
