@@ -1,0 +1,65 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/aegis-domain",
+    "crates/aegis-agent",
+    "crates/aegis-hitl",
+    "crates/aegis-llm",
+    "crates/aegis-tui",
+    "crates/aegis-audit",
+    "crates/aegis-security",
+    "crates/aegis-infra",
+    "crates/aegis-onboard",
+    "crates/aegis-cli",
+    "crates/aegis-test-support",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/rtmx-ai/aegis-cli"
+
+[workspace.dependencies]
+# Domain
+uuid = { version = "1", features = ["v4", "serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+futures = "0.3"
+
+# TUI
+ratatui = "0.30"
+crossterm = "0.28"
+tui-markdown = "0.3"
+tui-scrollview = "0.6"
+tui-textarea = "0.7"
+
+# LLM providers
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
+
+# Audit
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Testing
+mockall = "0.13"
+wiremock = "0.6"
+rstest = "0.25"
+proptest = "1"
+insta = { version = "1", features = ["yaml"] }
+assert_cmd = "2"
+assert_fs = "1"
+predicates = "3"
+rexpect = "0.6"
+cucumber = "0.22"
+tempfile = "3"
+cargo-nextest = "0.9"

@@ -1,0 +1,17 @@
+[package]
+name = "aegis-infra"
+description = "Bounded context: Pulumi IaC, cloud provisioning, config management"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aegis-domain = { path = "../aegis-domain" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+tempfile = { workspace = true }
