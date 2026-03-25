@@ -22,38 +22,33 @@ Every agent action -- file reads, code writes, shell commands -- passes through 
 ### System Overview
 
 ```mermaid
-graph TB
-    subgraph Workstation ["Developer Workstation (Edge)"]
-        aegis["aegis (Rust static binary)"]
-        config["~/.aegis/config.yaml<br/>(0600, no secrets)"]
-        ledger["~/.aegis/logs/*.jsonl<br/>(metadata-only audit ledger)"]
-        plugins["~/.aegis/plugins/<br/>(IaC plugin binaries)"]
+flowchart TB
+    aegis["aegis\n(Rust static binary)"]
 
-        aegis -->|reads| config
-        aegis -->|appends| ledger
-        aegis -->|spawns subprocess| plugins
+    subgraph workstation [" Developer Workstation "]
+        config["config.yaml\n(0600 perms)"]
+        ledger["audit ledger\n(JSONL, metadata only)"]
+        plugin_bin["IaC plugins\n(subprocesses)"]
     end
 
-    subgraph Cloud ["Cloud Boundary (IL4/IL5)"]
-        vertex["Vertex AI<br/>(GCP Assured Workloads)"]
-        bedrock["Amazon Bedrock<br/>(AWS GovCloud)"]
-        azure["Azure OpenAI<br/>(Azure Government)"]
+    subgraph cloud [" Cloud Boundary -- IL4/IL5 "]
+        vertex["Vertex AI\nGCP Assured Workloads"]
+        bedrock["Amazon Bedrock\nAWS GovCloud"]
+        azure["Azure OpenAI\nAzure Government"]
     end
 
-    subgraph Local ["Air-Gapped (SIPR)"]
-        ollama["Ollama / vLLM<br/>(localhost)"]
+    subgraph airgap [" Air-Gapped -- SIPR "]
+        ollama["Ollama / vLLM\nlocalhost"]
     end
 
-    aegis -->|"TLS 1.3 (FIPS)"| vertex
-    aegis -->|"TLS 1.3 (FIPS)"| bedrock
-    aegis -->|"TLS 1.3 (FIPS)"| azure
-    aegis -->|"HTTP (loopback only)"| ollama
+    aegis -- reads --> config
+    aegis -- appends --> ledger
+    aegis -- "spawns (aegis-infra/v1)" --> plugin_bin
 
-    plugins -->|"aegis-infra/v1<br/>(NDJSON on stdout)"| aegis
-
-    style Workstation fill:#1a1a2e,stroke:#16213e,color:#e0e0e0
-    style Cloud fill:#0f3460,stroke:#16213e,color:#e0e0e0
-    style Local fill:#1a1a2e,stroke:#533483,color:#e0e0e0
+    aegis -. "TLS 1.3 FIPS" .-> vertex
+    aegis -. "TLS 1.3 FIPS" .-> bedrock
+    aegis -. "TLS 1.3 FIPS" .-> azure
+    aegis -. "HTTP loopback" .-> ollama
 ```
 
 ### Read-Evaluate-Act (REA) Loop
@@ -134,46 +129,27 @@ sequenceDiagram
 ### Security Boundaries
 
 ```mermaid
-graph LR
-    subgraph Edge ["Workstation (You Control)"]
-        direction TB
-        source["Source Code<br/>(CUI)"]
-        aegis_bin["aegis binary"]
-        ignore[".aegisignore<br/>(mandatory blocklist)"]
-        gate["HITL Gate<br/>(Y/N/E/S)"]
-        sandbox["bubblewrap/seatbelt<br/>(OS sandbox)"]
-        audit["Audit Ledger<br/>(metadata only)"]
-
-        source -->|filtered by| ignore
-        ignore -->|allowed paths| aegis_bin
-        aegis_bin -->|mutating calls| gate
-        gate -->|approved| sandbox
-        sandbox -->|executed| aegis_bin
-        aegis_bin -->|every action| audit
+flowchart LR
+    subgraph edge [" Workstation -- You Control "]
+        source["Source Code\n(CUI)"] --> ignore[".aegisignore"]
+        ignore --> aegis_bin["aegis"]
+        aegis_bin --> gate["HITL Gate\nY / N / E / S"]
+        gate --> sandbox["OS Sandbox\nbubblewrap / seatbelt"]
+        aegis_bin --> audit["Audit Ledger\nmetadata only"]
     end
 
-    subgraph Transit ["Network"]
-        tls["TLS 1.3<br/>FIPS 140-2"]
+    subgraph net [" Network "]
+        tls["TLS 1.3\nFIPS 140-2"]
     end
 
-    subgraph Boundary ["Cloud Boundary (CSP Controls)"]
-        direction TB
-        vpc["VPC-SC Perimeter"]
-        kms["CMEK Encryption"]
-        vertex_ep["LLM Endpoint<br/>(zero retention)"]
-        cloud_audit["Cloud Audit Logs<br/>(365-day retention)"]
-
-        vpc --> vertex_ep
-        kms --> vertex_ep
-        vertex_ep --> cloud_audit
+    subgraph cloud [" Cloud Boundary -- CSP Controls "]
+        vpc["VPC-SC"] --> endpoint["LLM Endpoint\nzero retention"]
+        kms["CMEK"] --> endpoint
+        endpoint --> logs["Cloud Audit Logs\n365-day retention"]
     end
 
-    aegis_bin -->|"prompt (ephemeral)"| tls
-    tls --> vpc
-
-    style Edge fill:#1a1a2e,stroke:#16213e,color:#e0e0e0
-    style Transit fill:#533483,stroke:#16213e,color:#e0e0e0
-    style Boundary fill:#0f3460,stroke:#16213e,color:#e0e0e0
+    aegis_bin -. "prompt\n(ephemeral)" .-> tls
+    tls .-> vpc
 ```
 
 **What stays on the workstation:** Source code, file contents, AI responses, shell stdout/stderr. Never transmitted to the audit ledger or cloud logs.
@@ -185,35 +161,21 @@ graph LR
 ### Workspace Crates
 
 ```mermaid
-graph TD
-    CLI["aegis-cli<br/>(composition root)"]
-    TUI["aegis-tui<br/>(ratatui layout)"]
-    Agent["aegis-agent<br/>(REA loop + tools)"]
-    LLM["aegis-llm<br/>(provider factory)"]
-    HITL["aegis-hitl<br/>(approval gate)"]
-    Audit["aegis-audit<br/>(JSONL ledger)"]
-    Security["aegis-security<br/>(.aegisignore)"]
-    Infra["aegis-infra<br/>(plugin host)"]
-    Onboard["aegis-onboard<br/>(init + config)"]
-    Domain["aegis-domain<br/>(types, ports, events)"]
+flowchart TD
+    CLI["aegis-cli\n(composition root)"]
+    TUI["aegis-tui"]
+    Agent["aegis-agent"]
+    LLM["aegis-llm"]
+    HITL["aegis-hitl"]
+    Audit["aegis-audit"]
+    Security["aegis-security"]
+    Infra["aegis-infra"]
+    Onboard["aegis-onboard"]
+    Domain["aegis-domain\n(shared kernel)"]
 
-    CLI --> TUI
-    CLI --> Agent
-    CLI --> Onboard
-    CLI --> Infra
-
-    TUI --> Domain
-    Agent --> Domain
+    CLI --> TUI & Agent & Onboard & Infra
     Agent --> LLM
-    HITL --> Domain
-    Audit --> Domain
-    Security --> Domain
-    Infra --> Domain
-    Onboard --> Domain
-    LLM --> Domain
-
-    style Domain fill:#533483,stroke:#16213e,color:#e0e0e0
-    style CLI fill:#0f3460,stroke:#16213e,color:#e0e0e0
+    TUI & Agent & HITL & Audit & Security & Infra & Onboard & LLM --> Domain
 ```
 
 ### TUI Layout
