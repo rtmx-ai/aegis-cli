@@ -29,33 +29,40 @@ Every agent action -- file reads, code writes, shell commands -- passes through 
 ### System Overview
 
 ```mermaid
-flowchart TB
-    aegis["aegis\n(Rust static binary)"]
-
-    subgraph workstation [" Developer Workstation "]
+flowchart LR
+    subgraph workstation [" Developer Workstation (NIPR/SIPR) "]
+        aegis["aegis\n(Rust static binary)"]
         config["config.yaml\n(0600 perms)"]
         ledger["audit ledger\n(JSONL, metadata only)"]
-        plugin_bin["IaC plugins\n(subprocesses)"]
+        plugins["IaC plugins\n(subprocesses)"]
+        ollama["Ollama / vLLM\n(localhost, air-gapped)"]
+
+        aegis -- reads --> config
+        aegis -- appends --> ledger
+        aegis -- "aegis-infra/v1" --> plugins
+        aegis -. "HTTP loopback" .-> ollama
     end
 
-    subgraph cloud [" Cloud Boundary -- IL4/IL5 "]
-        vertex["Vertex AI\nGCP Assured Workloads"]
-        bedrock["Amazon Bedrock\nAWS GovCloud"]
-        azure["Azure OpenAI\nAzure Government"]
+    subgraph dowin [" DoWIN / BCAP "]
+        bcap["Boundary Cloud\nAccess Point"]
     end
 
-    subgraph airgap [" Air-Gapped -- SIPR "]
-        ollama["Ollama / vLLM\nlocalhost"]
+    subgraph gcp [" GCP Assured Workloads "]
+        vertex["Vertex AI\n(IL4/IL5)"]
     end
 
-    aegis -- reads --> config
-    aegis -- appends --> ledger
-    aegis -- "spawns (aegis-infra/v1)" --> plugin_bin
+    subgraph aws [" AWS GovCloud "]
+        bedrock["Amazon Bedrock\n(IL4/IL5)"]
+    end
 
-    aegis -. "TLS 1.3 FIPS" .-> vertex
-    aegis -. "TLS 1.3 FIPS" .-> bedrock
-    aegis -. "TLS 1.3 FIPS" .-> azure
-    aegis -. "HTTP loopback" .-> ollama
+    subgraph azgov [" Azure Government "]
+        azoai["Azure OpenAI\n(IL4/IL5)"]
+    end
+
+    aegis -. "TLS 1.3 FIPS" .-> bcap
+    bcap .-> vertex
+    bcap .-> bedrock
+    bcap .-> azoai
 ```
 
 ### Read-Evaluate-Act (REA) Loop
