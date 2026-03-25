@@ -1,0 +1,17 @@
+[package]
+name = "aegis-onboard"
+description = "Bounded context: aegis init state machine, credential negotiation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aegis-domain = { path = "../aegis-domain" }
+aegis-infra = { path = "../aegis-infra" }
+tokio = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+tempfile = { workspace = true }

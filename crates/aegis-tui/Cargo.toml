@@ -1,0 +1,19 @@
+[package]
+name = "aegis-tui"
+description = "Bounded context: ratatui terminal UI, rendering, input handling"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aegis-domain = { path = "../aegis-domain" }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+tokio = { workspace = true }
+# tui-markdown = { workspace = true }
+# tui-scrollview = { workspace = true }
+# tui-textarea = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+insta = { workspace = true }
