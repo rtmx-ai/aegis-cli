@@ -24,11 +24,15 @@ aegis (Rust static binary)
   |-- aegis-test-support  # Mocks, fixtures, recording helpers
   |
   |-- plugins (separate repos, invoked as subprocesses)
-       |-- gcp-cui-gemini    # GCP Assured Workloads IL4/IL5 boundary
+       |-- gcp-assured-workloads  # GCP Assured Workloads IL4/IL5 boundary
        |-- (future) aws-govcloud, azure-gov
 ```
 
-**Key principle:** aegis-cli does NOT embed Pulumi or provision cloud resources directly. It invokes IaC plugins via the aegis-infra/v1 protocol. Plugins are separate binaries communicating over NDJSON stdout. The reference plugin is [gcp-cui-gemini](https://github.com/rtmx-ai/gcp-cui-gemini).
+**Key principle:** aegis-cli does NOT embed Pulumi or provision cloud resources directly. It invokes IaC plugins via the aegis-infra/v1 protocol. Plugins are separate binaries communicating over NDJSON stdout.
+
+**Reference plugin:** [gcp-assured-workloads](https://github.com/rtmx-ai/gcp-assured-workloads) (TypeScript, Pulumi Automation API, 8 GCP resources)
+
+**Plugin SDK:** [@aegis/infra-sdk](https://github.com/rtmx-ai/aegis-infra-sdk) (shared lifecycle, protocol emission, health aggregation)
 
 ## How to work on this project
 
@@ -67,9 +71,9 @@ CI pipeline: format, lint, unit tests (Linux + Windows), integration tests, doc 
 
 ## Requirements
 
-155 requirements tracked via [RTMX](https://rtmx.ai) at `.rtmx/database.csv`. 12 BDD feature files with ~450 scenarios.
+159 requirements tracked via [RTMX](https://rtmx.ai) at `.rtmx/database.csv`. 12 BDD feature files with ~450 scenarios.
 
-Categories: BUILD (13), TUI (20), AGENT (18), HITL (8), SECURITY (10), LLM (19), INFRA (12), ONBOARD (16), AUDIT (17), RTMX (10), TEST (12).
+Categories: BUILD (16), TUI (20), AGENT (18), HITL (8), SECURITY (10), LLM (19), INFRA (12), ONBOARD (16), AUDIT (17), RTMX (10), TEST (13).
 
 Run `rtmx status` for current state. See `tests/features/` for executable specifications.
 
@@ -78,16 +82,16 @@ Run `rtmx status` for current state. See `tests/features/` for executable specif
 | Crate | Role | Key ports |
 |---|---|---|
 | aegis-domain | Shared kernel | ToolCall, ToolRisk, SessionId, DomainEvent |
-| aegis-agent | REA loop | LlmProvider, ApprovalGate, ToolExecutor, AuditLedger, SecurityFilter |
-| aegis-hitl | Approval gate | HitlGate, PermissionRules |
-| aegis-llm | LLM providers | Vertex AI, Bedrock, Azure OpenAI, local (Ollama) |
-| aegis-tui | Terminal UI | ratatui, streaming markdown, inline diffs |
-| aegis-audit | Audit ledger | JSONL append, hash chain, session reconstruction |
-| aegis-security | Security | .aegisignore, bubblewrap/seatbelt sandbox, DLP |
+| aegis-agent | REA loop + tools | LlmProvider, ApprovalGate, ToolExecutor, AuditLedger, SecurityFilter |
+| aegis-hitl | Approval gate | HitlGate, ChannelApprovalGate, ApprovalRequest |
+| aegis-llm | LLM providers | ProviderConfig, LocalProvider, create_provider() |
+| aegis-tui | Terminal UI | AppState, ChatMessage, render() |
+| aegis-audit | Audit ledger | JsonlLedger (JSONL append, identity binding) |
+| aegis-security | Security | AegisIgnore (.aegisignore mandatory blocklist) |
 | aegis-infra | Plugin host | aegis-infra/v1 protocol, NDJSON parsing, health aggregation |
-| aegis-onboard | Init wizard | State machine, config management, credential negotiation |
+| aegis-onboard | Init + config | AegisConfig, run_init(), Mode enum |
 | aegis-cli | Binary | Composition root, clap CLI |
-| aegis-test-support | Test infra | MockLlmProvider, MockApprovalGate, MockAuditLedger, fixtures |
+| aegis-test-support | Test infra | MockLlmProvider, MockApprovalGate, MockAuditLedger, MockToolExecutor |
 
 ## Plugin protocol (aegis-infra/v1)
 
@@ -97,7 +101,11 @@ Plugins are separate binaries. aegis-cli spawns them as subprocesses.
 
 **Events (NDJSON on stdout):** progress, diagnostic, check, result
 
-**Reference plugin:** `gcp-cui-gemini` at `../gcp-cui-gemini` (TypeScript, Pulumi Automation API)
+**Lifecycle:** PREFLIGHT -> API_ENABLEMENT -> PROVISION -> VERIFY
+
+**Reference plugin:** [gcp-assured-workloads](https://github.com/rtmx-ai/gcp-assured-workloads)
+
+**Plugin SDK:** [@aegis/infra-sdk](https://github.com/rtmx-ai/aegis-infra-sdk) -- plugin authors implement 3 interfaces (CspClient, IaCEngine, HealthChecker) and call `createPluginCli(config)`.
 
 ## Target platforms
 
@@ -110,7 +118,7 @@ Both connected (GovCloud) and air-gapped (Ollama/vLLM) modes supported.
 
 ## MVP scope
 
-1. IaC-activated IL4/IL5 managed LLM backend (via gcp-cui-gemini plugin)
+1. IaC-activated IL4/IL5 managed LLM backend (via gcp-assured-workloads plugin)
 2. Functional TUI with streaming markdown, diffs, HITL approval
 3. Local model support for air-gapped operation
 
