@@ -7,10 +7,12 @@ license.workspace = true
 
 [dependencies]
 aegis-domain = { path = "../aegis-domain" }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
 async-trait = { workspace = true }
 serde = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
 mockall = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "macros", "rt"] }

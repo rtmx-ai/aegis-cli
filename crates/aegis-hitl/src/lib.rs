@@ -4,5 +4,6 @@
 //! until the user explicitly approves, denies, edits, or skips them.
 //! Permission decisions are logged to the audit ledger.
 
+pub mod approval;
 pub mod gate;
 pub mod rules;
