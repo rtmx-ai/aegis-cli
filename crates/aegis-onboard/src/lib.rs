@@ -1,8 +1,8 @@
 //! aegis-onboard: Initialization and onboarding state machine.
 //!
-//! Implements `aegis init` with three deployment modes: Self-Service BYOC,
-//! Enterprise BYOC, and Managed SaaS. Also supports `aegis init --local`
-//! for air-gapped operation.
+//! Implements `aegis init` with deployment modes: Self-Service BYOC,
+//! Enterprise BYOC, Managed SaaS, and Local (air-gapped).
+//! Also manages ~/.aegis/config.yaml lifecycle.
 
-// pub mod state_machine; // @req REQ-ONBOARD-001
-// pub mod airgap;        // @req REQ-ONBOARD-003
+pub mod config;
+pub mod init;

@@ -7,9 +7,10 @@ license.workspace = true
 
 [dependencies]
 aegis-domain = { path = "../aegis-domain" }
-aegis-infra = { path = "../aegis-infra" }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["fs"] }
 serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9"
 tracing = { workspace = true }
 
 [dev-dependencies]
