@@ -4,5 +4,5 @@
 //! ~/.aegis/logs/*.jsonl. Records metadata only -- never CUI content.
 //! Supports RTMX requirement linking via req_id in ledger entries.
 
-// pub mod ledger;    // @req REQ-AUDIT-001
+pub mod ledger; // @req REQ-AUDIT-001
 // pub mod evidence;  // @req REQ-AUDIT-003
