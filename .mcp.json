@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "rtmx": {
+      "command": "python3",
+      "args": ["-m", "rtmx", "mcp-server"],
+      "type": "stdio"
+    }
+  }
+}
