@@ -15,11 +15,17 @@ pub struct MockLlmProvider {
     responses: std::sync::Mutex<VecDeque<Vec<StreamEvent>>>,
 }
 
-impl MockLlmProvider {
-    pub fn new() -> Self {
+impl Default for MockLlmProvider {
+    fn default() -> Self {
         Self {
             responses: std::sync::Mutex::new(VecDeque::new()),
         }
+    }
+}
+
+impl MockLlmProvider {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Queue a sequence of stream events to be returned on the next call.
@@ -35,14 +41,11 @@ impl LlmProvider for MockLlmProvider {
         _messages: &[Message],
         _tools: &[ToolSchema],
     ) -> Result<Box<dyn TokenStream>, DomainError> {
-        let events = self
-            .responses
-            .lock()
-            .unwrap()
-            .pop_front()
-            .ok_or_else(|| DomainError::ProviderError {
+        let events = self.responses.lock().unwrap().pop_front().ok_or_else(|| {
+            DomainError::ProviderError {
                 message: "MockLlmProvider: no more queued responses".into(),
-            })?;
+            }
+        })?;
         Ok(Box::new(MockTokenStream { events }))
     }
 }

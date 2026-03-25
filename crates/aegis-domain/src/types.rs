@@ -12,9 +12,15 @@ use uuid::Uuid;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SessionId(Uuid);
 
+impl Default for SessionId {
+    fn default() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
+
 impl SessionId {
     pub fn new() -> Self {
-        Self(Uuid::new_v4())
+        Self::default()
     }
 }
 
@@ -28,9 +34,15 @@ impl fmt::Display for SessionId {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RequestId(Uuid);
 
+impl Default for RequestId {
+    fn default() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
+
 impl RequestId {
     pub fn new() -> Self {
-        Self(Uuid::new_v4())
+        Self::default()
     }
 }
 

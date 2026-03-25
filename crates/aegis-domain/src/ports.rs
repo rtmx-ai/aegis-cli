@@ -34,7 +34,10 @@ pub trait TokenStream: Send + Unpin {
 pub enum StreamEvent {
     Token(String),
     ToolUse(ToolCall),
-    Done { input_tokens: u64, output_tokens: u64 },
+    Done {
+        input_tokens: u64,
+        output_tokens: u64,
+    },
     Error(String),
 }
 
@@ -65,7 +68,8 @@ pub struct ToolSchema {
 #[async_trait]
 pub trait ApprovalGate: Send + Sync {
     /// Request human approval for a tool call. Blocks until the user responds.
-    async fn request_approval(&self, tool_call: &ToolCall) -> Result<ApprovalDecision, DomainError>;
+    async fn request_approval(&self, tool_call: &ToolCall)
+    -> Result<ApprovalDecision, DomainError>;
 }
 
 /// Outgoing port: audit ledger.

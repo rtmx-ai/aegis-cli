@@ -33,17 +33,15 @@ impl AegisIgnore {
     fn matches_pattern(&self, path: &str, pattern: &str) -> bool {
         // Simple glob matching for mandatory blocklist patterns.
         // Supports: **/prefix*, *.ext, **/literal, and exact matches.
-        if pattern.starts_with("**/") {
-            let suffix = &pattern[3..];
-            if suffix.ends_with('*') {
+        if let Some(suffix) = pattern.strip_prefix("**/") {
+            if let Some(prefix) = suffix.strip_suffix('*') {
                 // **/prefix* -- match any path segment containing the prefix
-                let prefix = &suffix[..suffix.len() - 1];
                 path.contains(prefix)
             } else {
                 path.contains(suffix)
             }
-        } else if pattern.starts_with("*.") {
-            path.ends_with(&pattern[1..])
+        } else if let Some(ext) = pattern.strip_prefix('*') {
+            path.ends_with(ext)
         } else {
             path == pattern || path.ends_with(&format!("/{}", pattern))
         }

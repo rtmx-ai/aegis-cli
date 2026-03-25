@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# aegis-cli pre-push hook
+# Runs the full CI-equivalent gate before pushing to remote.
+# Catches anything the pre-commit hook deferred for speed.
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+fail() { echo -e "${RED}FAILED:${NC} $1"; exit 1; }
+pass() { echo -e "${GREEN}PASSED:${NC} $1"; }
+warn() { echo -e "${YELLOW}WARN:${NC} $1"; }
+
+echo "=== aegis pre-push checks ==="
+
+# 1. Format (fast, re-check in case commits were amended)
+echo -n "Checking format... "
+cargo fmt --check --all 2>/dev/null || fail "cargo fmt --check --all"
+pass "cargo fmt"
+
+# 2. Clippy with -D warnings (matches CI RUSTFLAGS)
+echo -n "Checking clippy... "
+RUSTFLAGS="-D warnings" cargo clippy --workspace --all-targets 2>/dev/null || fail "cargo clippy"
+pass "cargo clippy"
+
+# 3. Full test suite (matches CI: unit + integration + doc)
+echo -n "Running full test suite... "
+if command -v cargo-nextest &>/dev/null; then
+    cargo nextest run --workspace 2>/dev/null || fail "cargo nextest run --workspace"
+else
+    cargo test --workspace 2>/dev/null || fail "cargo test --workspace"
+fi
+pass "all tests"
+
+# 4. RTMX health (matches CI: rtmx status)
+if command -v rtmx &>/dev/null; then
+    echo -n "Checking RTMX health... "
+    rtmx status 2>/dev/null || fail "rtmx status"
+    pass "rtmx status"
+else
+    warn "rtmx not installed -- skipping requirements health check (install: pip install rtmx)"
+fi
+
+# 5. Build check (ensure it compiles in release mode, catches release-only issues)
+echo -n "Checking release build... "
+RUSTFLAGS="-D warnings" cargo check --workspace --release 2>/dev/null || fail "cargo check --release"
+pass "release build"
+
+echo -e "${GREEN}All pre-push checks passed. Pushing to remote.${NC}"

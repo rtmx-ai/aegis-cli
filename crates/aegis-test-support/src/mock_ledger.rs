@@ -11,11 +11,17 @@ pub struct MockAuditLedger {
     events: Mutex<Vec<DomainEvent>>,
 }
 
-impl MockAuditLedger {
-    pub fn new() -> Self {
+impl Default for MockAuditLedger {
+    fn default() -> Self {
         Self {
             events: Mutex::new(Vec::new()),
         }
+    }
+}
+
+impl MockAuditLedger {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Get all recorded events for assertion.

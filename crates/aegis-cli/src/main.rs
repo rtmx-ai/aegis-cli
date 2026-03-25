@@ -3,7 +3,11 @@
 use clap::Parser;
 
 #[derive(Parser)]
-#[command(name = "aegis", version, about = "Agentic AI pair programmer for CUI environments")]
+#[command(
+    name = "aegis",
+    version,
+    about = "Agentic AI pair programmer for CUI environments"
+)]
 struct Cli {
     /// Initialize cloud infrastructure and local configuration
     #[command(subcommand)]

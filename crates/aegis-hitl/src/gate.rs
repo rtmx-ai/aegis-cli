@@ -3,13 +3,8 @@
 use aegis_domain::types::{ToolCall, ToolRisk};
 
 /// Determines whether a tool call requires human approval.
+#[derive(Default)]
 pub struct HitlGate;
-
-impl Default for HitlGate {
-    fn default() -> Self {
-        Self
-    }
-}
 
 impl HitlGate {
     pub fn requires_approval(&self, tool_call: &ToolCall) -> bool {
@@ -31,14 +26,14 @@ mod tests {
     #[case(ToolCall::ListDir { path: FilePath::new_unchecked(".") }, false)]
     #[case(ToolCall::Grep { pattern: "TODO".into(), path: FilePath::new_unchecked("src") }, false)]
     fn hitl_gate_classifies_risk(#[case] call: ToolCall, #[case] requires: bool) {
-        let gate = HitlGate::default();
+        let gate = HitlGate;
         assert_eq!(gate.requires_approval(&call), requires);
     }
 
     // @req REQ-HITL-001
     #[test]
     fn all_mutating_tools_require_approval() {
-        let gate = HitlGate::default();
+        let gate = HitlGate;
         let write = ToolCall::WriteFile {
             path: FilePath::new_unchecked("any.txt"),
             content: "data".into(),

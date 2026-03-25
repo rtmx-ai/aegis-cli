@@ -2,7 +2,6 @@
 
 use aegis_domain::error::DomainError;
 use aegis_domain::ports::*;
-use aegis_domain::types::*;
 
 /// Configuration for the agent loop.
 pub struct AgentConfig {
@@ -18,6 +17,7 @@ impl Default for AgentConfig {
 }
 
 /// The agent loop runner, parameterized by port traits.
+#[allow(dead_code)]
 pub struct AgentLoop<P, G, E, A, S>
 where
     P: LlmProvider,
@@ -42,7 +42,14 @@ where
     A: AuditLedger,
     S: SecurityFilter,
 {
-    pub fn new(provider: P, gate: G, executor: E, ledger: A, filter: S, config: AgentConfig) -> Self {
+    pub fn new(
+        provider: P,
+        gate: G,
+        executor: E,
+        ledger: A,
+        filter: S,
+        config: AgentConfig,
+    ) -> Self {
         Self {
             provider,
             gate,

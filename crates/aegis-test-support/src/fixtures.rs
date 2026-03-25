@@ -1,7 +1,7 @@
 //! Common test fixtures and helpers.
 
-use tempfile::TempDir;
 use std::path::PathBuf;
+use tempfile::TempDir;
 
 /// Create a temporary workspace directory with a basic project structure.
 pub fn create_test_workspace() -> (TempDir, PathBuf) {
@@ -10,8 +10,10 @@ pub fn create_test_workspace() -> (TempDir, PathBuf) {
 
     // Create a minimal project structure
     std::fs::create_dir_all(workspace.join("src")).expect("Failed to create src dir");
-    std::fs::write(workspace.join("src/main.rs"), "fn main() {}\n").expect("Failed to write main.rs");
-    std::fs::write(workspace.join(".aegisignore"), "*.pem\n.env\n").expect("Failed to write .aegisignore");
+    std::fs::write(workspace.join("src/main.rs"), "fn main() {}\n")
+        .expect("Failed to write main.rs");
+    std::fs::write(workspace.join(".aegisignore"), "*.pem\n.env\n")
+        .expect("Failed to write .aegisignore");
 
     (dir, workspace)
 }
