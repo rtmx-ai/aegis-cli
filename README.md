@@ -1,5 +1,12 @@
 # aegis-cli
 
+[![CI](https://github.com/rtmx-ai/aegis-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/rtmx-ai/aegis-cli/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Rust](https://img.shields.io/badge/Rust-stable-orange.svg)](https://www.rust-lang.org/)
+[![Platform: RHEL | Windows](https://img.shields.io/badge/Platform-RHEL_|_Windows-lightgrey.svg)](#target-platforms)
+[![RTMX](https://img.shields.io/badge/RTMX-159_requirements-purple.svg)](https://rtmx.ai)
+[![Impact Level](https://img.shields.io/badge/IL4%2FIL5-Assured_Workloads-darkgreen.svg)](#cloud-infrastructure)
+
 A terminal-native agentic AI pair programmer for Controlled Unclassified Information (CUI) environments. Built for software engineers in the Department of War and the Defense Industrial Base (DIB).
 
 Aegis gives you the developer experience of a frontier AI coding assistant -- streaming responses, tool use, inline diffs, human-in-the-loop approval -- while you maintain complete control over the compute, network, and data boundaries that underpin the interaction.
