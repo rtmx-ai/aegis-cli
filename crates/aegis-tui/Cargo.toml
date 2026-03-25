@@ -10,9 +10,6 @@ aegis-domain = { path = "../aegis-domain" }
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 tokio = { workspace = true }
-# tui-markdown = { workspace = true }
-# tui-scrollview = { workspace = true }
-# tui-textarea = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
