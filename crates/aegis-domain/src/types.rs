@@ -108,7 +108,9 @@ pub enum ToolRisk {
 impl ToolCall {
     pub fn risk(&self) -> ToolRisk {
         match self {
-            Self::ReadFile { .. } | Self::ListDir { .. } | Self::Grep { .. } => ToolRisk::ReadOnly,
+            Self::ReadFile { .. } | Self::ListDir { .. } | Self::Grep { .. } => {
+                ToolRisk::ReadOnly
+            }
             Self::WriteFile { .. } | Self::RunCommand { .. } => ToolRisk::StateMutating,
         }
     }

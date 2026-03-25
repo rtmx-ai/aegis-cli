@@ -26,7 +26,10 @@ impl MockApprovalGate {
 
 #[async_trait]
 impl ApprovalGate for MockApprovalGate {
-    async fn request_approval(&self, _tool_call: &ToolCall) -> Result<ApprovalDecision, DomainError> {
+    async fn request_approval(
+        &self,
+        _tool_call: &ToolCall,
+    ) -> Result<ApprovalDecision, DomainError> {
         Ok(self.default_decision)
     }
 }

@@ -68,8 +68,10 @@ pub struct ToolSchema {
 #[async_trait]
 pub trait ApprovalGate: Send + Sync {
     /// Request human approval for a tool call. Blocks until the user responds.
-    async fn request_approval(&self, tool_call: &ToolCall)
-    -> Result<ApprovalDecision, DomainError>;
+    async fn request_approval(
+        &self,
+        tool_call: &ToolCall,
+    ) -> Result<ApprovalDecision, DomainError>;
 }
 
 /// Outgoing port: audit ledger.
