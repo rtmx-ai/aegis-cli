@@ -15,6 +15,7 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 aegis-test-support = { path = "../aegis-test-support" }
+aegis-security = { path = "../aegis-security" }
 rstest = { workspace = true }
 mockall = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

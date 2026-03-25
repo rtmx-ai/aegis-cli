@@ -6,3 +6,4 @@
 //! injects results back into conversation history.
 
 pub mod loop_runner;
+pub mod tools;
