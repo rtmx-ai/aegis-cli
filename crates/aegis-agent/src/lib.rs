@@ -5,5 +5,8 @@
 //! routes tool calls through the HITL gate, executes approved calls, and
 //! injects results back into conversation history.
 
+pub mod banned_commands;
+pub mod cancellation;
 pub mod loop_runner;
 pub mod tools;
+pub mod truncation;
