@@ -4,5 +4,6 @@
 //! chat log (fill), multi-line input (bottom). Inline tool calls, diffs,
 //! and HITL approval dialogs within the chat flow.
 
+pub mod input;
 pub mod layout;
 pub mod messages;
