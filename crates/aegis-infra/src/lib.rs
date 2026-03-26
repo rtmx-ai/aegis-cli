@@ -1,10 +1,8 @@
-//! aegis-infra: Cloud infrastructure provisioning.
+//! aegis-infra: Plugin host for the aegis-infra/v1 protocol.
 //!
-//! Embeds Pulumi IaC for deterministic provisioning of compliant cloud
-//! boundaries. Supports GCP Assured Workloads, AWS GovCloud, and Azure
-//! Government.
+//! Spawns IaC plugin binaries as subprocesses and communicates via
+//! NDJSON on stdout. Parses progress, diagnostic, check, and result
+//! events. Aggregates health checks across plugins.
 
-// pub mod gcp;    // @req REQ-INFRA-001
-// pub mod aws;    // @req REQ-INFRA-002
-// pub mod azure;  // @req REQ-INFRA-003
-// pub mod config; // @req REQ-ONBOARD-002
+pub mod events;
+pub mod host;

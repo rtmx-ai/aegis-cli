@@ -1,13 +1,13 @@
 [package]
 name = "aegis-infra"
-description = "Bounded context: Pulumi IaC, cloud provisioning, config management"
+description = "Bounded context: aegis-infra/v1 plugin host, NDJSON protocol, health aggregation"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
 aegis-domain = { path = "../aegis-domain" }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["process", "io-util", "fs"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
