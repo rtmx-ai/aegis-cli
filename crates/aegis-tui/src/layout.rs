@@ -35,6 +35,22 @@ impl AppState {
     pub fn push_message(&mut self, msg: ChatMessage) {
         self.messages.push(msg);
     }
+
+    /// Handle a terminal resize by clamping scroll_offset to valid bounds.
+    ///
+    /// After a resize, the visible area may have changed. If the current
+    /// scroll_offset would place us past the end of the content, clamp it
+    /// so the last line of content is visible.
+    pub fn resize(&mut self, total_lines: u16, visible_height: u16) {
+        if visible_height >= total_lines {
+            self.scroll_offset = 0;
+        } else {
+            let max_scroll = total_lines - visible_height;
+            if self.scroll_offset > max_scroll {
+                self.scroll_offset = max_scroll;
+            }
+        }
+    }
 }
 
 /// Render the full application layout.
@@ -269,5 +285,65 @@ mod tests {
         assert!(output.contains("You:"));
         assert!(output.contains("read_file"));
         assert!(output.contains("main function"));
+    }
+
+    fn state_with_scroll(offset: u16) -> AppState {
+        AppState {
+            scroll_offset: offset,
+            ..Default::default()
+        }
+    }
+
+    // @req REQ-TUI-007
+    #[test]
+    fn resize_clamps_scroll_offset_when_exceeds_max() {
+        let mut state = state_with_scroll(50);
+        // total_lines=30, visible_height=10 -> max_scroll=20
+        state.resize(30, 10);
+        assert_eq!(state.scroll_offset, 20);
+    }
+
+    // @req REQ-TUI-007
+    #[test]
+    fn resize_keeps_scroll_offset_when_within_bounds() {
+        let mut state = state_with_scroll(5);
+        // total_lines=30, visible_height=10 -> max_scroll=20, offset 5 is fine
+        state.resize(30, 10);
+        assert_eq!(state.scroll_offset, 5);
+    }
+
+    // @req REQ-TUI-007
+    #[test]
+    fn resize_resets_to_zero_when_content_fits() {
+        let mut state = state_with_scroll(10);
+        // visible_height >= total_lines, everything fits
+        state.resize(5, 20);
+        assert_eq!(state.scroll_offset, 0);
+    }
+
+    // @req REQ-TUI-007
+    #[test]
+    fn resize_handles_equal_height_and_lines() {
+        let mut state = state_with_scroll(3);
+        // total_lines == visible_height -> all content visible
+        state.resize(10, 10);
+        assert_eq!(state.scroll_offset, 0);
+    }
+
+    // @req REQ-TUI-007
+    #[test]
+    fn resize_at_exact_max_scroll_stays() {
+        let mut state = state_with_scroll(20);
+        // total_lines=30, visible_height=10 -> max_scroll=20, exactly at boundary
+        state.resize(30, 10);
+        assert_eq!(state.scroll_offset, 20);
+    }
+
+    // @req REQ-TUI-007
+    #[test]
+    fn resize_zero_total_lines_resets_offset() {
+        let mut state = state_with_scroll(5);
+        state.resize(0, 10);
+        assert_eq!(state.scroll_offset, 0);
     }
 }
