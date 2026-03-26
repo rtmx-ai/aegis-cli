@@ -31,7 +31,7 @@ Every agent action -- file reads, code writes, shell commands -- passes through 
 ```mermaid
 flowchart LR
     subgraph workstation [" Developer Workstation (NIPR/SIPR) "]
-        aegis["aegis\n(Rust static binary)"]
+        aegis["aegis-cli\n(Rust static binary)"]
         config["config.yaml\n(0600 perms)"]
         ledger["audit ledger\n(JSONL, metadata only)"]
         plugins["IaC plugins\n(subprocesses)"]
@@ -146,7 +146,7 @@ sequenceDiagram
 flowchart LR
     subgraph edge [" Workstation -- You Control "]
         source["Source Code\n(CUI)"] --> ignore[".aegisignore"]
-        ignore --> aegis_bin["aegis"]
+        ignore --> aegis_bin["aegis-cli"]
         aegis_bin --> gate["HITL Gate\nY / N / E / S"]
         gate --> sandbox["OS Sandbox\nbubblewrap / seatbelt"]
         aegis_bin --> audit["Audit Ledger\nmetadata only"]
