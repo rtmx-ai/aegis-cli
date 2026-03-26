@@ -155,6 +155,76 @@ pub async fn run_plugin(
     })
 }
 
+/// Discover all valid plugins in a directory.
+///
+/// Scans the given directory for executable files, calls `discover_plugin()`
+/// on each, and returns only those that produce a valid manifest. Non-executable
+/// files and plugins with invalid manifests are silently skipped (with a warning
+/// logged).
+pub async fn discover_plugins(plugins_dir: &Path) -> Result<Vec<Plugin>, DomainError> {
+    let mut entries =
+        tokio::fs::read_dir(plugins_dir)
+            .await
+            .map_err(|e| DomainError::ProviderError {
+                message: format!(
+                    "Failed to read plugins directory {}: {e}",
+                    plugins_dir.display()
+                ),
+            })?;
+
+    let mut plugins = Vec::new();
+
+    while let Some(entry) =
+        entries
+            .next_entry()
+            .await
+            .map_err(|e| DomainError::ProviderError {
+                message: format!("Failed to read directory entry: {e}"),
+            })?
+    {
+        let path = entry.path();
+
+        // Skip non-files
+        let metadata =
+            tokio::fs::metadata(&path)
+                .await
+                .map_err(|e| DomainError::ProviderError {
+                    message: format!("Failed to stat {}: {e}", path.display()),
+                })?;
+
+        if !metadata.is_file() {
+            continue;
+        }
+
+        // Skip non-executable files (Unix only; on non-Unix, try all files)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if metadata.permissions().mode() & 0o111 == 0 {
+                tracing::warn!("Skipping non-executable file: {}", path.display());
+                continue;
+            }
+        }
+
+        match discover_plugin(&path).await {
+            Ok(plugin) => plugins.push(plugin),
+            Err(e) => {
+                tracing::warn!("Skipping plugin {}: {e}", path.display());
+            }
+        }
+    }
+
+    Ok(plugins)
+}
+
+/// Validate that the user-typed confirmation matches the expected project name.
+///
+/// Used by the CLI to gate the `destroy` subcommand: the user must type the
+/// exact project name before teardown proceeds.
+pub fn validate_destroy_confirmation(expected: &str, actual: &str) -> bool {
+    expected == actual
+}
+
 /// Aggregate health check results from check events.
 pub fn aggregate_health(checks: &[CheckEvent]) -> (bool, String) {
     let total = checks.len();
@@ -376,5 +446,118 @@ echo '{"type":"result","success":true}'
         let (success, summary) = aggregate_health(&checks);
         assert!(success, "Warns should not fail");
         assert!(summary.contains("1 warned"));
+    }
+
+    // --- REQ-INFRA-003: Plugin discovery ---
+
+    // @req REQ-INFRA-003
+    #[tokio::test]
+    async fn discover_plugins_finds_executables() {
+        let tmp = TempDir::new().unwrap();
+        let script = r#"#!/bin/sh
+echo '{"name":"alpha","version":"1.0.0","contract":"aegis-infra/v1","description":"A"}'
+"#;
+        write_mock_plugin(tmp.path(), "alpha-plugin", script);
+
+        let script2 = r#"#!/bin/sh
+echo '{"name":"beta","version":"2.0.0","contract":"aegis-infra/v1","description":"B"}'
+"#;
+        write_mock_plugin(tmp.path(), "beta-plugin", script2);
+
+        let plugins = discover_plugins(tmp.path()).await.unwrap();
+        assert_eq!(plugins.len(), 2);
+
+        let names: Vec<&str> = plugins.iter().map(|p| p.manifest.name.as_str()).collect();
+        assert!(names.contains(&"alpha"));
+        assert!(names.contains(&"beta"));
+    }
+
+    // @req REQ-INFRA-003
+    #[tokio::test]
+    async fn discover_plugins_skips_non_executable() {
+        let tmp = TempDir::new().unwrap();
+
+        // Write a valid manifest script but WITHOUT execute permission
+        let path = tmp.path().join("not-executable");
+        std::fs::write(
+            &path,
+            r#"#!/bin/sh
+echo '{"name":"nope","version":"1.0.0","contract":"aegis-infra/v1"}'
+"#,
+        )
+        .unwrap();
+        // Explicitly set non-executable permissions
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
+
+        let plugins = discover_plugins(tmp.path()).await.unwrap();
+        assert!(plugins.is_empty(), "Non-executable files should be skipped");
+    }
+
+    // @req REQ-INFRA-003
+    #[tokio::test]
+    async fn discover_plugins_empty_directory() {
+        let tmp = TempDir::new().unwrap();
+        let plugins = discover_plugins(tmp.path()).await.unwrap();
+        assert!(plugins.is_empty());
+    }
+
+    // @req REQ-INFRA-003
+    #[tokio::test]
+    async fn discover_plugins_skips_invalid_manifests() {
+        let tmp = TempDir::new().unwrap();
+
+        // Valid plugin
+        let script = r#"#!/bin/sh
+echo '{"name":"good","version":"1.0.0","contract":"aegis-infra/v1"}'
+"#;
+        write_mock_plugin(tmp.path(), "good-plugin", script);
+
+        // Plugin that exits non-zero (invalid manifest)
+        let bad_script = "#!/bin/sh\nexit 1\n";
+        write_mock_plugin(tmp.path(), "bad-plugin", bad_script);
+
+        // Plugin with incompatible protocol
+        let old_script = r#"#!/bin/sh
+echo '{"name":"old","version":"1.0.0","contract":"aegis-infra/v99"}'
+"#;
+        write_mock_plugin(tmp.path(), "old-plugin", old_script);
+
+        let plugins = discover_plugins(tmp.path()).await.unwrap();
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(plugins[0].manifest.name, "good");
+    }
+
+    // --- REQ-INFRA-009: Teardown safety gate ---
+
+    // @req REQ-INFRA-009
+    #[test]
+    fn destroy_confirmation_exact_match() {
+        assert!(validate_destroy_confirmation("my-project", "my-project"));
+    }
+
+    // @req REQ-INFRA-009
+    #[test]
+    fn destroy_confirmation_rejects_wrong_string() {
+        assert!(!validate_destroy_confirmation(
+            "my-project",
+            "other-project"
+        ));
+    }
+
+    // @req REQ-INFRA-009
+    #[test]
+    fn destroy_confirmation_rejects_empty_string() {
+        assert!(!validate_destroy_confirmation("my-project", ""));
+    }
+
+    // @req REQ-INFRA-009
+    #[test]
+    fn destroy_confirmation_is_case_sensitive() {
+        assert!(!validate_destroy_confirmation("my-project", "My-Project"));
+        assert!(!validate_destroy_confirmation("my-project", "MY-PROJECT"));
     }
 }
