@@ -124,6 +124,7 @@ name = "aegis-onboard"
 version = "0.1.0"
 dependencies = [
  "aegis-domain",
+ "reqwest",
  "rstest",
  "serde",
  "serde_json",
