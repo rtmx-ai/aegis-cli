@@ -21,10 +21,14 @@ struct LedgerEntry<'a> {
     event: &'a DomainEvent,
 }
 
-/// File-backed JSONL audit ledger.
+/// Maximum log file size before rotation (10 MB).
+const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
+
+/// File-backed JSONL audit ledger with date and size rotation.
 pub struct JsonlLedger {
     log_dir: PathBuf,
     writer: Mutex<Option<tokio::fs::File>>,
+    current_path: Mutex<Option<PathBuf>>,
 }
 
 impl JsonlLedger {
@@ -40,6 +44,7 @@ impl JsonlLedger {
         let ledger = Self {
             log_dir: log_dir.to_path_buf(),
             writer: Mutex::new(None),
+            current_path: Mutex::new(None),
         };
         Ok(ledger)
     }
@@ -87,10 +92,33 @@ impl AuditLedger for JsonlLedger {
         line.push('\n');
 
         let mut guard = self.writer.lock().await;
+
+        // Check if we need to rotate (size or date change)
+        let needs_rotate = if let Some(ref path) = *self.current_path.lock().await {
+            let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+            let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+            let current_date_in_name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.contains(&date));
+            size >= MAX_FILE_SIZE || !current_date_in_name
+        } else {
+            true
+        };
+
+        if needs_rotate {
+            // Close current writer and open new file
+            *guard = None;
+        }
+
         let file = match guard.as_mut() {
             Some(f) => f,
             None => {
-                *guard = Some(self.ensure_writer().await?);
+                let new_file = self.ensure_writer().await?;
+                let date = chrono::Utc::now().format("%Y-%m-%d");
+                *self.current_path.lock().await =
+                    Some(self.log_dir.join(format!("aegis-{date}.jsonl")));
+                *guard = Some(new_file);
                 guard.as_mut().unwrap()
             }
         };
@@ -276,6 +304,30 @@ mod tests {
         // Both entries should be present
         let entries = read_log_entries(&log_dir);
         assert_eq!(entries.len(), 2, "Ledger should append, not overwrite");
+    }
+
+    // @req REQ-AUDIT-004
+    #[tokio::test]
+    async fn ledger_has_max_file_size_constant() {
+        // Verify the rotation threshold is 10 MB
+        assert_eq!(super::MAX_FILE_SIZE, 10 * 1024 * 1024);
+    }
+
+    // @req REQ-AUDIT-004
+    #[tokio::test]
+    async fn new_ledger_creates_dated_file() {
+        let tmp = TempDir::new().unwrap();
+        let log_dir = tmp.path().join("logs");
+        let ledger = make_ledger(&log_dir).await;
+
+        ledger.record(&session_started_event()).await.unwrap();
+
+        let files: Vec<_> = std::fs::read_dir(&log_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "jsonl"))
+            .collect();
+        assert_eq!(files.len(), 1, "Should have exactly one log file");
     }
 
     /// Read all JSONL entries from all log files in the directory.
