@@ -170,7 +170,7 @@ jobs:
           chmod +x aegis
           echo "--- file output ---"
           file aegis
-          file aegis | grep -q "statically linked"
+          file aegis | grep -qE "statically linked|static-pie linked"
           echo "PASS: musl binary is statically linked"
           echo "--- ldd output (expect 'not a dynamic executable') ---"
           ldd aegis 2>&1 || true
