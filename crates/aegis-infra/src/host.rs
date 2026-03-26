@@ -275,6 +275,7 @@ mod tests {
     }
 
     // @req REQ-INFRA-001
+    #[cfg(unix)]
     #[tokio::test]
     async fn discover_valid_plugin() {
         let tmp = TempDir::new().unwrap();
@@ -288,6 +289,7 @@ echo '{"name":"test-plugin","version":"0.1.0","contract":"aegis-infra/v1","descr
     }
 
     // @req REQ-INFRA-002
+    #[cfg(unix)]
     #[tokio::test]
     async fn discover_rejects_incompatible_protocol() {
         let tmp = TempDir::new().unwrap();
@@ -305,6 +307,7 @@ echo '{"name":"old-plugin","version":"0.1.0","contract":"aegis-infra/v99"}'
     }
 
     // @req REQ-INFRA-006
+    #[cfg(unix)]
     #[tokio::test]
     async fn discover_handles_failed_plugin() {
         let tmp = TempDir::new().unwrap();
@@ -315,6 +318,7 @@ echo '{"name":"old-plugin","version":"0.1.0","contract":"aegis-infra/v99"}'
     }
 
     // @req REQ-INFRA-001
+    #[cfg(unix)]
     #[tokio::test]
     async fn run_plugin_collects_ndjson_events() {
         let tmp = TempDir::new().unwrap();
@@ -344,6 +348,7 @@ echo '{"type":"result","success":true,"outputs":{"key":"value"}}'
     }
 
     // @req REQ-INFRA-006
+    #[cfg(unix)]
     #[tokio::test]
     async fn run_plugin_captures_stderr_on_failure() {
         let tmp = TempDir::new().unwrap();
@@ -369,6 +374,7 @@ echo '{"type":"result","success":true,"outputs":{"key":"value"}}'
     }
 
     // @req REQ-INFRA-004
+    #[cfg(unix)]
     #[tokio::test]
     async fn run_plugin_skips_malformed_lines() {
         let tmp = TempDir::new().unwrap();
@@ -396,6 +402,7 @@ echo '{"type":"result","success":true}'
     }
 
     // @req REQ-INFRA-007
+    #[cfg(unix)]
     #[tokio::test]
     async fn run_plugin_times_out_and_returns_error() {
         let tmp = TempDir::new().unwrap();
@@ -504,6 +511,7 @@ echo '{"name":"beta","version":"2.0.0","contract":"aegis-infra/v1","description"
     }
 
     // @req REQ-INFRA-003
+    #[cfg(unix)]
     #[tokio::test]
     async fn discover_plugins_skips_non_executable() {
         let tmp = TempDir::new().unwrap();
