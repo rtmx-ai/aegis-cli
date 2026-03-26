@@ -481,6 +481,7 @@ echo '{"type":"result","success":true}'
     // --- REQ-INFRA-003: Plugin discovery ---
 
     // @req REQ-INFRA-003
+    #[cfg(unix)]
     #[tokio::test]
     async fn discover_plugins_finds_executables() {
         let tmp = TempDir::new().unwrap();
@@ -536,6 +537,7 @@ echo '{"name":"nope","version":"1.0.0","contract":"aegis-infra/v1"}'
     }
 
     // @req REQ-INFRA-003
+    #[cfg(unix)]
     #[tokio::test]
     async fn discover_plugins_skips_invalid_manifests() {
         let tmp = TempDir::new().unwrap();

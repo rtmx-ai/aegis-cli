@@ -21,14 +21,6 @@ allow = [
     "ISC",
     "Unicode-3.0",
 ]
-deny = [
-    "GPL-2.0",
-    "GPL-3.0",
-    "LGPL-2.0",
-    "LGPL-2.1",
-    "LGPL-3.0",
-    "AGPL-3.0",
-]
 confidence-threshold = 0.8
 
 # Ring uses a non-standard license format that includes ISC, MIT, and OpenSSL.
