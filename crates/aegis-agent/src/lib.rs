@@ -9,4 +9,5 @@ pub mod banned_commands;
 pub mod cancellation;
 pub mod loop_runner;
 pub mod tools;
+pub mod toolshim;
 pub mod truncation;
