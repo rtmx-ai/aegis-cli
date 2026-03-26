@@ -7,7 +7,9 @@
 
 pub mod banned_commands;
 pub mod cancellation;
+pub mod compaction;
 pub mod loop_runner;
+pub mod retry;
 pub mod system_prompt;
 pub mod token_counter;
 pub mod tools;

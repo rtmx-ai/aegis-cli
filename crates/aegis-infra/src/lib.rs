@@ -6,5 +6,6 @@
 
 pub mod events;
 pub mod host;
+pub mod outputs;
 pub mod preview;
 pub mod relay;
