@@ -43,6 +43,33 @@ impl ProviderConfig {
             temperature: default_temperature(),
         }
     }
+
+    /// Validate that the model string contains a version indicator for
+    /// non-local providers. A version indicator is a digit appearing after
+    /// a hyphen (e.g. "gemini-2.5-pro-001", "claude-3-sonnet").
+    /// Local providers allow any model string.
+    pub fn validate_model_version(&self) -> Result<(), String> {
+        if self.kind == ProviderKind::Local {
+            return Ok(());
+        }
+
+        // Check for a digit after a hyphen anywhere in the model string.
+        let has_version = self
+            .model
+            .split('-')
+            .skip(1) // skip the part before the first hyphen
+            .any(|segment| segment.starts_with(|c: char| c.is_ascii_digit()));
+
+        if has_version {
+            Ok(())
+        } else {
+            Err(format!(
+                "model '{}' for {:?} provider must contain a version indicator \
+                 (digit after hyphen, e.g. 'gemini-2.5-pro-001')",
+                self.model, self.kind
+            ))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -71,6 +98,119 @@ mod tests {
         assert_eq!(cfg.kind, ProviderKind::Local);
         assert_eq!(cfg.max_tokens, 4096);
         assert_eq!(cfg.temperature, 0.0);
+    }
+
+    // @req REQ-LLM-006
+    #[test]
+    fn model_version_valid_vertex_with_version() {
+        let cfg = ProviderConfig {
+            kind: ProviderKind::Vertex,
+            model: "gemini-2.5-pro-001".to_string(),
+            endpoint: "https://vertex.googleapis.com".to_string(),
+            max_tokens: 4096,
+            temperature: 0.0,
+        };
+        assert!(cfg.validate_model_version().is_ok());
+    }
+
+    // @req REQ-LLM-006
+    #[test]
+    fn model_version_valid_bedrock_with_version() {
+        let cfg = ProviderConfig {
+            kind: ProviderKind::Bedrock,
+            model: "claude-3-sonnet-20241022".to_string(),
+            endpoint: "https://bedrock.us-east-1.amazonaws.com".to_string(),
+            max_tokens: 4096,
+            temperature: 0.0,
+        };
+        assert!(cfg.validate_model_version().is_ok());
+    }
+
+    // @req REQ-LLM-006
+    #[test]
+    fn model_version_valid_azure_with_version() {
+        let cfg = ProviderConfig {
+            kind: ProviderKind::Azure,
+            model: "gpt-4o-2024-05-13".to_string(),
+            endpoint: "https://myendpoint.openai.azure.com".to_string(),
+            max_tokens: 4096,
+            temperature: 0.0,
+        };
+        assert!(cfg.validate_model_version().is_ok());
+    }
+
+    // @req REQ-LLM-006
+    #[test]
+    fn model_version_invalid_vertex_no_version() {
+        let cfg = ProviderConfig {
+            kind: ProviderKind::Vertex,
+            model: "gemini-pro".to_string(),
+            endpoint: "https://vertex.googleapis.com".to_string(),
+            max_tokens: 4096,
+            temperature: 0.0,
+        };
+        assert!(cfg.validate_model_version().is_err());
+    }
+
+    // @req REQ-LLM-006
+    #[test]
+    fn model_version_invalid_bedrock_no_version() {
+        let cfg = ProviderConfig {
+            kind: ProviderKind::Bedrock,
+            model: "claude-sonnet".to_string(),
+            endpoint: "https://bedrock.us-east-1.amazonaws.com".to_string(),
+            max_tokens: 4096,
+            temperature: 0.0,
+        };
+        assert!(cfg.validate_model_version().is_err());
+    }
+
+    // @req REQ-LLM-006
+    #[test]
+    fn model_version_local_allows_any_string() {
+        let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
+        assert!(cfg.validate_model_version().is_ok());
+    }
+
+    // @req REQ-LLM-006
+    #[test]
+    fn model_version_local_allows_unversioned() {
+        let cfg = ProviderConfig::local("http://localhost:11434/v1", "my-custom-model");
+        assert!(cfg.validate_model_version().is_ok());
+    }
+
+    // @req REQ-LLM-006
+    #[test]
+    fn model_version_invalid_no_hyphen() {
+        let cfg = ProviderConfig {
+            kind: ProviderKind::Vertex,
+            model: "geminipro".to_string(),
+            endpoint: "https://vertex.googleapis.com".to_string(),
+            max_tokens: 4096,
+            temperature: 0.0,
+        };
+        assert!(cfg.validate_model_version().is_err());
+    }
+
+    // @req REQ-LLM-006
+    #[test]
+    fn model_version_error_message_includes_model_name() {
+        let cfg = ProviderConfig {
+            kind: ProviderKind::Vertex,
+            model: "gemini-pro".to_string(),
+            endpoint: "https://vertex.googleapis.com".to_string(),
+            max_tokens: 4096,
+            temperature: 0.0,
+        };
+        let err = cfg.validate_model_version().unwrap_err();
+        assert!(
+            err.contains("gemini-pro"),
+            "Error should name the model: {err}"
+        );
+        assert!(
+            err.contains("Vertex"),
+            "Error should name the provider: {err}"
+        );
     }
 
     // @req REQ-LLM-016
