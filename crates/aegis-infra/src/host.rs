@@ -263,6 +263,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    #[cfg(unix)]
     fn write_mock_plugin(dir: &Path, name: &str, script: &str) -> PathBuf {
         let path = dir.join(name);
         std::fs::write(&path, script).unwrap();
