@@ -6,4 +6,6 @@
 
 pub mod input;
 pub mod layout;
+pub mod markdown;
 pub mod messages;
+pub mod slash_commands;
