@@ -128,17 +128,24 @@ pub async fn run_plugin(
         });
     }
 
-    let output = child
-        .wait_with_output()
-        .await
-        .map_err(|e| DomainError::ProviderError {
-            message: format!("Plugin wait failed: {e}"),
-        })?;
+    // Wait for process to finish (stdout already consumed above)
+    let status = child.wait().await.map_err(|e| DomainError::ProviderError {
+        message: format!("Plugin wait failed: {e}"),
+    })?;
 
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let exit_code = output.status.code().unwrap_or(-1);
+    let exit_code = status.code().unwrap_or(-1);
 
-    if !output.status.success() && result_event.is_none() {
+    // Capture stderr if available
+    let stderr = if let Some(mut stderr_handle) = child.stderr.take() {
+        let mut buf = String::new();
+        use tokio::io::AsyncReadExt;
+        let _ = stderr_handle.read_to_string(&mut buf).await;
+        buf
+    } else {
+        String::new()
+    };
+
+    if !status.success() && result_event.is_none() {
         return Err(DomainError::ProviderError {
             message: format!(
                 "Plugin {} failed (exit {exit_code}): {stderr}",

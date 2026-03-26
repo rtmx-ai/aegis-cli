@@ -5,4 +5,5 @@
 //! Also manages ~/.aegis/config.yaml lifecycle.
 
 pub mod config;
+pub mod connectivity;
 pub mod init;
