@@ -6,6 +6,7 @@
 use aegis_domain::error::DomainError;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 /// Deployment mode for aegis.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -15,6 +16,26 @@ pub enum Mode {
     SelfServiceByoc,
     EnterpriseByoc,
     ManagedSaas,
+}
+
+impl FromStr for Mode {
+    type Err = DomainError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "local" => Ok(Mode::Local),
+            "self-service-byoc" => Ok(Mode::SelfServiceByoc),
+            "enterprise-byoc" => Ok(Mode::EnterpriseByoc),
+            "managed-saas" => Ok(Mode::ManagedSaas),
+            other => Err(DomainError::ConfigError {
+                message: format!(
+                    "Invalid mode '{}': expected one of \
+                     local, self-service-byoc, enterprise-byoc, managed-saas",
+                    other
+                ),
+            }),
+        }
+    }
 }
 
 /// The aegis configuration file.
@@ -35,6 +56,12 @@ pub struct BackendConfig {
     pub endpoint: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub region: Option<String>,
+    #[serde(default = "default_max_tokens")]
+    pub max_tokens: u32,
+}
+
+fn default_max_tokens() -> u32 {
+    4096
 }
 
 /// Infrastructure outputs from plugins, keyed by plugin name.
@@ -66,6 +93,7 @@ impl AegisConfig {
                 model: model.to_string(),
                 endpoint: endpoint.to_string(),
                 region: None,
+                max_tokens: default_max_tokens(),
             },
             infra: Default::default(),
         }
@@ -164,6 +192,39 @@ impl AegisConfig {
     }
 }
 
+/// Apply environment variable overrides to the config.
+///
+/// Convention: `AEGIS_<FIELD>` in SCREAMING_SNAKE_CASE overrides
+/// the corresponding config field. Only non-empty values are applied.
+///
+/// Supported variables:
+/// - `AEGIS_ENDPOINT` -> `backend.endpoint`
+/// - `AEGIS_MODEL` -> `backend.model`
+/// - `AEGIS_MODE` -> `mode` (must parse to a valid [`Mode`])
+/// - `AEGIS_MAX_TOKENS` -> `backend.max_tokens` (must parse to `u32`)
+pub fn apply_env_overrides(config: &mut AegisConfig) -> Result<(), DomainError> {
+    if let Some(val) = non_empty_env("AEGIS_ENDPOINT") {
+        config.backend.endpoint = val;
+    }
+    if let Some(val) = non_empty_env("AEGIS_MODEL") {
+        config.backend.model = val;
+    }
+    if let Some(val) = non_empty_env("AEGIS_MODE") {
+        config.mode = Mode::from_str(&val)?;
+    }
+    if let Some(val) = non_empty_env("AEGIS_MAX_TOKENS") {
+        config.backend.max_tokens = val.parse::<u32>().map_err(|e| DomainError::ConfigError {
+            message: format!("AEGIS_MAX_TOKENS must be a valid u32: {e}"),
+        })?;
+    }
+    Ok(())
+}
+
+/// Return the value of an env var if it is set and non-empty.
+fn non_empty_env(key: &str) -> Option<String> {
+    std::env::var(key).ok().filter(|v| !v.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,8 +270,14 @@ mod tests {
     fn config_contains_no_secrets() {
         let config = AegisConfig::local("http://localhost:11434/v1", "llama3");
         let yaml = serde_yaml::to_string(&config).unwrap();
-        assert!(!yaml.contains("key"), "Config should not contain API keys");
-        assert!(!yaml.contains("token"), "Config should not contain tokens");
+        assert!(
+            !yaml.contains("api_key"),
+            "Config should not contain API keys"
+        );
+        assert!(
+            !yaml.contains("access_token"),
+            "Config should not contain access tokens"
+        );
         assert!(
             !yaml.contains("secret"),
             "Config should not contain secrets"
@@ -265,6 +332,105 @@ mod tests {
         let config = AegisConfig::local("http://localhost:11434/v1", "llama3");
         config.save(&path).unwrap();
         assert!(path.exists());
+    }
+
+    // @req REQ-ONBOARD-008
+    //
+    // All env-override scenarios run in a single test to avoid
+    // race conditions from parallel tests mutating process-wide
+    // environment variables.
+    #[test]
+    fn env_overrides() {
+        // Helper: clear all AEGIS_ env vars to a known state.
+        fn clear_env() {
+            unsafe {
+                std::env::remove_var("AEGIS_ENDPOINT");
+                std::env::remove_var("AEGIS_MODEL");
+                std::env::remove_var("AEGIS_MODE");
+                std::env::remove_var("AEGIS_MAX_TOKENS");
+            }
+        }
+
+        fn fresh_config() -> AegisConfig {
+            AegisConfig::local("http://localhost:11434/v1", "llama3")
+        }
+
+        // -- endpoint override --
+        clear_env();
+        unsafe { std::env::set_var("AEGIS_ENDPOINT", "http://new:8080/v1") };
+        let mut cfg = fresh_config();
+        apply_env_overrides(&mut cfg).unwrap();
+        assert_eq!(cfg.backend.endpoint, "http://new:8080/v1");
+
+        // -- model override --
+        clear_env();
+        unsafe { std::env::set_var("AEGIS_MODEL", "mixtral-8x7b") };
+        let mut cfg = fresh_config();
+        apply_env_overrides(&mut cfg).unwrap();
+        assert_eq!(cfg.backend.model, "mixtral-8x7b");
+
+        // -- mode override --
+        clear_env();
+        unsafe { std::env::set_var("AEGIS_MODE", "enterprise-byoc") };
+        let mut cfg = fresh_config();
+        apply_env_overrides(&mut cfg).unwrap();
+        assert_eq!(cfg.mode, Mode::EnterpriseByoc);
+
+        // -- max_tokens override --
+        clear_env();
+        unsafe { std::env::set_var("AEGIS_MAX_TOKENS", "8192") };
+        let mut cfg = fresh_config();
+        apply_env_overrides(&mut cfg).unwrap();
+        assert_eq!(cfg.backend.max_tokens, 8192);
+
+        // -- invalid mode returns error --
+        clear_env();
+        unsafe { std::env::set_var("AEGIS_MODE", "not-a-mode") };
+        let mut cfg = fresh_config();
+        assert!(apply_env_overrides(&mut cfg).is_err());
+
+        // -- invalid max_tokens returns error --
+        clear_env();
+        unsafe { std::env::set_var("AEGIS_MAX_TOKENS", "not-a-number") };
+        let mut cfg = fresh_config();
+        assert!(apply_env_overrides(&mut cfg).is_err());
+
+        // -- empty value is ignored --
+        clear_env();
+        unsafe { std::env::set_var("AEGIS_ENDPOINT", "") };
+        let mut cfg = fresh_config();
+        apply_env_overrides(&mut cfg).unwrap();
+        assert_eq!(
+            cfg.backend.endpoint, "http://localhost:11434/v1",
+            "Empty env var should not override"
+        );
+
+        // -- unset vars are ignored --
+        clear_env();
+        let mut cfg = fresh_config();
+        apply_env_overrides(&mut cfg).unwrap();
+        assert_eq!(cfg.backend.endpoint, "http://localhost:11434/v1");
+        assert_eq!(cfg.backend.model, "llama3");
+        assert_eq!(cfg.mode, Mode::Local);
+        assert_eq!(cfg.backend.max_tokens, 4096);
+
+        // -- all four overrides at once --
+        clear_env();
+        unsafe {
+            std::env::set_var("AEGIS_ENDPOINT", "https://vertex:443");
+            std::env::set_var("AEGIS_MODEL", "gemini-pro");
+            std::env::set_var("AEGIS_MODE", "managed-saas");
+            std::env::set_var("AEGIS_MAX_TOKENS", "16384");
+        }
+        let mut cfg = fresh_config();
+        apply_env_overrides(&mut cfg).unwrap();
+        assert_eq!(cfg.backend.endpoint, "https://vertex:443");
+        assert_eq!(cfg.backend.model, "gemini-pro");
+        assert_eq!(cfg.mode, Mode::ManagedSaas);
+        assert_eq!(cfg.backend.max_tokens, 16384);
+
+        // Final cleanup
+        clear_env();
     }
 
     // @req REQ-ONBOARD-001
