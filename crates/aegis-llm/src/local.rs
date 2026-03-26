@@ -25,6 +25,8 @@ pub struct LocalProvider {
 impl LocalProvider {
     pub fn new(config: &ProviderConfig) -> Result<Self, DomainError> {
         let client = Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(config.connect_timeout_secs))
+            .timeout(std::time::Duration::from_secs(config.read_timeout_secs))
             .build()
             .map_err(|e| DomainError::ProviderError {
                 message: format!("Failed to create HTTP client: {e}"),

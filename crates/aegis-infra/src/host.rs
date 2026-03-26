@@ -395,6 +395,29 @@ echo '{"type":"result","success":true}'
         assert_eq!(output.events.len(), 2);
     }
 
+    // @req REQ-INFRA-007
+    #[tokio::test]
+    async fn run_plugin_times_out_and_returns_error() {
+        let tmp = TempDir::new().unwrap();
+        // Plugin that sleeps longer than the timeout
+        let script = "#!/bin/sh\nsleep 30\n";
+        let bin = write_mock_plugin(tmp.path(), "slow-plugin", script);
+        let plugin = Plugin {
+            binary: bin,
+            manifest: PluginManifest {
+                name: "slow-plugin".to_string(),
+                version: "0.1.0".to_string(),
+                contract: "aegis-infra/v1".to_string(),
+                description: None,
+            },
+        };
+
+        let result = run_plugin(&plugin, "up", None, 1).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("timed out"), "Should mention timeout: {err}");
+    }
+
     // @req REQ-INFRA-010
     #[test]
     fn aggregate_health_all_pass() {

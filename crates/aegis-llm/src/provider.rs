@@ -43,6 +43,8 @@ mod tests {
             endpoint: "https://vertex.googleapis.com".to_string(),
             max_tokens: 4096,
             temperature: 0.0,
+            connect_timeout_secs: 10,
+            read_timeout_secs: 300,
         };
         let result = create_provider(&cfg);
         assert!(result.is_err());

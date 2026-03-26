@@ -22,6 +22,10 @@ pub struct ProviderConfig {
     pub max_tokens: u32,
     #[serde(default = "default_temperature")]
     pub temperature: f32,
+    #[serde(default = "default_connect_timeout_secs")]
+    pub connect_timeout_secs: u64,
+    #[serde(default = "default_read_timeout_secs")]
+    pub read_timeout_secs: u64,
 }
 
 fn default_max_tokens() -> u32 {
@@ -30,6 +34,14 @@ fn default_max_tokens() -> u32 {
 
 fn default_temperature() -> f32 {
     0.0
+}
+
+fn default_connect_timeout_secs() -> u64 {
+    10
+}
+
+fn default_read_timeout_secs() -> u64 {
+    300
 }
 
 impl ProviderConfig {
@@ -41,6 +53,8 @@ impl ProviderConfig {
             endpoint: endpoint.to_string(),
             max_tokens: default_max_tokens(),
             temperature: default_temperature(),
+            connect_timeout_secs: default_connect_timeout_secs(),
+            read_timeout_secs: default_read_timeout_secs(),
         }
     }
 
@@ -109,6 +123,8 @@ mod tests {
             endpoint: "https://vertex.googleapis.com".to_string(),
             max_tokens: 4096,
             temperature: 0.0,
+            connect_timeout_secs: 10,
+            read_timeout_secs: 300,
         };
         assert!(cfg.validate_model_version().is_ok());
     }
@@ -122,6 +138,8 @@ mod tests {
             endpoint: "https://bedrock.us-east-1.amazonaws.com".to_string(),
             max_tokens: 4096,
             temperature: 0.0,
+            connect_timeout_secs: 10,
+            read_timeout_secs: 300,
         };
         assert!(cfg.validate_model_version().is_ok());
     }
@@ -135,6 +153,8 @@ mod tests {
             endpoint: "https://myendpoint.openai.azure.com".to_string(),
             max_tokens: 4096,
             temperature: 0.0,
+            connect_timeout_secs: 10,
+            read_timeout_secs: 300,
         };
         assert!(cfg.validate_model_version().is_ok());
     }
@@ -148,6 +168,8 @@ mod tests {
             endpoint: "https://vertex.googleapis.com".to_string(),
             max_tokens: 4096,
             temperature: 0.0,
+            connect_timeout_secs: 10,
+            read_timeout_secs: 300,
         };
         assert!(cfg.validate_model_version().is_err());
     }
@@ -161,6 +183,8 @@ mod tests {
             endpoint: "https://bedrock.us-east-1.amazonaws.com".to_string(),
             max_tokens: 4096,
             temperature: 0.0,
+            connect_timeout_secs: 10,
+            read_timeout_secs: 300,
         };
         assert!(cfg.validate_model_version().is_err());
     }
@@ -188,6 +212,8 @@ mod tests {
             endpoint: "https://vertex.googleapis.com".to_string(),
             max_tokens: 4096,
             temperature: 0.0,
+            connect_timeout_secs: 10,
+            read_timeout_secs: 300,
         };
         assert!(cfg.validate_model_version().is_err());
     }
@@ -201,6 +227,8 @@ mod tests {
             endpoint: "https://vertex.googleapis.com".to_string(),
             max_tokens: 4096,
             temperature: 0.0,
+            connect_timeout_secs: 10,
+            read_timeout_secs: 300,
         };
         let err = cfg.validate_model_version().unwrap_err();
         assert!(
@@ -211,6 +239,42 @@ mod tests {
             err.contains("Vertex"),
             "Error should name the provider: {err}"
         );
+    }
+
+    // @req REQ-LLM-010
+    #[test]
+    fn default_timeouts_are_sensible() {
+        let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
+        assert_eq!(cfg.connect_timeout_secs, 10);
+        assert_eq!(cfg.read_timeout_secs, 300);
+    }
+
+    // @req REQ-LLM-010
+    #[test]
+    fn timeouts_deserialize_from_json() {
+        let json = r#"{
+            "kind": "local",
+            "model": "llama3",
+            "endpoint": "http://localhost:11434/v1",
+            "connect_timeout_secs": 5,
+            "read_timeout_secs": 120
+        }"#;
+        let cfg: ProviderConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(cfg.connect_timeout_secs, 5);
+        assert_eq!(cfg.read_timeout_secs, 120);
+    }
+
+    // @req REQ-LLM-010
+    #[test]
+    fn timeouts_use_defaults_when_omitted() {
+        let json = r#"{
+            "kind": "vertex",
+            "model": "gemini-2.5-pro-001",
+            "endpoint": "https://vertex.googleapis.com"
+        }"#;
+        let cfg: ProviderConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(cfg.connect_timeout_secs, 10);
+        assert_eq!(cfg.read_timeout_secs, 300);
     }
 
     // @req REQ-LLM-016
