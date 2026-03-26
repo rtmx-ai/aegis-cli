@@ -3,7 +3,7 @@
 //! States: EnvironmentProbe -> ModeSelection -> CredentialNegotiation
 //!         -> InfrastructureBinding -> ConfigCommit
 
-use crate::config::{AegisConfig, Mode};
+use crate::config::{AegisConfig, Mode, merge_config, preserves_audit_ledger};
 use aegis_domain::error::DomainError;
 use std::path::PathBuf;
 
@@ -55,11 +55,26 @@ pub fn run_init(
 ) -> Result<InitResult, DomainError> {
     // State 0: Environment Probe
     // (Check for existing config, detect environment)
-    let existing = config_path.exists();
-    if existing {
-        // Config already exists -- could offer re-init menu
-        // For now, overwrite
+    let existing_config = if config_path.exists() {
         tracing::info!("Existing config found at {}", config_path.display());
+        AegisConfig::load(config_path).ok()
+    } else {
+        None
+    };
+
+    // REQ-ONBOARD-005: Verify the audit ledger is not at risk.
+    // The logs dir lives alongside the config file.
+    if let Some(parent) = config_path.parent() {
+        let logs_dir = parent.join("logs");
+        if !preserves_audit_ledger(&logs_dir) {
+            return Err(DomainError::ConfigError {
+                message: format!(
+                    "Audit ledger directory {} is missing or \
+                     corrupted. Re-init aborted to prevent data loss.",
+                    logs_dir.display()
+                ),
+            });
+        }
     }
 
     // State 1: Mode Selection
@@ -82,9 +97,15 @@ pub fn run_init(
     // (Skipped for local mode -- no plugin invocation needed)
 
     // State 4: Config Commit
-    let config = AegisConfig::local(&inputs.endpoint, &inputs.model);
-    config.validate()?;
-    config.save(config_path)?;
+    // REQ-ONBOARD-004: Merge with existing config instead of
+    // overwriting, so unchanged fields and infra outputs survive.
+    let new_config = AegisConfig::local(&inputs.endpoint, &inputs.model);
+    let final_config = match existing_config {
+        Some(ref existing) => merge_config(existing, &new_config),
+        None => new_config,
+    };
+    final_config.validate()?;
+    final_config.save(config_path)?;
 
     Ok(InitResult {
         config_path: config_path.to_path_buf(),
@@ -183,8 +204,140 @@ mod tests {
         run_init(&inputs, &path).unwrap();
         assert!(path.exists());
 
-        // Second init should succeed (overwrite)
+        // Second init should succeed (merge, not overwrite)
         let result = run_init(&inputs, &path);
         assert!(result.is_ok());
+    }
+
+    // @req REQ-ONBOARD-004
+    #[test]
+    fn reinit_preserves_infra_outputs() {
+        use crate::config::toml_map::{InfraSection, PluginOutputs};
+        use std::collections::HashMap;
+
+        let tmp = TempDir::new().unwrap();
+        let aegis_dir = tmp.path().join(".aegis");
+        let config_path = aegis_dir.join("config.yaml");
+
+        // First init
+        let inputs = InitInputs::local();
+        run_init(&inputs, &config_path).unwrap();
+
+        // Manually inject infra outputs (simulating a plugin run)
+        let mut config = AegisConfig::load(&config_path).unwrap();
+        let mut plugins = HashMap::new();
+        let mut outputs = HashMap::new();
+        outputs.insert("project_id".to_string(), "aegis-il4-prod".to_string());
+        plugins.insert(
+            "gcp-assured-workloads".to_string(),
+            PluginOutputs { outputs },
+        );
+        config.infra = InfraSection { plugins };
+        config.save(&config_path).unwrap();
+
+        // Re-init with a different model
+        let new_inputs = InitInputs {
+            mode: Mode::Local,
+            endpoint: "http://localhost:11434/v1".to_string(),
+            model: "mixtral-8x7b".to_string(),
+            region: None,
+        };
+        run_init(&new_inputs, &config_path).unwrap();
+
+        // Verify infra outputs survived
+        let reloaded = AegisConfig::load(&config_path).unwrap();
+        assert_eq!(reloaded.backend.model, "mixtral-8x7b");
+        assert!(
+            reloaded.infra.plugins.contains_key("gcp-assured-workloads"),
+            "Plugin outputs must survive re-init"
+        );
+        assert_eq!(
+            reloaded.infra.plugins["gcp-assured-workloads"].outputs["project_id"],
+            "aegis-il4-prod"
+        );
+    }
+
+    // @req REQ-ONBOARD-004
+    #[test]
+    fn reinit_updates_changed_fields() {
+        let tmp = TempDir::new().unwrap();
+        let config_path = tmp.path().join("config.yaml");
+
+        // First init with defaults
+        let inputs = InitInputs::local();
+        run_init(&inputs, &config_path).unwrap();
+
+        let original = AegisConfig::load(&config_path).unwrap();
+        assert_eq!(original.backend.model, "llama3");
+
+        // Re-init with new model and endpoint
+        let new_inputs = InitInputs {
+            mode: Mode::Local,
+            endpoint: "http://localhost:8080/v1".to_string(),
+            model: "mixtral-8x7b".to_string(),
+            region: None,
+        };
+        run_init(&new_inputs, &config_path).unwrap();
+
+        let updated = AegisConfig::load(&config_path).unwrap();
+        assert_eq!(updated.backend.model, "mixtral-8x7b");
+        assert_eq!(updated.backend.endpoint, "http://localhost:8080/v1");
+    }
+
+    // @req REQ-ONBOARD-005
+    #[test]
+    fn reinit_preserves_audit_ledger_directory() {
+        let tmp = TempDir::new().unwrap();
+        let aegis_dir = tmp.path().join(".aegis");
+        let config_path = aegis_dir.join("config.yaml");
+        let logs_dir = aegis_dir.join("logs");
+
+        // First init
+        let inputs = InitInputs::local();
+        run_init(&inputs, &config_path).unwrap();
+
+        // Create the audit ledger directory with a sample file
+        std::fs::create_dir_all(&logs_dir).unwrap();
+        let ledger_file = logs_dir.join("session-001.jsonl");
+        std::fs::write(&ledger_file, "{\"event\":\"start\"}\n").unwrap();
+
+        // Re-init
+        run_init(&inputs, &config_path).unwrap();
+
+        // Verify audit ledger was not deleted or modified
+        assert!(logs_dir.exists(), "Logs directory must survive");
+        assert!(logs_dir.is_dir(), "Logs path must still be a dir");
+        assert!(ledger_file.exists(), "Ledger file must survive re-init");
+        let content = std::fs::read_to_string(&ledger_file).unwrap();
+        assert_eq!(
+            content, "{\"event\":\"start\"}\n",
+            "Ledger content must be unchanged"
+        );
+    }
+
+    // @req REQ-ONBOARD-005
+    #[test]
+    fn reinit_aborts_if_audit_ledger_corrupted() {
+        let tmp = TempDir::new().unwrap();
+        let aegis_dir = tmp.path().join(".aegis");
+        let config_path = aegis_dir.join("config.yaml");
+        let logs_path = aegis_dir.join("logs");
+
+        // First init
+        let inputs = InitInputs::local();
+        run_init(&inputs, &config_path).unwrap();
+
+        // Corrupt: replace logs dir with a file
+        std::fs::create_dir_all(&aegis_dir).unwrap();
+        std::fs::write(&logs_path, "not a directory").unwrap();
+
+        // Re-init should fail
+        let result = run_init(&inputs, &config_path);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Audit ledger directory"),
+            "Error should mention audit ledger: {err}"
+        );
     }
 }

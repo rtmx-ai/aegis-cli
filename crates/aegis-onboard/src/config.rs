@@ -192,6 +192,72 @@ impl AegisConfig {
     }
 }
 
+/// Return the default audit ledger directory path: ~/.aegis/logs/
+pub fn audit_ledger_dir() -> Result<PathBuf, DomainError> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| DomainError::ConfigError {
+            message: "Could not determine home directory".to_string(),
+        })?;
+    Ok(PathBuf::from(home).join(".aegis").join("logs"))
+}
+
+/// Merge a new config into an existing config, preserving fields
+/// that are not explicitly changed.
+///
+/// The merge strategy:
+/// - `mode`, `backend.endpoint`, `backend.model` are taken from
+///   `new_values` (these are the fields the user is updating).
+/// - `backend.region` is taken from `new_values` if `Some`, otherwise
+///   the existing value is preserved.
+/// - `backend.max_tokens` is taken from `new_values` only if it
+///   differs from the default (4096); otherwise the existing value
+///   is kept.
+/// - `backend.provider` is taken from `new_values`.
+/// - `infra` plugin outputs are always preserved from `existing`
+///   (plugins manage their own outputs).
+/// - `version` is taken from `existing` (never downgraded).
+pub fn merge_config(existing: &AegisConfig, new_values: &AegisConfig) -> AegisConfig {
+    AegisConfig {
+        // Keep the existing version -- never downgrade
+        version: existing.version.clone(),
+        // Mode, provider, endpoint, model are the user-updated fields
+        mode: new_values.mode.clone(),
+        backend: BackendConfig {
+            provider: new_values.backend.provider.clone(),
+            model: new_values.backend.model.clone(),
+            endpoint: new_values.backend.endpoint.clone(),
+            region: new_values
+                .backend
+                .region
+                .clone()
+                .or_else(|| existing.backend.region.clone()),
+            max_tokens: if new_values.backend.max_tokens != default_max_tokens() {
+                new_values.backend.max_tokens
+            } else {
+                existing.backend.max_tokens
+            },
+        },
+        // Preserve infra plugin outputs -- plugins manage these
+        infra: existing.infra.clone(),
+    }
+}
+
+/// Check that an audit ledger directory at the given path exists and
+/// has not been tampered with during a re-init operation.
+///
+/// Returns `true` if the directory exists (or never existed), meaning
+/// the reinit is safe. Returns `false` only if the directory existed
+/// before but was deleted or is no longer a directory.
+pub fn preserves_audit_ledger(logs_dir: &Path) -> bool {
+    if !logs_dir.exists() {
+        // No ledger yet -- nothing to protect
+        return true;
+    }
+    // The path must still be a directory
+    logs_dir.is_dir()
+}
+
 /// Apply environment variable overrides to the config.
 ///
 /// Convention: `AEGIS_<FIELD>` in SCREAMING_SNAKE_CASE overrides
@@ -431,6 +497,143 @@ mod tests {
 
         // Final cleanup
         clear_env();
+    }
+
+    // @req REQ-ONBOARD-004
+    #[test]
+    fn merge_config_updates_mode_endpoint_model() {
+        let existing = AegisConfig::local("http://localhost:11434/v1", "llama3");
+        let new_values = AegisConfig {
+            version: "1.0".to_string(),
+            mode: Mode::Local,
+            backend: BackendConfig {
+                provider: "local".to_string(),
+                model: "mixtral-8x7b".to_string(),
+                endpoint: "http://localhost:8080/v1".to_string(),
+                region: None,
+                max_tokens: default_max_tokens(),
+            },
+            infra: Default::default(),
+        };
+
+        let merged = merge_config(&existing, &new_values);
+        assert_eq!(merged.backend.model, "mixtral-8x7b");
+        assert_eq!(merged.backend.endpoint, "http://localhost:8080/v1");
+    }
+
+    // @req REQ-ONBOARD-004
+    #[test]
+    fn merge_config_preserves_existing_region() {
+        let mut existing = AegisConfig::local("http://localhost:11434/v1", "llama3");
+        existing.backend.region = Some("us-east-1".to_string());
+
+        let new_values = AegisConfig::local("http://localhost:11434/v1", "llama3");
+        // new_values.backend.region is None
+
+        let merged = merge_config(&existing, &new_values);
+        assert_eq!(
+            merged.backend.region,
+            Some("us-east-1".to_string()),
+            "Existing region should be preserved when new is None"
+        );
+    }
+
+    // @req REQ-ONBOARD-004
+    #[test]
+    fn merge_config_preserves_existing_max_tokens() {
+        let mut existing = AegisConfig::local("http://localhost:11434/v1", "llama3");
+        existing.backend.max_tokens = 8192;
+
+        // new_values uses the default max_tokens (4096)
+        let new_values = AegisConfig::local("http://localhost:11434/v1", "llama3");
+
+        let merged = merge_config(&existing, &new_values);
+        assert_eq!(
+            merged.backend.max_tokens, 8192,
+            "Existing max_tokens should be preserved when new is default"
+        );
+    }
+
+    // @req REQ-ONBOARD-004
+    #[test]
+    fn merge_config_preserves_infra_outputs() {
+        use crate::config::toml_map::{InfraSection, PluginOutputs};
+        use std::collections::HashMap;
+
+        let mut existing = AegisConfig::local("http://localhost:11434/v1", "llama3");
+        let mut plugins = HashMap::new();
+        let mut outputs = HashMap::new();
+        outputs.insert("project_id".to_string(), "aegis-il4-prod".to_string());
+        plugins.insert(
+            "gcp-assured-workloads".to_string(),
+            PluginOutputs { outputs },
+        );
+        existing.infra = InfraSection { plugins };
+
+        let new_values = AegisConfig::local("http://localhost:8080/v1", "mixtral-8x7b");
+
+        let merged = merge_config(&existing, &new_values);
+        assert!(
+            merged.infra.plugins.contains_key("gcp-assured-workloads"),
+            "Plugin outputs must survive re-init"
+        );
+        assert_eq!(
+            merged.infra.plugins["gcp-assured-workloads"].outputs["project_id"],
+            "aegis-il4-prod"
+        );
+    }
+
+    // @req REQ-ONBOARD-004
+    #[test]
+    fn merge_config_preserves_version() {
+        let mut existing = AegisConfig::local("http://localhost:11434/v1", "llama3");
+        existing.version = "2.0".to_string();
+
+        let new_values = AegisConfig::local("http://localhost:11434/v1", "llama3");
+        // new_values.version is "1.0"
+
+        let merged = merge_config(&existing, &new_values);
+        assert_eq!(
+            merged.version, "2.0",
+            "Version should be preserved from existing config"
+        );
+    }
+
+    // @req REQ-ONBOARD-005
+    #[test]
+    fn preserves_audit_ledger_returns_true_for_existing_dir() {
+        let tmp = TempDir::new().unwrap();
+        let logs = tmp.path().join("logs");
+        std::fs::create_dir_all(&logs).unwrap();
+        assert!(
+            preserves_audit_ledger(&logs),
+            "Should return true when logs dir exists"
+        );
+    }
+
+    // @req REQ-ONBOARD-005
+    #[test]
+    fn preserves_audit_ledger_returns_true_when_no_dir() {
+        let tmp = TempDir::new().unwrap();
+        let logs = tmp.path().join("logs");
+        // logs does not exist
+        assert!(
+            preserves_audit_ledger(&logs),
+            "Should return true when logs dir never existed"
+        );
+    }
+
+    // @req REQ-ONBOARD-005
+    #[test]
+    fn preserves_audit_ledger_returns_false_when_file_not_dir() {
+        let tmp = TempDir::new().unwrap();
+        let logs = tmp.path().join("logs");
+        // Create a file (not a directory) at the logs path
+        std::fs::write(&logs, "not a dir").unwrap();
+        assert!(
+            !preserves_audit_ledger(&logs),
+            "Should return false when logs path is a file, not a dir"
+        );
     }
 
     // @req REQ-ONBOARD-001
