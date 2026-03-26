@@ -5,6 +5,22 @@ on:
     branches: [main]
   pull_request:
 
+# REQ-TEST-005: Required status checks for branch protection
+# The following jobs MUST be listed as required status checks in GitHub
+# branch protection rules for the `main` branch:
+#   - Format
+#   - Lint
+#   - Unit Tests (ubuntu-latest)
+#   - Unit Tests (windows-latest)
+#   - Integration Tests
+#   - Doc Tests
+#   - Coverage
+#   - License & Advisory Audit
+#   - RTMX Requirements Health
+#   - Build (x86_64-unknown-linux-musl)
+#   - Build (x86_64-pc-windows-msvc)
+#   - Cross-compile Verification (x86_64-unknown-linux-musl)
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
@@ -87,6 +103,15 @@ jobs:
           files: lcov.info
           fail_ci_if_error: false
 
+  cargo-deny:
+    name: License & Advisory Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses advisories
+
   rtmx-health:
     name: RTMX Requirements Health
     runs-on: ubuntu-latest
@@ -125,3 +150,27 @@ jobs:
           path: |
             target/${{ matrix.target }}/release/aegis
             target/${{ matrix.target }}/release/aegis.exe
+
+  cross-compile-verify:
+    name: Cross-compile Verification (${{ matrix.target }})
+    needs: binary-build
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Download musl binary
+        uses: actions/download-artifact@v4
+        with:
+          name: aegis-${{ matrix.target }}
+      - name: Verify musl binary is statically linked
+        run: |
+          chmod +x aegis
+          echo "--- file output ---"
+          file aegis
+          file aegis | grep -q "statically linked"
+          echo "PASS: musl binary is statically linked"
+          echo "--- ldd output (expect 'not a dynamic executable') ---"
+          ldd aegis 2>&1 || true

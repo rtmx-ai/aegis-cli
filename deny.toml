@@ -1,0 +1,47 @@
+# cargo-deny configuration for aegis-cli
+# REQ-BUILD-006: License allow-list and advisory-db vulnerability checking
+#
+# Run: cargo deny check licenses advisories
+
+[graph]
+targets = [
+    "x86_64-unknown-linux-musl",
+    "x86_64-pc-windows-msvc",
+]
+
+# -- Licenses ----------------------------------------------------------------
+
+[licenses]
+version = 2
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+]
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "LGPL-2.0",
+    "LGPL-2.1",
+    "LGPL-3.0",
+    "AGPL-3.0",
+]
+confidence-threshold = 0.8
+
+# Ring uses a non-standard license format that includes ISC, MIT, and OpenSSL.
+# The OpenSSL license is permissive and compatible with our requirements.
+[[licenses.clarify]]
+name = "ring"
+expression = "ISC AND MIT AND OpenSSL"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+
+# -- Advisories ---------------------------------------------------------------
+
+[advisories]
+version = 2
+# Fail CI on any known vulnerability from the RustSec advisory-db
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]

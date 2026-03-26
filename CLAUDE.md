@@ -60,6 +60,39 @@ CI pipeline: format, lint, unit tests (Linux + Windows), integration tests, doc 
 
 **Nothing merges with a broken pipeline.** If CI breaks, stop all other work and fix it.
 
+### Branch protection (REQ-TEST-005)
+
+The `main` branch has GitHub branch protection rules enforcing:
+
+- All CI status checks must pass before merge (see required-checks list in `.github/workflows/ci.yml`)
+- At least one approving review is required
+- Force pushes are disabled
+- Branch deletion is disabled
+
+Required status checks (must all be green to merge a PR):
+- Format
+- Lint
+- Unit Tests (ubuntu-latest)
+- Unit Tests (windows-latest)
+- Integration Tests
+- Doc Tests
+- Coverage
+- License & Advisory Audit (cargo-deny: licenses + RustSec advisories)
+- RTMX Requirements Health
+- Build (x86_64-unknown-linux-musl)
+- Build (x86_64-pc-windows-msvc)
+- Cross-compile Verification (x86_64-unknown-linux-musl)
+
+### Dependency license and advisory policy (REQ-BUILD-006)
+
+`deny.toml` at the repo root configures `cargo-deny` to:
+
+- **Allow** only: Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, ISC, Unicode-3.0
+- **Deny** all copyleft licenses: GPL, LGPL, AGPL (any version)
+- **Check** the RustSec advisory-db for known vulnerabilities on every CI run
+
+Run locally: `cargo deny check licenses advisories`
+
 ### Adding a new feature
 
 1. Add or update requirement in `.rtmx/database.csv`
