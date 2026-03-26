@@ -24,7 +24,19 @@ pub struct Requirement {
     pub phase: String,
     pub notes: String,
     #[serde(default)]
+    pub effort_weeks: String,
+    #[serde(default)]
     pub dependencies: String,
+    #[serde(default)]
+    pub blocks: String,
+    #[serde(default)]
+    pub assignee: String,
+    #[serde(default)]
+    pub sprint: String,
+    #[serde(default)]
+    pub started_date: String,
+    #[serde(default)]
+    pub completed_date: String,
 }
 
 /// A parsed RTMX requirements database.
@@ -80,7 +92,13 @@ impl RequirementsDb {
                 priority: get("priority"),
                 phase: get("phase"),
                 notes: get("notes"),
+                effort_weeks: get("effort_weeks"),
                 dependencies: get("dependencies"),
+                blocks: get("blocks"),
+                assignee: get("assignee"),
+                sprint: get("sprint"),
+                started_date: get("started_date"),
+                completed_date: get("completed_date"),
             });
         }
 
@@ -141,7 +159,107 @@ impl RequirementsDb {
             .filter(|r| r.status == status)
             .count()
     }
+
+    /// Get a mutable reference to a requirement by ID.
+    fn get_mut(&mut self, req_id: &str) -> Result<&mut Requirement, DomainError> {
+        let &idx = self
+            .by_id
+            .get(req_id)
+            .ok_or_else(|| DomainError::RequirementNotFound {
+                id: req_id.to_string(),
+            })?;
+        Ok(&mut self.requirements[idx])
+    }
+
+    /// Update the status field for a requirement.
+    pub fn update_status(&mut self, req_id: &str, new_status: &str) -> Result<(), DomainError> {
+        let req = self.get_mut(req_id)?;
+        req.status = new_status.to_string();
+        Ok(())
+    }
+
+    /// Update the test_module and test_function fields for a requirement.
+    pub fn update_test_info(
+        &mut self,
+        req_id: &str,
+        test_module: &str,
+        test_function: &str,
+    ) -> Result<(), DomainError> {
+        let req = self.get_mut(req_id)?;
+        req.test_module = test_module.to_string();
+        req.test_function = test_function.to_string();
+        Ok(())
+    }
+
+    /// Set a requirement to COMPLETE with today's date.
+    pub fn set_completed(&mut self, req_id: &str) -> Result<(), DomainError> {
+        let req = self.get_mut(req_id)?;
+        req.status = "COMPLETE".to_string();
+        req.completed_date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        Ok(())
+    }
+
+    /// Write the current state back to a CSV file.
+    pub fn save_csv(&self, path: &Path) -> Result<(), DomainError> {
+        if let Some(parent) = path.parent().filter(|p| !p.exists()) {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                DomainError::Other(format!(
+                    "Failed to create directory {}: {e}",
+                    parent.display()
+                ))
+            })?;
+        }
+
+        let mut out = String::new();
+        out.push_str(CSV_HEADER);
+        out.push('\n');
+
+        for req in &self.requirements {
+            let row = [
+                &req.req_id,
+                &req.category,
+                &req.subcategory,
+                &req.requirement_text,
+                &req.target_value,
+                &req.test_module,
+                &req.test_function,
+                &req.validation_method,
+                &req.status,
+                &req.priority,
+                &req.phase,
+                &req.notes,
+                &req.effort_weeks,
+                &req.dependencies,
+                &req.blocks,
+                &req.assignee,
+                &req.sprint,
+                &req.started_date,
+                &req.completed_date,
+            ];
+            let formatted: Vec<String> = row
+                .iter()
+                .map(|f| {
+                    if f.contains(',') || f.contains('"') {
+                        format!("\"{}\"", f.replace('"', "\"\""))
+                    } else {
+                        f.to_string()
+                    }
+                })
+                .collect();
+            out.push_str(&formatted.join(","));
+            out.push('\n');
+        }
+
+        std::fs::write(path, out)
+            .map_err(|e| DomainError::Other(format!("Failed to write {}: {e}", path.display())))
+    }
 }
+
+/// CSV header matching the full RTMX database schema.
+const CSV_HEADER: &str = "req_id,category,subcategory,requirement_text,\
+    target_value,test_module,test_function,validation_method,status,\
+    priority,phase,notes,effort_weeks,dependencies,blocks,assignee,\
+    sprint,started_date,completed_date";
 
 /// Simple CSV row parser that handles quoted fields with commas.
 fn parse_csv_row(line: &str) -> Vec<&str> {
@@ -267,5 +385,146 @@ REQ-TEST-001,TEST,X,\"Requirement with, comma\",\"Target with, comma\",t.rs,test
             // Verify we can find a known requirement
             assert!(db.get("REQ-BUILD-001").is_some());
         }
+    }
+
+    // @req REQ-RTMX-002
+    #[test]
+    fn update_status_changes_the_field() {
+        let mut db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
+        db.update_status("REQ-TUI-001", "IN_PROGRESS").unwrap();
+        assert_eq!(db.get("REQ-TUI-001").unwrap().status, "IN_PROGRESS");
+    }
+
+    // @req REQ-RTMX-002
+    #[test]
+    fn update_status_nonexistent_req_returns_error() {
+        let mut db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
+        let result = db.update_status("REQ-FAKE-999", "DONE");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("REQ-FAKE-999"),
+            "Error should mention the missing req_id"
+        );
+    }
+
+    // @req REQ-RTMX-002
+    #[test]
+    fn update_test_info_sets_both_fields() {
+        let mut db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
+        db.update_test_info("REQ-TUI-001", "tests/tui/new.rs", "test_new_layout")
+            .unwrap();
+        let req = db.get("REQ-TUI-001").unwrap();
+        assert_eq!(req.test_module, "tests/tui/new.rs");
+        assert_eq!(req.test_function, "test_new_layout");
+    }
+
+    // @req REQ-RTMX-002
+    #[test]
+    fn set_completed_updates_status_and_date() {
+        let mut db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
+        db.set_completed("REQ-TUI-001").unwrap();
+        let req = db.get("REQ-TUI-001").unwrap();
+        assert_eq!(req.status, "COMPLETE");
+        // Date should be today in YYYY-MM-DD format.
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        assert_eq!(req.completed_date, today);
+    }
+
+    // @req REQ-RTMX-002
+    #[test]
+    fn save_csv_roundtrips_correctly() {
+        let mut db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
+        db.update_status("REQ-TUI-001", "IN_PROGRESS").unwrap();
+
+        let dir = std::env::temp_dir().join("aegis_test_roundtrip");
+        let path = dir.join("database.csv");
+        db.save_csv(&path).unwrap();
+
+        let db2 = RequirementsDb::load(&path).unwrap();
+        assert_eq!(db2.count(), 3);
+        assert_eq!(db2.get("REQ-TUI-001").unwrap().status, "IN_PROGRESS");
+        assert_eq!(db2.get("REQ-BUILD-001").unwrap().status, "COMPLETE");
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // @req REQ-RTMX-002
+    #[test]
+    fn save_preserves_all_columns() {
+        let db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
+        let dir = std::env::temp_dir().join("aegis_test_columns");
+        let path = dir.join("database.csv");
+        db.save_csv(&path).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        // Header should contain all 19 column names
+        let header_line = content.lines().next().unwrap();
+        for col in &[
+            "req_id",
+            "category",
+            "subcategory",
+            "requirement_text",
+            "target_value",
+            "test_module",
+            "test_function",
+            "validation_method",
+            "status",
+            "priority",
+            "phase",
+            "notes",
+            "effort_weeks",
+            "dependencies",
+            "blocks",
+            "assignee",
+            "sprint",
+            "started_date",
+            "completed_date",
+        ] {
+            assert!(header_line.contains(col), "Header missing column: {col}");
+        }
+        // Data rows preserved
+        assert!(content.contains("REQ-BUILD-001"));
+        assert!(content.contains("REQ-AGENT-001"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // @req REQ-RTMX-002
+    #[test]
+    fn multiple_updates_accumulate() {
+        let mut db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
+        db.update_status("REQ-TUI-001", "IN_PROGRESS").unwrap();
+        db.update_test_info("REQ-TUI-001", "tests/tui/v2.rs", "test_v2")
+            .unwrap();
+        db.update_status("REQ-TUI-001", "COMPLETE").unwrap();
+
+        let req = db.get("REQ-TUI-001").unwrap();
+        assert_eq!(req.status, "COMPLETE");
+        assert_eq!(req.test_module, "tests/tui/v2.rs");
+        assert_eq!(req.test_function, "test_v2");
+    }
+
+    // @req REQ-RTMX-002
+    #[test]
+    fn save_creates_parent_directory_if_missing() {
+        let dir = std::env::temp_dir()
+            .join("aegis_test_mkdir")
+            .join("nested")
+            .join("deep");
+        let path = dir.join("database.csv");
+
+        // Ensure it does not exist
+        let _ = std::fs::remove_dir_all(std::env::temp_dir().join("aegis_test_mkdir"));
+
+        let db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
+        db.save_csv(&path).unwrap();
+
+        assert!(path.exists(), "CSV file should have been created");
+        let db2 = RequirementsDb::load(&path).unwrap();
+        assert_eq!(db2.count(), 3);
+
+        let _ = std::fs::remove_dir_all(std::env::temp_dir().join("aegis_test_mkdir"));
     }
 }
