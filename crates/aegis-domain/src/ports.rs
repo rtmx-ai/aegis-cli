@@ -90,6 +90,17 @@ pub trait SecurityFilter: Send + Sync {
     fn validate_path(&self, path: &str) -> Result<FilePath, DomainError>;
 }
 
+// Blanket impl: Arc<T: SecurityFilter> is also a SecurityFilter.
+impl<T: SecurityFilter> SecurityFilter for std::sync::Arc<T> {
+    fn is_blocked(&self, path: &str) -> bool {
+        (**self).is_blocked(path)
+    }
+
+    fn validate_path(&self, path: &str) -> Result<FilePath, DomainError> {
+        (**self).validate_path(path)
+    }
+}
+
 /// Outgoing port: tool executor.
 #[async_trait]
 pub trait ToolExecutor: Send + Sync {

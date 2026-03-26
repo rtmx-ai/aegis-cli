@@ -19,7 +19,9 @@ aegis-audit = { path = "../aegis-audit" }
 aegis-security = { path = "../aegis-security" }
 aegis-infra = { path = "../aegis-infra" }
 aegis-onboard = { path = "../aegis-onboard" }
+async-trait = { workspace = true }
 clap = { workspace = true }
+dirs-next = "2"
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
