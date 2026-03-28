@@ -9,3 +9,4 @@ pub mod mock_filter;
 pub mod mock_gate;
 pub mod mock_ledger;
 pub mod mock_provider;
+pub mod recorder;

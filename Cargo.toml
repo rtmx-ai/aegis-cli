@@ -66,3 +66,9 @@ cucumber = "0.22"
 tempfile = "3"
 cargo-nextest = "0.9"
 sha2 = "0.10"
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"

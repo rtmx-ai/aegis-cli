@@ -4,6 +4,7 @@
 //! Azure OpenAI, and local OpenAI-compatible endpoints. Each provider
 //! handles auth, streaming, and tool call parsing for its API.
 
+pub mod auth;
 pub mod capabilities;
 pub mod config;
 pub mod local;

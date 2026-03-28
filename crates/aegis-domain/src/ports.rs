@@ -30,7 +30,7 @@ pub trait TokenStream: Send + Unpin {
 }
 
 /// Events emitted by an LLM token stream.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StreamEvent {
     Token(String),
     ToolUse(ToolCall),

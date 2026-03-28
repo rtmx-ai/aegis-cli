@@ -6,4 +6,5 @@
 
 pub mod config;
 pub mod connectivity;
+pub mod credentials;
 pub mod init;

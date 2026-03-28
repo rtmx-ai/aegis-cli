@@ -6,6 +6,7 @@
 
 pub mod events;
 pub mod host;
+pub mod mock_plugin;
 pub mod outputs;
 pub mod preview;
 pub mod relay;

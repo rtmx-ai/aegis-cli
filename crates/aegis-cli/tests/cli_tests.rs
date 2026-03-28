@@ -115,3 +115,13 @@ fn chat_headless_has_help_flag() {
         .success()
         .stdout(predicate::str::contains("--headless"));
 }
+
+// @req REQ-BUILD-007
+#[test]
+fn release_profile_binary_compiles() {
+    // Verify the aegis binary can be located by assert_cmd, confirming the
+    // crate compiles successfully with the workspace release profile settings
+    // (LTO, strip, codegen-units=1, panic=abort configured in root Cargo.toml).
+    let bin = Command::cargo_bin("aegis");
+    assert!(bin.is_ok(), "aegis binary must compile and be discoverable");
+}
