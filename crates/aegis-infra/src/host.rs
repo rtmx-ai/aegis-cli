@@ -266,7 +266,15 @@ mod tests {
     #[cfg(unix)]
     fn write_mock_plugin(dir: &Path, name: &str, script: &str) -> PathBuf {
         let path = dir.join(name);
-        std::fs::write(&path, script).unwrap();
+        // Use OpenOptions to write and close the file explicitly before
+        // setting permissions, avoiding "Text file busy" (ETXTBSY) races
+        // under coverage instrumentation.
+        {
+            use std::io::Write;
+            let mut f = std::fs::File::create(&path).unwrap();
+            f.write_all(script.as_bytes()).unwrap();
+            f.sync_all().unwrap();
+        }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
