@@ -72,3 +72,14 @@ lto = true
 strip = true
 codegen-units = 1
 panic = "abort"
+
+# REQ-HDN-005: CI-specific profile for GitHub Actions.
+# Uses thin LTO and more codegen-units to reduce CPU footprint.
+# Full release profile triggered GitHub's abuse detection (2026-03-28).
+# Use --profile ci in CI workflows; --profile release for tagged releases only.
+[profile.ci]
+inherits = "release"
+lto = "thin"
+codegen-units = 4
+strip = true
+panic = "abort"

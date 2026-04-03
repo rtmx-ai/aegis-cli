@@ -5,6 +5,21 @@ on:
     branches: [main]
   pull_request:
 
+# INCIDENT MITIGATION (2026-03-28):
+# GitHub's automated abuse detection flagged the rhino11 account after this
+# workflow's release builds (LTO + codegen-units=1, musl + MSVC in parallel)
+# resembled cryptocurrency mining. Mitigations applied:
+# - Concurrency control prevents stacking builds (REQ-HDN-001)
+# - Explicit timeout-minutes on every job (REQ-HDN-002)
+# - Release builds gated to main branch only (REQ-HDN-003)
+# - Cross-compilation serialized with max-parallel: 1 (REQ-HDN-004)
+# - CI cargo profile uses thin LTO (REQ-HDN-005)
+# Do not remove these constraints without reviewing rtmx-ai/ops.
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 # REQ-TEST-005: Required status checks for branch protection
 # The following jobs MUST be listed as required status checks in GitHub
 # branch protection rules for the `main` branch:
@@ -17,9 +32,11 @@ on:
 #   - Coverage
 #   - License & Advisory Audit
 #   - RTMX Requirements Health
-#   - Build (x86_64-unknown-linux-musl)
-#   - Build (x86_64-pc-windows-msvc)
-#   - Cross-compile Verification (x86_64-unknown-linux-musl)
+#   - Build Gate
+#
+# NOTE: Build and Cross-compile jobs are gated to main-only pushes
+# (REQ-HDN-003). The "Build Gate" job satisfies branch protection on PRs
+# by passing through when builds are skipped.
 
 env:
   CARGO_TERM_COLOR: always
@@ -29,6 +46,7 @@ jobs:
   format:
     name: Format
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -39,6 +57,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -49,6 +68,7 @@ jobs:
 
   unit-tests:
     name: Unit Tests (${{ matrix.os }})
+    timeout-minutes: 20
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -63,6 +83,7 @@ jobs:
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -79,6 +100,7 @@ jobs:
   doc-tests:
     name: Doc Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -88,6 +110,7 @@ jobs:
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -106,6 +129,7 @@ jobs:
   cargo-deny:
     name: License & Advisory Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
@@ -115,6 +139,7 @@ jobs:
   rtmx-health:
     name: RTMX Requirements Health
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -123,9 +148,33 @@ jobs:
       - run: pip install rtmx
       - run: rtmx status
 
+  build-gate:
+    name: Build Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [format, lint, unit-tests, integration-tests, doc-tests, coverage, cargo-deny, rtmx-health]
+    if: always()
+    steps:
+      - name: Check required jobs
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "One or more required jobs failed"
+            exit 1
+          fi
+          echo "All required jobs passed"
+
   binary-build:
     name: Build (${{ matrix.target }})
+    # REQ-HDN-003: Release builds only on main (not PRs).
+    # These LTO builds are extremely CPU-intensive and triggered GitHub's
+    # abuse detection on 2026-03-28. PR builds validate correctness only.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [format, lint, unit-tests, integration-tests, doc-tests]
+    timeout-minutes: 30
     strategy:
+      fail-fast: false
+      # REQ-HDN-004: Serialize cross-compilation to reduce peak CPU.
+      max-parallel: 1
       matrix:
         include:
           - target: x86_64-unknown-linux-musl
@@ -142,18 +191,22 @@ jobs:
       - name: Install musl tools
         if: contains(matrix.target, 'musl')
         run: sudo apt-get install -y musl-tools
-      - run: cargo build --release --target ${{ matrix.target }}
+      # REQ-HDN-005: Use CI profile (thin LTO) instead of full release.
+      - run: cargo build --profile ci --target ${{ matrix.target }}
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
           name: aegis-${{ matrix.target }}
+          retention-days: 7
           path: |
-            target/${{ matrix.target }}/release/aegis
-            target/${{ matrix.target }}/release/aegis.exe
+            target/${{ matrix.target }}/ci/aegis
+            target/${{ matrix.target }}/ci/aegis.exe
 
   cross-compile-verify:
     name: Cross-compile Verification (${{ matrix.target }})
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: binary-build
+    timeout-minutes: 10
     strategy:
       matrix:
         include:
