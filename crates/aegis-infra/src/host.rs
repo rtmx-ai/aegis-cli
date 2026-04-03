@@ -282,6 +282,10 @@ mod tests {
             std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
         std::fs::rename(&tmp_path, &final_path).unwrap();
+        // Brief yield to let the kernel release file mappings held by
+        // coverage instrumentation (cargo-llvm-cov). Without this,
+        // subsequent exec() calls can fail with ETXTBSY (os error 26).
+        std::thread::sleep(std::time::Duration::from_millis(10));
         final_path
     }
 
