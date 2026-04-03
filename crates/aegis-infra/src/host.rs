@@ -265,22 +265,24 @@ mod tests {
 
     #[cfg(unix)]
     fn write_mock_plugin(dir: &Path, name: &str, script: &str) -> PathBuf {
-        let path = dir.join(name);
-        // Use OpenOptions to write and close the file explicitly before
-        // setting permissions, avoiding "Text file busy" (ETXTBSY) races
-        // under coverage instrumentation.
+        // Write to a temporary name, set permissions, then rename into place.
+        // This avoids ETXTBSY races under coverage instrumentation where the
+        // kernel may still hold a reference to the file between write and exec.
+        let final_path = dir.join(name);
+        let tmp_path = dir.join(format!(".{}.tmp", name));
         {
             use std::io::Write;
-            let mut f = std::fs::File::create(&path).unwrap();
+            let mut f = std::fs::File::create(&tmp_path).unwrap();
             f.write_all(script.as_bytes()).unwrap();
             f.sync_all().unwrap();
         }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
-        path
+        std::fs::rename(&tmp_path, &final_path).unwrap();
+        final_path
     }
 
     // @req REQ-INFRA-001
