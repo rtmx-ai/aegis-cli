@@ -30,6 +30,7 @@ pub fn create_approval_channel(
 }
 
 /// ApprovalGate implementation that sends requests via a channel.
+#[derive(Clone)]
 pub struct ChannelApprovalGate {
     tx: mpsc::Sender<ApprovalRequest>,
 }

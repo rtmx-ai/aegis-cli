@@ -76,8 +76,10 @@ fn chat_headless_requires_prompt() {
 }
 
 // @req REQ-CLI-002
+// Interactive mode is now wired; without config it fails with a config error
+// rather than the old "not yet wired" message.
 #[test]
-fn chat_without_headless_errors() {
+fn chat_interactive_without_config_errors() {
     Command::cargo_bin("aegis")
         .unwrap()
         .arg("chat")
@@ -85,7 +87,7 @@ fn chat_without_headless_errors() {
         .arg("hello")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("Interactive TUI not yet wired"));
+        .stderr(predicate::str::contains("No config found"));
 }
 
 // @req REQ-CLI-001

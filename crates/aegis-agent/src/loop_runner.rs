@@ -6,6 +6,7 @@ use crate::truncation::truncate_output;
 use aegis_domain::error::DomainError;
 use aegis_domain::ports::*;
 use aegis_domain::types::*;
+use tokio::sync::mpsc;
 
 /// Configuration for the agent loop.
 pub struct AgentConfig {
@@ -137,6 +138,8 @@ where
     filter: S,
     config: AgentConfig,
     cancel_token: CancellationToken,
+    /// Optional sink for forwarding stream events to the TUI.
+    event_sink: Option<mpsc::UnboundedSender<StreamEvent>>,
 }
 
 impl<P, G, E, A, S> AgentLoop<P, G, E, A, S>
@@ -163,6 +166,7 @@ where
             filter,
             config,
             cancel_token: CancellationToken::new(),
+            event_sink: None,
         }
     }
 
@@ -184,7 +188,14 @@ where
             filter,
             config,
             cancel_token,
+            event_sink: None,
         }
+    }
+
+    /// Attach an event sink for forwarding stream events to the TUI.
+    pub fn with_event_sink(mut self, sink: mpsc::UnboundedSender<StreamEvent>) -> Self {
+        self.event_sink = Some(sink);
+        self
     }
 
     /// Run the agent loop to completion for a given user prompt.
@@ -216,8 +227,11 @@ where
             let mut response_text = String::new();
             let mut tool_calls: Vec<ToolCall> = Vec::new();
 
-            // Collect the full response
+            // Collect the full response, forwarding events to TUI if wired.
             while let Some(event) = stream.next().await {
+                if let Some(ref sink) = self.event_sink {
+                    let _ = sink.send(event.clone());
+                }
                 match event {
                     StreamEvent::Token(text) => {
                         response_text.push_str(&text);
