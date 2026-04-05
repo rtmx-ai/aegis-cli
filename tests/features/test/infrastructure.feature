@@ -327,3 +327,175 @@ Feature: Test Infrastructure and Quality Gates
     And the test advances time by exactly 60 seconds
     Then the timeout should fire deterministically
     And the test result should be identical across 100 runs
+
+  # ---------------------------------------------------------------------------
+  # REQ-BUILD-029: Hot-reload development loop
+  # ---------------------------------------------------------------------------
+
+  # @req REQ-BUILD-029
+  Scenario: bacon.toml exists at the repository root
+    Given the aegis-cli repository root
+    When I check for a hot-reload configuration file
+    Then "bacon.toml" should exist at the repository root
+    And it should define a default job
+
+  # @req REQ-BUILD-029
+  Scenario: Default bacon job runs check, clippy, and unit tests on file save
+    Given bacon is installed via "cargo install bacon"
+    And "bacon.toml" is present at the repository root
+    When a Rust source file is saved
+    Then bacon should run "cargo check --workspace" first
+    And then run "cargo clippy --workspace -- -D warnings"
+    And then run "cargo test --lib --workspace"
+    And the entire cycle should complete without manual intervention
+
+  # @req REQ-BUILD-029
+  Scenario: bacon.toml defines a clippy job separately
+    Given "bacon.toml" is present at the repository root
+    When I inspect the clippy job definition
+    Then it should run "cargo clippy --workspace -- -D warnings"
+    And it should be invocable via "bacon clippy"
+
+  # @req REQ-BUILD-029
+  Scenario: bacon.toml defines a test job separately
+    Given "bacon.toml" is present at the repository root
+    When I inspect the test job definition
+    Then it should run "cargo test --workspace"
+    And it should be invocable via "bacon test"
+
+  # @req REQ-BUILD-029
+  Scenario: Hot-reload output does not conflict with aegis TUI
+    Given bacon is running in a separate terminal
+    And the aegis TUI is running in another terminal
+    When bacon triggers a rebuild on file save
+    Then bacon should not emit raw ANSI escape sequences that corrupt the TUI
+    And bacon output should remain in its own terminal session
+
+  # @req REQ-BUILD-029
+  Scenario: bacon.toml summary job provides a fast feedback loop
+    Given "bacon.toml" is present at the repository root
+    When I run "bacon" with no arguments
+    Then the default job should execute within 30 seconds on an incremental build
+    And it should display a pass/fail summary for check, clippy, and tests
+
+  # ---------------------------------------------------------------------------
+  # REQ-BUILD-030: Structured tracing throughout all crates
+  # ---------------------------------------------------------------------------
+
+  # @req REQ-BUILD-030
+  Scenario: RUST_LOG=debug produces actionable structured output
+    Given the aegis binary is built with tracing instrumentation
+    When I run aegis with RUST_LOG=debug in headless mode
+    Then stderr should contain structured log lines
+    And each line should include a timestamp, level, target, and message
+    And no line should be empty or contain only whitespace
+
+  # @req REQ-BUILD-030
+  Scenario: Agent loop emits spans for each iteration
+    Given the agent REA loop is executing with tracing enabled
+    When the agent completes an iteration
+    Then a span named "agent_iteration" should be emitted
+    And the span should include the field "iteration" with the iteration number
+    And the span should include the field "tool_calls" with the count of tools invoked
+
+  # @req REQ-BUILD-030
+  Scenario: LLM provider emits spans for each request
+    Given an LLM provider is configured with tracing enabled
+    When the provider sends a request to the LLM endpoint
+    Then a span named "llm_request" should be emitted
+    And the span should include the field "endpoint" with the provider URL
+    And the span should include the field "model" with the model identifier
+    And the span should include the field "tokens" with the token count
+
+  # @req REQ-BUILD-030
+  Scenario: HITL gate emits events for approval requests and decisions
+    Given the HITL gate is active with tracing enabled
+    When a tool call requires human approval
+    Then an event "hitl_approval_requested" should be emitted with the tool name
+    And when the human approves or denies the request
+    Then an event "hitl_approval_decided" should be emitted with the decision
+
+  # @req REQ-BUILD-030
+  Scenario: Audit ledger emits events for each write
+    Given the JSONL audit ledger is initialized with tracing enabled
+    When an audit entry is appended to the ledger
+    Then an event "audit_write" should be emitted
+    And the event should include the field "session_id"
+    And the event should include the field "entry_type"
+
+  # @req REQ-BUILD-030
+  Scenario: Tool executor emits spans for each tool execution
+    Given the tool executor is configured with tracing enabled
+    When a tool is executed
+    Then a span named "tool_execution" should be emitted
+    And the span should include the field "tool_name" with the tool identifier
+    And the span should include the field "duration_ms" with the execution time
+
+  # @req REQ-BUILD-030
+  Scenario: Span hierarchy follows session > iteration > tool_call
+    Given a complete agent session with tracing enabled
+    When the session completes with multiple iterations and tool calls
+    Then there should be a root span "session" containing all other spans
+    And each "agent_iteration" span should be a child of the "session" span
+    And each "tool_execution" span should be a child of an "agent_iteration" span
+    And each "llm_request" span should be a child of an "agent_iteration" span
+
+  # @req REQ-BUILD-030
+  Scenario: Tracing output is filterable by crate
+    Given the aegis binary is built with tracing instrumentation
+    When I run aegis with RUST_LOG=aegis_agent=trace,aegis_llm=warn
+    Then only trace-level logs from aegis-agent should appear
+    And only warn-level and above logs from aegis-llm should appear
+    And other crates should use the default log level
+
+  # ---------------------------------------------------------------------------
+  # REQ-BUILD-031: TUI debug log file
+  # ---------------------------------------------------------------------------
+
+  # @req REQ-BUILD-031
+  Scenario: TUI mode writes tracing output to debug log file
+    Given aegis is launched in TUI mode
+    When tracing output is produced during the session
+    Then the output should be written to "~/.aegis/debug.log"
+    And stderr should not contain any tracing output
+    And the TUI display should not be corrupted by log messages
+
+  # @req REQ-BUILD-031
+  Scenario: Headless mode writes tracing output to stderr
+    Given aegis is launched in headless mode
+    When tracing output is produced during the session
+    Then the output should be written to stderr
+    And no "~/.aegis/debug.log" file should be created or appended to
+
+  # @req REQ-BUILD-031
+  Scenario: RUST_LOG env var controls debug log verbosity
+    Given aegis is launched in TUI mode with RUST_LOG=trace
+    When the session produces trace-level log entries
+    Then "~/.aegis/debug.log" should contain trace-level entries
+    And when relaunched with RUST_LOG=error
+    Then only error-level entries should be written to the log file
+
+  # @req REQ-BUILD-031
+  Scenario: Debug log file is rotated daily
+    Given aegis has been running across multiple calendar days
+    When a new day begins (midnight UTC)
+    Then the current "~/.aegis/debug.log" should be rotated to "~/.aegis/debug.log.YYYY-MM-DD"
+    And a new "~/.aegis/debug.log" should be created for the current day
+    And rotated files older than 7 days should be deleted
+
+  # @req REQ-BUILD-031
+  Scenario: /doctor command shows log file location and size
+    Given aegis is running in TUI mode
+    And "~/.aegis/debug.log" exists with content
+    When the user types "/doctor" in the TUI input
+    Then the TUI should display the absolute path to the debug log file
+    And the TUI should display the current file size in human-readable format
+    And the TUI should display the number of rotated log files present
+
+  # @req REQ-BUILD-031
+  Scenario: Debug log directory is created if missing
+    Given "~/.aegis/" directory does not exist
+    When aegis is launched in TUI mode
+    Then the "~/.aegis/" directory should be created with permissions 0700
+    And "~/.aegis/debug.log" should be created with permissions 0600
+    And tracing output should be written to the new log file

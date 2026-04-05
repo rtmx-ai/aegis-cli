@@ -468,3 +468,257 @@ Feature: TUI Layout and Interactive Components
     Given the session is using a local Ollama model
     When the TUI renders the status line
     Then the cost display should show "$0.00"
+
+  # ---------------------------------------------------------------------------
+  # REQ-TUI-024: /add and /drop commands for context file management
+  # ---------------------------------------------------------------------------
+
+  # @req REQ-TUI-024
+  Scenario: /add loads a single file into the agent working context
+    Given the TUI is active in a project directory containing "src/main.rs"
+    When the user types "/add src/main.rs" and presses Enter
+    Then the chat log should display "Added src/main.rs to context"
+    And the file "src/main.rs" should be included in the agent working context
+
+  # @req REQ-TUI-024
+  Scenario: /add supports glob patterns to load multiple files
+    Given the TUI is active in a project directory containing "src/lib.rs", "src/main.rs", and "src/utils.rs"
+    When the user types "/add src/*.rs" and presses Enter
+    Then the chat log should display "Added 3 files to context"
+    And all three files should be included in the agent working context
+
+  # @req REQ-TUI-024
+  Scenario: /add with a nonexistent path shows an error
+    Given the TUI is active
+    When the user types "/add no_such_file.rs" and presses Enter
+    Then the chat log should display "No files matched: no_such_file.rs"
+    And the agent working context should remain unchanged
+
+  # @req REQ-TUI-024
+  Scenario: /drop removes a file from the agent working context
+    Given the file "src/main.rs" is loaded in the agent working context
+    When the user types "/drop src/main.rs" and presses Enter
+    Then the chat log should display "Dropped src/main.rs from context"
+    And the file "src/main.rs" should no longer be in the agent working context
+
+  # @req REQ-TUI-024
+  Scenario: /drop without arguments lists currently loaded files
+    Given files "src/main.rs" and "src/lib.rs" are loaded in the agent working context
+    When the user types "/drop" and presses Enter
+    Then the chat log should display "Context files:" followed by "src/main.rs" and "src/lib.rs"
+    And no files should be removed from the context
+
+  # @req REQ-TUI-024
+  Scenario: /context reflects files added via /add
+    Given the user has run "/add src/main.rs" and "/add src/lib.rs"
+    When the user types "/context" and presses Enter
+    Then the chat log should list "src/main.rs" and "src/lib.rs" under loaded context files
+
+  # @req REQ-TUI-024
+  Scenario: /drop a file that is not in context shows an error
+    Given the agent working context is empty
+    When the user types "/drop src/main.rs" and presses Enter
+    Then the chat log should display "File not in context: src/main.rs"
+
+  # ---------------------------------------------------------------------------
+  # REQ-TUI-025: /model command switches LLM model for current session
+  # ---------------------------------------------------------------------------
+
+  # @req REQ-TUI-025
+  Scenario: /model with no arguments shows the current model
+    Given the session is using model "claude-sonnet-4-20250514"
+    When the user types "/model" and presses Enter
+    Then the chat log should display "Current model: claude-sonnet-4-20250514"
+
+  # @req REQ-TUI-025
+  Scenario: /model switches to a valid model
+    Given the session is using model "claude-sonnet-4-20250514"
+    And the LLM provider supports model "mixtral-8x7b"
+    When the user types "/model mixtral-8x7b" and presses Enter
+    Then the chat log should display "Switched model to mixtral-8x7b"
+    And subsequent agent requests should use model "mixtral-8x7b"
+
+  # @req REQ-TUI-025
+  Scenario: /model with an invalid model name shows an error
+    Given the LLM provider does not support model "nonexistent-model"
+    When the user types "/model nonexistent-model" and presses Enter
+    Then the chat log should display "Unknown model: nonexistent-model. Use /model to see available models."
+
+  # @req REQ-TUI-025
+  Scenario: Model switch is recorded in the audit ledger
+    Given the session is using model "claude-sonnet-4-20250514"
+    And the LLM provider supports model "mixtral-8x7b"
+    When the user types "/model mixtral-8x7b" and presses Enter
+    Then the audit ledger should contain an entry with event type "model_switch"
+    And the entry should record the previous model "claude-sonnet-4-20250514" and the new model "mixtral-8x7b"
+
+  # @req REQ-TUI-025
+  Scenario: /model lists available models when provider supports enumeration
+    Given the LLM provider supports models "claude-sonnet-4-20250514", "mixtral-8x7b", and "llama3-70b"
+    When the user types "/model --list" and presses Enter
+    Then the chat log should display all three available model names
+
+  # ---------------------------------------------------------------------------
+  # REQ-TUI-026: /infra command for plugin operations from TUI
+  # ---------------------------------------------------------------------------
+
+  # @req REQ-TUI-026
+  Scenario: /infra with no arguments lists discovered plugins
+    Given two plugins "gcp-assured-workloads" and "aws-govcloud" are discovered
+    When the user types "/infra" and presses Enter
+    Then the chat log should display "Discovered plugins:" followed by "gcp-assured-workloads" and "aws-govcloud"
+
+  # @req REQ-TUI-026
+  Scenario: /infra status runs plugin health check and streams events
+    Given the plugin "gcp-assured-workloads" is discovered
+    When the user types "/infra status gcp-assured-workloads" and presses Enter
+    Then the plugin "gcp-assured-workloads" should receive the "status" subcommand
+    And NDJSON progress events should render as system messages in the chat log
+    And the final result event should display the plugin health summary
+
+  # @req REQ-TUI-026
+  Scenario: /infra preview shows a dry-run of changes
+    Given the plugin "gcp-assured-workloads" is discovered
+    When the user types "/infra preview gcp-assured-workloads" and presses Enter
+    Then the plugin should receive the "preview" subcommand
+    And diagnostic events should render in the chat log showing planned resource changes
+    And no resources should be created or modified
+
+  # @req REQ-TUI-026
+  Scenario: /infra up requires HITL approval before provisioning
+    Given the plugin "gcp-assured-workloads" is discovered
+    When the user types "/infra up gcp-assured-workloads" and presses Enter
+    Then a HITL approval prompt should appear with risk level "high"
+    And the operation should block until the user approves or denies
+
+  # @req REQ-TUI-026
+  Scenario: /infra up proceeds after HITL approval
+    Given a HITL approval prompt is displayed for "/infra up gcp-assured-workloads"
+    When the user approves the operation
+    Then the plugin should receive the "up" subcommand
+    And NDJSON progress events should stream to the chat log in real time
+    And the final result event should display the provisioning summary
+
+  # @req REQ-TUI-026
+  Scenario: /infra destroy requires HITL approval and typed confirmation
+    Given the plugin "gcp-assured-workloads" is discovered
+    When the user types "/infra destroy gcp-assured-workloads" and presses Enter
+    Then a HITL approval prompt should appear with risk level "critical"
+    And the user must type the plugin name "gcp-assured-workloads" to confirm
+    And the operation should block until confirmation is provided
+
+  # @req REQ-TUI-026
+  Scenario: /infra destroy is aborted when confirmation text does not match
+    Given a HITL approval prompt is displayed for "/infra destroy gcp-assured-workloads"
+    When the user types "wrong-name" as confirmation
+    Then the chat log should display "Confirmation mismatch. Destroy aborted."
+    And no destroy subcommand should be sent to the plugin
+
+  # @req REQ-TUI-026
+  Scenario: Plugin NDJSON events display correctly in chat log
+    Given the plugin "gcp-assured-workloads" is executing the "up" subcommand
+    When the plugin emits progress, diagnostic, check, and result events
+    Then progress events should render with a spinner and percentage
+    And diagnostic events should render as indented system messages
+    And check events should render with pass/fail indicators
+    And the result event should render as a summary block
+
+  # ---------------------------------------------------------------------------
+  # REQ-TUI-027: /undo command reverts last approved write operation
+  # ---------------------------------------------------------------------------
+
+  # @req REQ-TUI-027
+  Scenario: /undo reverts the last approved write_file operation
+    Given the agent wrote "new content" to "src/main.rs" replacing "old content"
+    And the write was approved via HITL gate
+    When the user types "/undo" and presses Enter
+    And the user confirms the undo operation
+    Then the file "src/main.rs" should contain "old content"
+    And the chat log should display "Reverted src/main.rs to previous state"
+
+  # @req REQ-TUI-027
+  Scenario: /undo --all reverts all session write operations
+    Given the agent wrote to "src/main.rs" and "src/lib.rs" during the session
+    When the user types "/undo --all" and presses Enter
+    And the user confirms the undo operation
+    Then both "src/main.rs" and "src/lib.rs" should be restored to their pre-write content
+    And the chat log should display "Reverted 2 files to previous state"
+
+  # @req REQ-TUI-027
+  Scenario: /undo when no writes have occurred shows informational message
+    Given no write_file operations have been approved in the session
+    When the user types "/undo" and presses Enter
+    Then the chat log should display "Nothing to undo"
+
+  # @req REQ-TUI-027
+  Scenario: /undo requires confirmation before executing
+    Given the agent wrote to "src/main.rs" during the session
+    When the user types "/undo" and presses Enter
+    Then a confirmation prompt should appear: "Revert src/main.rs? [y/N]"
+    And the revert should not execute until the user confirms with "y"
+
+  # @req REQ-TUI-027
+  Scenario: /undo is cancelled when user denies confirmation
+    Given the agent wrote to "src/main.rs" during the session
+    When the user types "/undo" and presses Enter
+    And the user responds with "N" to the confirmation prompt
+    Then the chat log should display "Undo cancelled"
+    And the file "src/main.rs" should remain unchanged
+
+  # @req REQ-TUI-027
+  Scenario: /undo is logged to the audit ledger
+    Given the agent wrote to "src/main.rs" during the session
+    When the user types "/undo" and confirms the operation
+    Then the audit ledger should contain an entry with event type "undo"
+    And the entry should record the file path "src/main.rs" and the session ID
+
+  # ---------------------------------------------------------------------------
+  # REQ-TUI-028: /doctor command runs connectivity and health checks
+  # ---------------------------------------------------------------------------
+
+  # @req REQ-TUI-028
+  Scenario: /doctor checks LLM endpoint reachability and shows latency
+    Given the LLM provider is configured with endpoint "https://vertex.googleapis.com"
+    When the user types "/doctor" and presses Enter
+    Then the chat log should display a system message "LLM endpoint: OK (latency: <N>ms)"
+    And the latency value should reflect the actual round-trip time
+
+  # @req REQ-TUI-028
+  Scenario: /doctor reports unreachable LLM endpoint
+    Given the LLM provider endpoint is unreachable
+    When the user types "/doctor" and presses Enter
+    Then the chat log should display a system message "LLM endpoint: UNREACHABLE"
+    And the message should include the endpoint URL and error reason
+
+  # @req REQ-TUI-028
+  Scenario: /doctor checks plugin discovery and status
+    Given plugins "gcp-assured-workloads" and "aws-govcloud" are on the PATH
+    When the user types "/doctor" and presses Enter
+    Then the chat log should display "Plugins: 2 discovered"
+    And each plugin should show its name and version
+
+  # @req REQ-TUI-028
+  Scenario: /doctor reports when no plugins are discovered
+    Given no aegis-infra plugins are on the PATH
+    When the user types "/doctor" and presses Enter
+    Then the chat log should display "Plugins: none discovered"
+
+  # @req REQ-TUI-028
+  Scenario: /doctor checks configuration validity
+    Given a valid aegis configuration file exists at "~/.aegis/config.toml"
+    When the user types "/doctor" and presses Enter
+    Then the chat log should display "Config: OK"
+
+  # @req REQ-TUI-028
+  Scenario: /doctor reports configuration errors
+    Given the aegis configuration file at "~/.aegis/config.toml" has an invalid provider entry
+    When the user types "/doctor" and presses Enter
+    Then the chat log should display "Config: ERROR" followed by the validation error details
+
+  # @req REQ-TUI-028
+  Scenario: /doctor displays all results as system messages
+    Given the LLM endpoint is reachable and 1 plugin is discovered and config is valid
+    When the user types "/doctor" and presses Enter
+    Then three system messages should appear in the chat log
+    And each message should be prefixed with a check category label
+    And the results should appear in order: LLM endpoint, plugins, config
