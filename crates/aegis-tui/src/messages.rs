@@ -48,4 +48,18 @@ impl ChatMessage {
             content: content.into(),
         }
     }
+
+    pub fn system(content: impl Into<String>) -> Self {
+        Self {
+            kind: MessageKind::System,
+            content: content.into(),
+        }
+    }
+
+    pub fn tool_result(content: impl Into<String>) -> Self {
+        Self {
+            kind: MessageKind::ToolResult,
+            content: content.into(),
+        }
+    }
 }
