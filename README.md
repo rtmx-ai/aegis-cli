@@ -362,7 +362,7 @@ Post-MVP: AWS GovCloud and Azure Gov plugins, RTMX closed-loop verification, sub
 
 aegis-cli ships with a unique two-pane development environment that lets you edit the source in one pane and watch your changes take effect in a live aegis instance in the other pane.
 
-![aegis-cli dev loop](docs/demos/dev-loop.png)
+![aegis-cli dev loop](docs/demos/dev-loop.gif)
 
 ### Layout
 

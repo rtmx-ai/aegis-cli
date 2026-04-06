@@ -49,4 +49,27 @@ echo -n "Checking release build... "
 RUSTFLAGS="-D warnings" cargo check --workspace --release 2>/dev/null || fail "cargo check --release"
 pass "release build"
 
+# 6. Dev loop GIF freshness (REQ-BUILD-038)
+# Regenerate docs/demos/dev-loop.gif if missing or older than dev.sh.
+# Skipped if vhs is not installed (warn only).
+DEV_LOOP_GIF="docs/demos/dev-loop.gif"
+DEV_LOOP_TAPE="docs/demos/tapes/dev-loop.tape"
+DEV_SH="scripts/dev.sh"
+if [ -f "$DEV_LOOP_TAPE" ]; then
+    if command -v vhs &>/dev/null; then
+        if [ ! -f "$DEV_LOOP_GIF" ] || [ "$DEV_SH" -nt "$DEV_LOOP_GIF" ]; then
+            echo -n "Regenerating dev loop GIF... "
+            vhs "$DEV_LOOP_TAPE" 2>/dev/null || warn "vhs failed -- continuing"
+            if [ -f "$DEV_LOOP_GIF" ]; then
+                pass "vhs $DEV_LOOP_TAPE"
+                git add "$DEV_LOOP_GIF" 2>/dev/null || true
+            fi
+        else
+            pass "dev loop GIF up to date"
+        fi
+    else
+        warn "vhs not installed -- skipping dev loop GIF regen (install: brew install vhs)"
+    fi
+fi
+
 echo -e "${GREEN}All pre-push checks passed. Pushing to remote.${NC}"
