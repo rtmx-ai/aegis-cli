@@ -29,15 +29,21 @@ case "${1:-}" in
 esac
 
 tmux kill-session -t "$SESSION" 2>/dev/null || true
+
+# Ensure ~/.cargo/bin is in PATH for tmux panes (Homebrew Rust installs
+# cargo-installed binaries here, but tmux spawns non-login shells that
+# may not have it in PATH).
+PATHFIX="export PATH=\"\$HOME/.cargo/bin:\$PATH\";"
+
 tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR"
 
 # Left pane: editor / Claude Code
-tmux send-keys -t "$SESSION" "echo 'Editor pane. Run: claude'" Enter
+tmux send-keys -t "$SESSION" "$PATHFIX echo 'Editor pane. Run: claude'" Enter
 
 # Right pane: bacon watch (auto-rebuild + auto-restart aegis on save)
 tmux split-window -h -t "$SESSION" -c "$PROJECT_DIR"
 tmux send-keys -t "$SESSION" \
-  "source \$HOME/.cargo/env 2>/dev/null; RUST_LOG=info bacon watch" Enter
+  "$PATHFIX RUST_LOG=info bacon watch" Enter
 
 # Focus editor pane
 tmux select-pane -t "$SESSION:0.0"
