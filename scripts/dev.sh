@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
 # aegis-cli development session
 #
-# Two-pane layout: editor left, aegis (auto-restart) right.
-# File saves trigger rebuild + restart automatically.
+# Two-pane layout:
+#   Left:  Claude Code (editing aegis-cli source)
+#   Right: aegis-cli running in ~/aegis-sandbox (dogfooding)
+#
+# File saves in left pane -> bacon rebuilds -> aegis restarts in sandbox.
 #
 # Usage:
 #   ./scripts/dev.sh              # launch dev session
 #   ./scripts/dev.sh attach       # reattach
 #   ./scripts/dev.sh kill         # tear down
-#
-# Telemetry: tail -f ~/.aegis/debug.log* (or ! tail -20 ~/.aegis/debug.log* from Claude Code)
 
 set -euo pipefail
 
 SESSION="aegis-dev"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BACON="$HOME/.cargo/bin/bacon"
+SANDBOX="$HOME/aegis-sandbox"
 
 case "${1:-}" in
   attach)
@@ -29,21 +31,33 @@ case "${1:-}" in
     ;;
 esac
 
-# Preflight: verify bacon exists
+# Preflight checks
 if [ ! -x "$BACON" ]; then
-    echo "bacon not found at $BACON"
-    echo "Install: cargo install bacon"
+    echo "bacon not found. Install: cargo install bacon"
     exit 1
+fi
+if ! command -v claude >/dev/null 2>&1; then
+    echo "claude not found in PATH."
+    exit 1
+fi
+
+# Ensure sandbox clone exists
+if [ ! -d "$SANDBOX/.git" ]; then
+    echo "Creating sandbox clone at $SANDBOX..."
+    git clone https://github.com/rtmx-ai/aegis-cli.git "$SANDBOX"
 fi
 
 tmux kill-session -t "$SESSION" 2>/dev/null || true
 tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR"
 
-# Right pane: bacon watch (auto-rebuild + auto-restart aegis on save)
+# Left pane: Claude Code (editing source)
+tmux send-keys -t "$SESSION:0.0" "claude" Enter
+
+# Right pane: bacon watch (builds source, runs aegis in sandbox)
 tmux split-window -h -t "$SESSION" -c "$PROJECT_DIR"
 tmux send-keys -t "$SESSION:0.1" "RUST_LOG=info $BACON watch" Enter
 
-# Left pane: ready for editor / Claude Code
+# Focus left pane (Claude Code)
 tmux select-pane -t "$SESSION:0.0"
 
 tmux attach-session -t "$SESSION"
