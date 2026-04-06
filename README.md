@@ -358,6 +358,79 @@ The minimum viable product is:
 
 Post-MVP: AWS GovCloud and Azure Gov plugins, RTMX closed-loop verification, sub-agents, OS sandboxing, multi-player via RTMX Sync.
 
+## Development Loop
+
+aegis-cli ships with a unique two-pane development environment that lets you edit the source in one pane and watch your changes take effect in a live aegis instance in the other pane.
+
+![aegis-cli dev loop](docs/demos/dev-loop.png)
+
+### Layout
+
+```
++------------------------------------+------------------------------------+
+|                                    |                                    |
+|  AI coding agent                   |  aegis-cli (live)                  |
+|  (claude / gemini-cli /            |  running in ~/aegis-sandbox        |
+|   codex / aegis / custom)          |  (full TUI, auto-restart on save)  |
+|                                    |                                    |
+|  Edit source in this repo.         |  Test your changes here.           |
+|                                    |                                    |
++------------------------------------+------------------------------------+
+```
+
+The left pane runs your AI coding agent of choice against the **source repo**. The right pane runs the freshly-built aegis binary against a **separate sandbox clone** at `~/aegis-sandbox`. When you save a file in the source, dev-run.sh detects the change, rebuilds aegis, and restarts it in the sandbox -- giving you React-style hot reload for terminal applications.
+
+### Quick start
+
+```bash
+# Prerequisites
+brew install tmux
+cargo install bacon
+# (one of the supported agents must be in PATH)
+
+# Launch the dev session
+./scripts/dev.sh
+
+# Reattach to an existing session
+./scripts/dev.sh attach
+
+# Tear down
+./scripts/dev.sh kill
+```
+
+### Modular left-pane agent
+
+The left-pane agent is configurable. Default is `claude`, but you can use any AI coding CLI:
+
+```bash
+./scripts/dev.sh                                  # default: claude
+./scripts/dev.sh --agent gemini-cli               # Google Gemini CLI
+./scripts/dev.sh --agent codex                    # OpenAI Codex CLI
+AEGIS_DEV_AGENT=aegis ./scripts/dev.sh            # eat your own dog food
+AEGIS_DEV_AGENT=my-custom-agent ./scripts/dev.sh  # any executable in PATH
+```
+
+The agent receives a critical-path prompt as its initial message, asking it to identify the next increment of work, validate dependencies, and propose decompositions where requirements are too coarse.
+
+### Telemetry
+
+All aegis tracing output goes to `~/.aegis/debug.log*` (daily-rotated). From the left pane (Claude Code, etc.), you can read the latest telemetry with:
+
+```bash
+! tail -20 ~/.aegis/debug.log*
+```
+
+### Keyboard reference
+
+Shown in the tmux status bar at the bottom of the screen:
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+B` then arrow | Switch panes |
+| `Ctrl+B` then `d` | Detach (keeps session running) |
+| `Ctrl+B` then `z` | Zoom current pane to full screen |
+| Mouse scroll | Scroll independently in each pane |
+
 ## Requirements
 
 159 requirements tracked via [RTMX](https://rtmx.ai) at `.rtmx/database.csv`. 12 BDD feature files with ~450 scenarios. 90 passing unit tests across 8 crates.
