@@ -60,12 +60,12 @@ tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR"
 
 # Left pane: Claude Code (new session with critical path prompt)
 tmux send-keys -t "$SESSION:0.0" \
-  "claude -p \"$CLAUDE_PROMPT\"" Enter
+  "cd $PROJECT_DIR && claude -p \"$CLAUDE_PROMPT\"" Enter
 
 # Right pane: bacon watch (builds source, runs aegis in sandbox)
 tmux split-window -h -t "$SESSION" -c "$PROJECT_DIR"
 tmux send-keys -t "$SESSION:0.1" \
-  "RUST_LOG=info $BACON watch" Enter
+  "cd $PROJECT_DIR && RUST_LOG=info $BACON watch" Enter
 
 # Focus left pane (Claude Code)
 tmux select-pane -t "$SESSION:0.0"
