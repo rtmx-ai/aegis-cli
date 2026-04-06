@@ -342,8 +342,22 @@ async fn run_interactive_chat(
         }
     });
 
-    // 9. Create App state
+    // 9. Create App state, restoring previous session if available (REQ-BUILD-036)
     let mut app = App::new(model);
+    let session_dir = aegis_agent::session::default_session_dir();
+    if let Some(ref dir) = session_dir {
+        let current = dir.join("current.json");
+        if let Some(snapshot) = aegis_agent::session::load_session(&current) {
+            tracing::info!(
+                session_id = %snapshot.session_id,
+                messages = snapshot.messages.len(),
+                "restoring session from snapshot"
+            );
+            restore_app_from_snapshot(&mut app, &snapshot);
+        }
+    }
+    let session_id = aegis_domain::types::SessionId::new().to_string();
+    let work_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
 
     // 10. If initial prompt provided, submit it immediately
     if let Some(prompt) = initial_prompt {
@@ -352,6 +366,11 @@ async fn run_interactive_chat(
         app.phase = aegis_tui::app::AppPhase::Streaming;
         let _ = agent_input_tx.send(prompt);
     }
+
+    // SIGTERM future for graceful save-on-exit (REQ-BUILD-035)
+    #[cfg(unix)]
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .map_err(|e| format!("signal handler: {e}"))?;
 
     // 11. Event loop
     loop {
@@ -369,8 +388,19 @@ async fn run_interactive_chat(
             })
             .map_err(|e| format!("Render error: {e}"))?;
 
-        // Wait for next event
-        match event_rx.recv().await {
+        // Wait for next event OR SIGTERM
+        #[cfg(unix)]
+        let next_event = tokio::select! {
+            evt = event_rx.recv() => evt,
+            _ = sigterm.recv() => {
+                tracing::info!("SIGTERM received, saving session and exiting");
+                None
+            }
+        };
+        #[cfg(not(unix))]
+        let next_event = event_rx.recv().await;
+
+        match next_event {
             Some(event) => {
                 if app.handle_event(event, &agent_input_tx) == Action::Quit {
                     break;
@@ -380,12 +410,86 @@ async fn run_interactive_chat(
         }
     }
 
-    // 12. Cleanup terminal
+    // 12. Save session before cleanup (REQ-BUILD-035)
+    if let Some(ref dir) = session_dir
+        && !app.messages.is_empty()
+    {
+        let snapshot = build_snapshot_from_app(&app, &session_id, work_dir.clone());
+        match aegis_agent::session::save_session(dir, &snapshot) {
+            Ok(path) => tracing::info!(path = %path.display(), "session saved"),
+            Err(e) => tracing::warn!(%e, "failed to save session"),
+        }
+    }
+
+    // 13. Cleanup terminal
     crossterm::terminal::disable_raw_mode().ok();
     crossterm::execute!(terminal.backend_mut(), LeaveAlternateScreen).ok();
     terminal.show_cursor().ok();
 
     Ok(())
+}
+
+/// Build a SessionSnapshot from the current App state.
+/// Converts TUI ChatMessage values into domain Message values for persistence.
+fn build_snapshot_from_app(
+    app: &App,
+    session_id: &str,
+    work_dir: std::path::PathBuf,
+) -> aegis_agent::session::SessionSnapshot {
+    use aegis_domain::ports::{Message, Role};
+    use aegis_tui::messages::MessageKind;
+
+    let messages: Vec<Message> = app
+        .messages
+        .iter()
+        .filter_map(|m| {
+            let role = match m.kind {
+                MessageKind::User => Some(Role::User),
+                MessageKind::Assistant => Some(Role::Assistant),
+                // Tool calls/results, errors, system messages are not persisted
+                // as conversation history; the LLM rebuilds context from User/Assistant only.
+                _ => None,
+            };
+            role.map(|r| Message {
+                role: r,
+                content: m.content.clone(),
+            })
+        })
+        .collect();
+
+    aegis_agent::session::SessionSnapshot::new(
+        session_id.to_string(),
+        messages,
+        app.input_tokens,
+        app.output_tokens,
+        app.model_name.clone(),
+        work_dir,
+    )
+}
+
+/// Restore App state from a SessionSnapshot.
+/// Inverse of build_snapshot_from_app: converts domain Message back into TUI ChatMessage.
+fn restore_app_from_snapshot(app: &mut App, snapshot: &aegis_agent::session::SessionSnapshot) {
+    use aegis_domain::ports::Role;
+    use aegis_tui::messages::ChatMessage;
+
+    app.messages = snapshot
+        .messages
+        .iter()
+        .map(|m| match m.role {
+            Role::User => ChatMessage::user(m.content.clone()),
+            Role::Assistant => ChatMessage::assistant(m.content.clone()),
+            _ => ChatMessage::system(m.content.clone()),
+        })
+        .collect();
+    app.input_tokens = snapshot.input_tokens;
+    app.output_tokens = snapshot.output_tokens;
+    if !snapshot.messages.is_empty() {
+        app.messages.push(ChatMessage::system(format!(
+            "(restored {} messages from previous session)",
+            snapshot.messages.len()
+        )));
+    }
 }
 
 /// Run the agent loop for one prompt, forwarding stream events to the TUI.
