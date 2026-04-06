@@ -10,6 +10,37 @@ use async_trait::async_trait;
 use clap::Parser;
 use std::sync::Arc;
 use std::time::Duration;
+use tracing_subscriber::EnvFilter;
+
+/// Initialize tracing to stderr (headless mode, init, doctor).
+fn init_tracing_stderr() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_writer(std::io::stderr)
+        .init();
+}
+
+/// Initialize tracing to ~/.aegis/debug.log (TUI mode).
+/// Returns the guard that must be held for the lifetime of the program.
+fn init_tracing_file() -> Option<tracing_appender::non_blocking::WorkerGuard> {
+    let log_dir = dirs_next::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".aegis");
+
+    // Ensure directory exists
+    let _ = std::fs::create_dir_all(&log_dir);
+
+    let file_appender = tracing_appender::rolling::daily(&log_dir, "debug.log");
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_writer(non_blocking)
+        .with_ansi(false)
+        .init();
+
+    Some(guard)
+}
 
 /// Auto-approve gate for headless (non-interactive) mode.
 struct HeadlessApprovalGate;
@@ -72,9 +103,24 @@ enum Commands {
 }
 
 fn main() {
-    tracing_subscriber::fmt::init();
-
+    // Tracing is initialized per-mode: file appender for TUI, stderr for headless.
+    // We defer init until we know the mode.
     let cli = Cli::parse();
+
+    // Initialize tracing based on mode. TUI mode logs to file; everything else to stderr.
+    let is_tui_mode = matches!(
+        cli.command,
+        Some(Commands::Chat {
+            headless: false,
+            ..
+        })
+    );
+    let _log_guard = if is_tui_mode {
+        init_tracing_file()
+    } else {
+        init_tracing_stderr();
+        None
+    };
 
     let result = match cli.command {
         Some(Commands::Init { local }) => run_init(local),

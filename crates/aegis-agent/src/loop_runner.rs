@@ -7,6 +7,7 @@ use aegis_domain::error::DomainError;
 use aegis_domain::ports::*;
 use aegis_domain::types::*;
 use tokio::sync::mpsc;
+use tracing::{debug, info, warn};
 
 /// Configuration for the agent loop.
 pub struct AgentConfig {
@@ -200,6 +201,7 @@ where
 
     /// Run the agent loop to completion for a given user prompt.
     pub async fn run(&self, prompt: &str) -> Result<AgentResult, DomainError> {
+        info!(prompt_len = prompt.len(), "agent session starting");
         let tools = builtin_tool_schemas();
         let mut history = vec![
             Message {
@@ -218,10 +220,18 @@ where
         for iteration in 0..self.config.max_iterations {
             // REQ-AGENT-009: Check cancellation before each iteration
             if self.cancel_token.is_cancelled() {
+                warn!(iteration, "agent cancelled");
                 return Err(DomainError::Other("Cancelled".to_string()));
             }
 
+            info!(
+                iteration,
+                history_len = history.len(),
+                "agent iteration start"
+            );
+
             // EVALUATE: Stream response from LLM
+            debug!("streaming from LLM provider");
             let mut stream = self.provider.stream(&history, &tools).await?;
 
             let mut response_text = String::new();
@@ -262,6 +272,13 @@ where
 
             // If no tool calls, the agent is done
             if tool_calls.is_empty() {
+                info!(
+                    iterations = iteration + 1,
+                    total_input_tokens,
+                    total_output_tokens,
+                    response_len = response_text.len(),
+                    "agent completed"
+                );
                 return Ok(AgentResult {
                     response: response_text,
                     iterations: iteration + 1,
@@ -276,6 +293,7 @@ where
             }
 
             // ACT: Execute each tool call
+            info!(tool_count = tool_calls.len(), "executing tool calls");
             for call in &tool_calls {
                 // REQ-AGENT-013: Check banned commands before HITL gate
                 let result = if let ToolCall::RunCommand { command, .. } = call {
@@ -322,16 +340,29 @@ where
     /// as `ToolResult::Error` so the LLM can decide what to do, rather than
     /// halting the loop.
     async fn execute_tool(&self, call: &ToolCall) -> ToolResult {
-        if call.risk() == ToolRisk::StateMutating {
+        let tool_name = match call {
+            ToolCall::ReadFile { .. } => "read_file",
+            ToolCall::WriteFile { .. } => "write_file",
+            ToolCall::RunCommand { .. } => "run_command",
+            ToolCall::ListDir { .. } => "list_dir",
+            ToolCall::Grep { .. } => "grep",
+        };
+        let risk = call.risk();
+        debug!(tool_name, ?risk, "executing tool");
+
+        if risk == ToolRisk::StateMutating {
             // HITL gate for mutating tools
+            info!(tool_name, "requesting HITL approval");
             let decision = match self.gate.request_approval(call).await {
                 Ok(d) => d,
                 Err(e) => {
+                    warn!(tool_name, %e, "approval gate error");
                     return ToolResult::Error {
                         message: format!("Approval gate error: {e}"),
                     };
                 }
             };
+            info!(tool_name, ?decision, "HITL decision received");
             match decision {
                 ApprovalDecision::Approved | ApprovalDecision::Edited => {
                     match self.executor.execute(call).await {
