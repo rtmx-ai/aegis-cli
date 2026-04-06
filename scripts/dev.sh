@@ -15,6 +15,7 @@ set -euo pipefail
 
 SESSION="aegis-dev"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+BACON="$HOME/.cargo/bin/bacon"
 
 case "${1:-}" in
   attach)
@@ -28,24 +29,21 @@ case "${1:-}" in
     ;;
 esac
 
+# Preflight: verify bacon exists
+if [ ! -x "$BACON" ]; then
+    echo "bacon not found at $BACON"
+    echo "Install: cargo install bacon"
+    exit 1
+fi
+
 tmux kill-session -t "$SESSION" 2>/dev/null || true
-
-# Ensure ~/.cargo/bin is in PATH for tmux panes (Homebrew Rust installs
-# cargo-installed binaries here, but tmux spawns non-login shells that
-# may not have it in PATH).
-PATHFIX="export PATH=\"\$HOME/.cargo/bin:\$PATH\";"
-
 tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR"
-
-# Left pane: editor / Claude Code
-tmux send-keys -t "$SESSION" "$PATHFIX echo 'Editor pane. Run: claude'" Enter
 
 # Right pane: bacon watch (auto-rebuild + auto-restart aegis on save)
 tmux split-window -h -t "$SESSION" -c "$PROJECT_DIR"
-tmux send-keys -t "$SESSION" \
-  "$PATHFIX RUST_LOG=info bacon watch" Enter
+tmux send-keys -t "$SESSION:0.1" "RUST_LOG=info $BACON watch" Enter
 
-# Focus editor pane
+# Left pane: ready for editor / Claude Code
 tmux select-pane -t "$SESSION:0.0"
 
 tmux attach-session -t "$SESSION"
