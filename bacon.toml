@@ -1,11 +1,17 @@
 # bacon configuration for aegis-cli development
-# Run: bacon (default job is "check")
-# Run: bacon clippy / bacon test / bacon run
+# Primary: bacon watch (auto-rebuild + restart aegis on file save)
+# Also: bacon check / bacon clippy / bacon test
 
 [default]
 command = ["cargo", "check", "--workspace", "--color", "always"]
 need_stdout = false
 watch = ["crates", "Cargo.toml"]
+
+[jobs.watch]
+command = ["cargo", "run", "--", "chat"]
+need_stdout = true
+allow_warnings = true
+on_change_strategy = "kill_then_restart"
 
 [jobs.check]
 command = ["cargo", "check", "--workspace", "--color", "always"]
@@ -29,6 +35,7 @@ command = ["cargo", "doc", "--workspace", "--no-deps", "--color", "always"]
 need_stdout = false
 
 [keybindings]
+w = "job:watch"
 c = "job:check"
 l = "job:clippy"
 t = "job:test"
