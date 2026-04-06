@@ -19,6 +19,7 @@ set -euo pipefail
 
 SESSION="aegis-dev"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+CARGO_ENV="source \$HOME/.cargo/env 2>/dev/null;"
 
 case "${1:-}" in
   attach)
@@ -38,22 +39,22 @@ tmux kill-session -t "$SESSION" 2>/dev/null || true
 # Create session with first pane: bacon (hot reload)
 tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR" -x 200 -y 50
 
-# Pane 0: bacon
-tmux send-keys -t "$SESSION" "bacon" Enter
+# Pane 0: bacon (source cargo env for PATH)
+tmux send-keys -t "$SESSION" "$CARGO_ENV bacon" Enter
 
 # Split right: aegis run pane
 tmux split-window -h -t "$SESSION" -c "$PROJECT_DIR"
 
-# Pane 1: ready to run aegis
+# Pane 1: ready to run aegis (source cargo env for PATH)
 tmux send-keys -t "$SESSION" \
-  "echo '-- aegis run pane --'; echo 'Run: cargo run -- chat -p \"your prompt\"'" Enter
+  "$CARGO_ENV echo '-- aegis run pane --'; echo 'Run: cargo run -- chat -p \"your prompt\"'" Enter
 
 # Split pane 1 vertically: log tail
 tmux split-window -v -t "$SESSION" -c "$PROJECT_DIR"
 
-# Pane 2: tail debug log
+# Pane 2: tail debug log (tracing-appender creates dated files)
 tmux send-keys -t "$SESSION" \
-  "touch ~/.aegis/debug.log && tail -f ~/.aegis/debug.log" Enter
+  "mkdir -p ~/.aegis && tail -F ~/.aegis/debug.log*" Enter
 
 # Layout: bacon on left (50%), aegis top-right, logs bottom-right
 tmux select-layout -t "$SESSION" main-vertical
