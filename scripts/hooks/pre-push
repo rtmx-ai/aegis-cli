@@ -50,26 +50,20 @@ RUSTFLAGS="-D warnings" cargo check --workspace --release 2>/dev/null || fail "c
 pass "release build"
 
 # 6. Dev loop GIF freshness (REQ-BUILD-038)
-# Regenerate docs/demos/dev-loop.gif if missing or older than dev.sh.
-# Skipped if vhs is not installed (warn only).
+# Validates that docs/demos/dev-loop.gif exists and is not older than dev.sh.
+# This is a REAL recording (not a simulation), so regeneration is manual:
+#   vhs docs/demos/tapes/dev-loop.tape
+# Missing file: warn only (allows initial bootstrap).
+# Stale file (older than dev.sh): fail (forces regen on dev.sh changes).
 DEV_LOOP_GIF="docs/demos/dev-loop.gif"
-DEV_LOOP_TAPE="docs/demos/tapes/dev-loop.tape"
 DEV_SH="scripts/dev.sh"
-if [ -f "$DEV_LOOP_TAPE" ]; then
-    if command -v vhs &>/dev/null; then
-        if [ ! -f "$DEV_LOOP_GIF" ] || [ "$DEV_SH" -nt "$DEV_LOOP_GIF" ]; then
-            echo -n "Regenerating dev loop GIF... "
-            vhs "$DEV_LOOP_TAPE" 2>/dev/null || warn "vhs failed -- continuing"
-            if [ -f "$DEV_LOOP_GIF" ]; then
-                pass "vhs $DEV_LOOP_TAPE"
-                git add "$DEV_LOOP_GIF" 2>/dev/null || true
-            fi
-        else
-            pass "dev loop GIF up to date"
-        fi
-    else
-        warn "vhs not installed -- skipping dev loop GIF regen (install: brew install vhs)"
-    fi
+echo -n "Checking dev loop GIF freshness... "
+if [ ! -f "$DEV_LOOP_GIF" ]; then
+    warn "$DEV_LOOP_GIF not yet recorded (run: vhs docs/demos/tapes/dev-loop.tape)"
+elif [ "$DEV_SH" -nt "$DEV_LOOP_GIF" ]; then
+    fail "$DEV_LOOP_GIF stale (older than $DEV_SH). Regenerate: vhs docs/demos/tapes/dev-loop.tape"
+else
+    pass "dev loop GIF up to date"
 fi
 
 echo -e "${GREEN}All pre-push checks passed. Pushing to remote.${NC}"
