@@ -3,7 +3,10 @@
 #
 # Two-pane layout:
 #   Left:  Claude Code (interactive session with critical path prompt)
-#   Right: bacon watch (builds source, runs aegis in ~/aegis-sandbox)
+#   Right: aegis-cli TUI running in ~/aegis-sandbox (full terminal control)
+#
+# When aegis exits (Ctrl+C), it waits for source changes then rebuilds
+# and restarts automatically.
 #
 # Usage:
 #   ./scripts/dev.sh              # launch dev session
@@ -14,7 +17,6 @@ set -euo pipefail
 
 SESSION="aegis-dev"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-BACON="$HOME/.cargo/bin/bacon"
 
 CLAUDE_PROMPT='Describe the critical path. Propose a plan to accomplish the next increment of the critical path. Highlight any unmet dependencies, validate existing dependencies, and explore any requirements that need to be further decomposed.'
 
@@ -31,10 +33,6 @@ case "${1:-}" in
 esac
 
 # Preflight checks
-if [ ! -x "$BACON" ]; then
-    echo "bacon not found. Install: cargo install bacon"
-    exit 1
-fi
 if ! command -v claude >/dev/null 2>&1; then
     echo "claude not found in PATH."
     exit 1
@@ -61,18 +59,18 @@ tmux kill-session -t "$SESSION" 2>/dev/null || true
 tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR"
 tmux set-option -t "$SESSION" -g mouse on
 tmux set-option -t "$SESSION" -g status-left "#[fg=black,bg=green,bold] aegis-dev "
-tmux set-option -t "$SESSION" -g status-right "#[fg=white,dim] C-b arrows:pane | C-b d:detach | C-b z:zoom | bacon w:watch c:check t:test "
-tmux set-option -t "$SESSION" -g status-right-length 80
+tmux set-option -t "$SESSION" -g status-right "#[fg=white,dim] C-b arrows:pane | C-b d:detach | C-b z:zoom "
+tmux set-option -t "$SESSION" -g status-right-length 60
 tmux set-option -t "$SESSION" -g status-style "bg=black,fg=white"
 
 # Left pane: Claude Code (interactive session, prompt as positional arg)
 tmux send-keys -t "$SESSION:0.0" \
   "cd $PROJECT_DIR && claude \"$CLAUDE_PROMPT\"" Enter
 
-# Right pane: bacon watch (builds source, runs aegis in sandbox)
+# Right pane: aegis-cli with auto-rebuild on source changes
 tmux split-window -h -t "$SESSION" -c "$PROJECT_DIR"
 tmux send-keys -t "$SESSION:0.1" \
-  "cd $PROJECT_DIR && RUST_LOG=info $BACON watch" Enter
+  "RUST_LOG=info $PROJECT_DIR/scripts/dev-run.sh" Enter
 
 # Focus left pane (Claude Code)
 tmux select-pane -t "$SESSION:0.0"
