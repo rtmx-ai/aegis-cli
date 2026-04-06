@@ -2,8 +2,8 @@
 # aegis-cli development session
 #
 # Two-pane layout:
-#   Left:  Claude Code (new session with critical path prompt)
-#   Right: aegis-cli running in ~/aegis-sandbox (dogfooding)
+#   Left:  Claude Code (interactive session with critical path prompt)
+#   Right: bacon watch (builds source, runs aegis in ~/aegis-sandbox)
 #
 # Usage:
 #   ./scripts/dev.sh              # launch dev session
@@ -56,11 +56,14 @@ else
 fi
 
 tmux kill-session -t "$SESSION" 2>/dev/null || true
-tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR"
 
-# Left pane: Claude Code (new session with critical path prompt)
+# Enable mouse support (scroll wheel works independently per pane)
+tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR"
+tmux set-option -t "$SESSION" -g mouse on
+
+# Left pane: Claude Code (interactive session, prompt as positional arg)
 tmux send-keys -t "$SESSION:0.0" \
-  "cd $PROJECT_DIR && claude -p \"$CLAUDE_PROMPT\"" Enter
+  "cd $PROJECT_DIR && claude \"$CLAUDE_PROMPT\"" Enter
 
 # Right pane: bacon watch (builds source, runs aegis in sandbox)
 tmux split-window -h -t "$SESSION" -c "$PROJECT_DIR"
