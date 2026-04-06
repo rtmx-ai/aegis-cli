@@ -4,8 +4,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BINARY="$PROJECT_DIR/target/debug/aegis"
 SANDBOX="$HOME/aegis-sandbox"
-BINARY="$(dirname "$0")/../target/debug/aegis"
 
 # Build first
 cargo build --package aegis-cli 2>&1

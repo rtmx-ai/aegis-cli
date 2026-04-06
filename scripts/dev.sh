@@ -2,10 +2,8 @@
 # aegis-cli development session
 #
 # Two-pane layout:
-#   Left:  Claude Code (editing aegis-cli source)
+#   Left:  Claude Code --resume (editing aegis-cli source)
 #   Right: aegis-cli running in ~/aegis-sandbox (dogfooding)
-#
-# File saves in left pane -> bacon rebuilds -> aegis restarts in sandbox.
 #
 # Usage:
 #   ./scripts/dev.sh              # launch dev session
@@ -17,7 +15,8 @@ set -euo pipefail
 SESSION="aegis-dev"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BACON="$HOME/.cargo/bin/bacon"
-SANDBOX="$HOME/aegis-sandbox"
+
+DEFAULT_PROMPT="Describe the critical path. Propose a plan to accomplish the next increment of the critical path. Highlight any unmet dependencies, validate existing dependencies, and explore any requirements that need to be further decomposed."
 
 case "${1:-}" in
   attach)
@@ -41,17 +40,12 @@ if ! command -v claude >/dev/null 2>&1; then
     exit 1
 fi
 
-# Ensure sandbox clone exists
-if [ ! -d "$SANDBOX/.git" ]; then
-    echo "Creating sandbox clone at $SANDBOX..."
-    git clone https://github.com/rtmx-ai/aegis-cli.git "$SANDBOX"
-fi
-
 tmux kill-session -t "$SESSION" 2>/dev/null || true
 tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR"
 
-# Left pane: Claude Code (editing source)
-tmux send-keys -t "$SESSION:0.0" "claude" Enter
+# Left pane: Claude Code --resume (if no session selected, uses default prompt)
+tmux send-keys -t "$SESSION:0.0" \
+  "claude --resume -p '$DEFAULT_PROMPT'" Enter
 
 # Right pane: bacon watch (builds source, runs aegis in sandbox)
 tmux split-window -h -t "$SESSION" -c "$PROJECT_DIR"
