@@ -57,9 +57,13 @@ fi
 
 tmux kill-session -t "$SESSION" 2>/dev/null || true
 
-# Enable mouse support (scroll wheel works independently per pane)
+# Session options
 tmux new-session -d -s "$SESSION" -c "$PROJECT_DIR"
 tmux set-option -t "$SESSION" -g mouse on
+tmux set-option -t "$SESSION" -g status-left "#[fg=black,bg=green,bold] aegis-dev "
+tmux set-option -t "$SESSION" -g status-right "#[fg=white,dim] C-b arrows:pane | C-b d:detach | C-b z:zoom | bacon w:watch c:check t:test "
+tmux set-option -t "$SESSION" -g status-right-length 80
+tmux set-option -t "$SESSION" -g status-style "bg=black,fg=white"
 
 # Left pane: Claude Code (interactive session, prompt as positional arg)
 tmux send-keys -t "$SESSION:0.0" \
