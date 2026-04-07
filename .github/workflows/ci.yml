@@ -220,23 +220,28 @@ jobs:
       - name: Build release binary
         run: cargo build --release --package aegis-cli
       - name: Generate .rpm package
+        # cargo-generate-rpm needs to run from the package dir (because asset
+        # paths in [package.metadata.generate-rpm] are package-relative). The
+        # output ends up in the workspace target dir at target/generate-rpm/.
         run: |
           cd crates/aegis-cli
           cargo generate-rpm
+          ls -la ../../target/generate-rpm/ || { echo "No target/generate-rpm"; exit 1; }
       - name: Verify .rpm exists and is valid
         run: |
           sudo apt-get install -y rpm
-          RPM=$(ls target/generate-rpm/aegis-cli-*.rpm)
-          test -f "$RPM" || { echo "Missing .rpm"; exit 1; }
+          RPM=$(ls target/generate-rpm/aegis-cli-*.rpm 2>/dev/null | head -1)
+          test -n "$RPM" || { echo "No .rpm found in target/generate-rpm/"; ls -la target/generate-rpm/ || true; exit 1; }
           echo "Generated: $RPM ($(stat -c%s "$RPM") bytes)"
           rpm -qip "$RPM"
           rpm -qlp "$RPM"
       - name: Install .rpm in RHEL 9 container (REQ-BUILD-046 smoke test)
         run: |
-          RPM=$(ls target/generate-rpm/aegis-cli-*.rpm)
+          RPM=$(ls target/generate-rpm/aegis-cli-*.rpm | head -1)
+          BASENAME=$(basename "$RPM")
           docker run --rm -v "$PWD/target/generate-rpm:/rpms:ro" \
             redhat/ubi9:latest \
-            sh -c "rpm -i /rpms/$(basename $RPM) && /usr/bin/aegis --version"
+            sh -c "rpm -i /rpms/$BASENAME && /usr/bin/aegis --version"
       - name: Upload .rpm artifact
         uses: actions/upload-artifact@v7
         with:
