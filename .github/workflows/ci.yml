@@ -220,13 +220,15 @@ jobs:
       - name: Build release binary
         run: cargo build --release --package aegis-cli
       - name: Generate .rpm package
-        # cargo-generate-rpm needs to run from the package dir (because asset
-        # paths in [package.metadata.generate-rpm] are package-relative). The
-        # output ends up in the workspace target dir at target/generate-rpm/.
+        # Run from workspace root with -p <path>. --auto-req disabled avoids
+        # cargo-generate-rpm trying to parse the binary for dependencies
+        # (which can fail silently on ELF binaries without libc symbols).
         run: |
-          cd crates/aegis-cli
-          cargo generate-rpm
-          ls -la ../../target/generate-rpm/ || { echo "No target/generate-rpm"; exit 1; }
+          set -x
+          cargo-generate-rpm -p crates/aegis-cli --auto-req disabled 2>&1
+          echo "--- workspace target dir contents ---"
+          ls -la target/ || true
+          ls -la target/generate-rpm/ || { echo "No target/generate-rpm/"; exit 1; }
       - name: Verify .rpm exists and is valid
         run: |
           sudo apt-get install -y rpm
