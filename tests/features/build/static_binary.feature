@@ -362,3 +362,80 @@ Feature: Static Binary Build Pipeline
     Given the README.md file
     When all image links are extracted
     Then each GIF link should point to an existing file in docs/demos/gifs/
+
+  # ---------------------------------------------------------------------------
+  # REQ-BUILD-039: CycloneDX SBOM generation
+  # ---------------------------------------------------------------------------
+
+  # @req REQ-BUILD-039
+  Scenario: CI generates CycloneDX SBOM on every push
+    Given the aegis-cli workspace is checked out
+    When the sbom CI job runs cargo cyclonedx --format json --spec-version 1.5
+    Then a file bom.json should exist at the workspace root
+    And the file should parse as valid JSON
+    And the file should contain bomFormat field equal to CycloneDX
+
+  # @req REQ-BUILD-039
+  Scenario: SBOM is uploaded as a CI artifact
+    Given the sbom CI job has completed successfully
+    When artifacts are listed for the workflow run
+    Then an artifact named aegis-cli-sbom should be present
+    And the artifact should contain bom.json
+
+  # @req REQ-BUILD-039
+  Scenario: SBOM generation requires no secrets
+    Given a fork of aegis-cli opens a pull request
+    When the sbom CI job runs
+    Then it should complete successfully without access to repository secrets
+
+  # ---------------------------------------------------------------------------
+  # REQ-BUILD-040: GPG signing of Linux release artifacts (future)
+  # REQ-BUILD-041: Authenticode signing of Windows release artifacts (future)
+  # Skipped until organizational signing infrastructure is available.
+  # ---------------------------------------------------------------------------
+
+  # ---------------------------------------------------------------------------
+  # REQ-BUILD-042: cargo-deb unsigned package generation
+  # ---------------------------------------------------------------------------
+
+  # @req REQ-BUILD-042
+  Scenario: cargo-deb produces a valid .deb package
+    Given Cargo.toml contains [package.metadata.deb] section for aegis-cli
+    When CI runs cargo deb --package aegis-cli
+    Then a file target/debian/aegis-cli_*.deb should exist
+    And the file should be a valid Debian package per dpkg-deb -I
+
+  # ---------------------------------------------------------------------------
+  # REQ-BUILD-043: cargo-generate-rpm unsigned package generation
+  # ---------------------------------------------------------------------------
+
+  # @req REQ-BUILD-043
+  Scenario: cargo-generate-rpm produces a valid .rpm package
+    Given Cargo.toml contains [package.metadata.generate-rpm] section for aegis-cli
+    When CI runs cargo generate-rpm --package aegis-cli
+    Then a file target/generate-rpm/aegis-cli-*.rpm should exist
+    And the file should be a valid RPM per rpm -qip
+
+  # ---------------------------------------------------------------------------
+  # REQ-BUILD-045: deb install smoke test
+  # ---------------------------------------------------------------------------
+
+  # @req REQ-BUILD-045
+  Scenario: .deb package installs and runs on Ubuntu
+    Given an Ubuntu CI runner with the generated .deb file
+    When dpkg -i target/debian/aegis-cli_*.deb is executed
+    And aegis --version is run
+    Then the install should succeed with exit code 0
+    And aegis --version should print the expected version string
+
+  # ---------------------------------------------------------------------------
+  # REQ-BUILD-046: rpm install smoke test
+  # ---------------------------------------------------------------------------
+
+  # @req REQ-BUILD-046
+  Scenario: .rpm package installs and runs on RHEL 9
+    Given a RHEL 9 container with the generated .rpm file
+    When rpm -i target/generate-rpm/aegis-cli-*.rpm is executed
+    And aegis --version is run
+    Then the install should succeed with exit code 0
+    And aegis --version should print the expected version string
