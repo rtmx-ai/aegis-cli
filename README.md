@@ -337,11 +337,44 @@ Evaluated 10 open-source CLI tools. Key findings:
 
 **Goose selected** for: static binary, OS-level sandboxing, ToolShim for local models, MCP reference implementation, Linux Foundation governance, Apache 2.0 license.
 
+## Install
+
+### macOS (Homebrew)
+
+```bash
+brew tap rtmx-ai/tap
+brew install aegis
+```
+
+### Linux (Debian/Ubuntu)
+
+```bash
+# Coming soon: apt repository
+# For now, download the .deb from the latest release:
+curl -LO https://github.com/rtmx-ai/aegis-cli/releases/latest/download/aegis-cli.deb
+sudo dpkg -i aegis-cli.deb
+```
+
+### Linux (RHEL/Fedora)
+
+```bash
+# Coming soon: yum repository
+# For now, download the .rpm from the latest release:
+curl -LO https://github.com/rtmx-ai/aegis-cli/releases/latest/download/aegis-cli.rpm
+sudo rpm -i aegis-cli.rpm
+```
+
+### Windows
+
+MSI installer coming soon. Until then, build from source: `cargo build --release`.
+
 ## Target Platforms
 
 | Platform | Binary Target | Installer |
 |---|---|---|
+| macOS (x86_64) | `x86_64-apple-darwin` | Homebrew (`brew install rtmx-ai/tap/aegis`) |
 | RHEL 8/9 (x86_64) | `x86_64-unknown-linux-musl` | RPM, standalone binary |
+| Ubuntu/Debian (x86_64) | `x86_64-unknown-linux-gnu` | DEB, standalone binary |
 | Windows 10/11 (x86_64) | `x86_64-pc-windows-msvc` | MSI, standalone EXE |
 
 Both modes:
