@@ -169,6 +169,42 @@ jobs:
           path: crates/*/aegis-*.cdx.json
           retention-days: 90
 
+  # REQ-BUILD-042: cargo-deb unsigned package generation
+  # REQ-BUILD-045: deb install smoke test on Ubuntu CI
+  deb-package:
+    name: Debian Package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --locked
+      - name: Build release binary
+        run: cargo build --release --package aegis-cli
+      - name: Generate .deb package
+        run: cargo deb --package aegis-cli --no-build
+      - name: Verify .deb exists and is valid
+        run: |
+          DEB=$(ls target/debian/aegis-cli_*.deb)
+          test -f "$DEB" || { echo "Missing .deb"; exit 1; }
+          echo "Generated: $DEB ($(stat -c%s "$DEB") bytes)"
+          dpkg-deb -I "$DEB"
+          dpkg-deb -c "$DEB" | head -20
+      - name: Install .deb and run aegis (REQ-BUILD-045 smoke test)
+        run: |
+          DEB=$(ls target/debian/aegis-cli_*.deb)
+          sudo dpkg -i "$DEB"
+          which aegis
+          aegis --version
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: aegis-cli-deb
+          path: target/debian/aegis-cli_*.deb
+          retention-days: 90
+
   rtmx-health:
     name: RTMX Requirements Health
     runs-on: ubuntu-latest
@@ -185,7 +221,7 @@ jobs:
     name: Build Gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [format, lint, unit-tests, integration-tests, doc-tests, coverage, cargo-deny, sbom, rtmx-health]
+    needs: [format, lint, unit-tests, integration-tests, doc-tests, coverage, cargo-deny, sbom, deb-package, rtmx-health]
     if: always()
     steps:
       - name: Check required jobs

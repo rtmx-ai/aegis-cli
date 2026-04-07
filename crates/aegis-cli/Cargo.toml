@@ -37,3 +37,26 @@ tempfile = { workspace = true }
 
 [features]
 e2e-tests = []
+
+# REQ-BUILD-042: cargo-deb metadata for unsigned .deb generation.
+# Run: cargo deb --package aegis-cli
+# Output: target/debian/aegis-cli_<version>_<arch>.deb
+[package.metadata.deb]
+name = "aegis-cli"
+maintainer = "RTMX <ops@rtmx.ai>"
+copyright = "2026, RTMX Inc."
+license-file = ["../../LICENSE", "0"]
+extended-description = """\
+Terminal-native agentic AI pair programmer for CUI environments.
+Built for software engineers in the Department of War and the Defense
+Industrial Base. Streaming responses, tool use, inline diffs,
+human-in-the-loop approval, and immutable audit ledger -- with full
+control over the compute, network, and data boundaries.
+"""
+section = "devel"
+priority = "optional"
+assets = [
+    ["target/release/aegis", "usr/bin/", "755"],
+    ["../../LICENSE", "usr/share/doc/aegis-cli/LICENSE", "644"],
+    ["../../README.md", "usr/share/doc/aegis-cli/README.md", "644"],
+]
