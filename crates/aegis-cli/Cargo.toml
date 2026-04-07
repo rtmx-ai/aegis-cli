@@ -60,3 +60,19 @@ assets = [
     ["../../LICENSE", "usr/share/doc/aegis-cli/LICENSE", "644"],
     ["../../README.md", "usr/share/doc/aegis-cli/README.md", "644"],
 ]
+
+# REQ-BUILD-043: cargo-generate-rpm metadata for unsigned .rpm generation.
+# Run from crates/aegis-cli/: cargo generate-rpm
+# Or from workspace root: cd crates/aegis-cli && cargo generate-rpm
+# Output: target/generate-rpm/aegis-cli-<version>-1.x86_64.rpm
+# Note: cargo-generate-rpm resolves asset source paths relative to the
+# package directory (crates/aegis-cli/), not the workspace root.
+[package.metadata.generate-rpm]
+name = "aegis-cli"
+license = "Apache-2.0"
+summary = "Terminal-native agentic AI pair programmer for CUI environments"
+assets = [
+    { source = "../../target/release/aegis", dest = "/usr/bin/aegis", mode = "755" },
+    { source = "../../LICENSE", dest = "/usr/share/doc/aegis-cli/LICENSE", mode = "644", doc = true },
+    { source = "../../README.md", dest = "/usr/share/doc/aegis-cli/README.md", mode = "644", doc = true },
+]

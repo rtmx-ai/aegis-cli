@@ -205,6 +205,45 @@ jobs:
           path: target/debian/aegis-cli_*.deb
           retention-days: 90
 
+  # REQ-BUILD-043: cargo-generate-rpm unsigned package generation
+  # REQ-BUILD-046: rpm install smoke test on RHEL CI
+  rpm-package:
+    name: RPM Package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-generate-rpm
+        run: cargo install cargo-generate-rpm --locked
+      - name: Build release binary
+        run: cargo build --release --package aegis-cli
+      - name: Generate .rpm package
+        run: |
+          cd crates/aegis-cli
+          cargo generate-rpm
+      - name: Verify .rpm exists and is valid
+        run: |
+          sudo apt-get install -y rpm
+          RPM=$(ls target/generate-rpm/aegis-cli-*.rpm)
+          test -f "$RPM" || { echo "Missing .rpm"; exit 1; }
+          echo "Generated: $RPM ($(stat -c%s "$RPM") bytes)"
+          rpm -qip "$RPM"
+          rpm -qlp "$RPM"
+      - name: Install .rpm in RHEL 9 container (REQ-BUILD-046 smoke test)
+        run: |
+          RPM=$(ls target/generate-rpm/aegis-cli-*.rpm)
+          docker run --rm -v "$PWD/target/generate-rpm:/rpms:ro" \
+            redhat/ubi9:latest \
+            sh -c "rpm -i /rpms/$(basename $RPM) && /usr/bin/aegis --version"
+      - name: Upload .rpm artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: aegis-cli-rpm
+          path: target/generate-rpm/aegis-cli-*.rpm
+          retention-days: 90
+
   rtmx-health:
     name: RTMX Requirements Health
     runs-on: ubuntu-latest
@@ -221,7 +260,7 @@ jobs:
     name: Build Gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [format, lint, unit-tests, integration-tests, doc-tests, coverage, cargo-deny, sbom, deb-package, rtmx-health]
+    needs: [format, lint, unit-tests, integration-tests, doc-tests, coverage, cargo-deny, sbom, deb-package, rpm-package, rtmx-health]
     if: always()
     steps:
       - name: Check required jobs
