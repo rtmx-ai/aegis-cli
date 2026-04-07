@@ -207,6 +207,8 @@ jobs:
 
   # REQ-BUILD-043: cargo-generate-rpm unsigned package generation
   # REQ-BUILD-046: rpm install smoke test on RHEL CI
+  # Builds against musl so the binary is statically linked -- RHEL 9 has
+  # glibc 2.34 which cannot run binaries built against newer glibc.
   rpm-package:
     name: RPM Package
     runs-on: ubuntu-latest
@@ -214,11 +216,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
       - uses: Swatinem/rust-cache@v2
+      - name: Install musl tools
+        run: sudo apt-get install -y musl-tools
       - name: Install cargo-generate-rpm
         run: cargo install cargo-generate-rpm --locked
-      - name: Build release binary
-        run: cargo build --release --package aegis-cli
+      - name: Build release binary (musl static)
+        run: cargo build --release --package aegis-cli --target x86_64-unknown-linux-musl
       - name: Generate .rpm package
         # Run from workspace root with -p <path>. --auto-req disabled avoids
         # cargo-generate-rpm trying to parse the binary for dependencies

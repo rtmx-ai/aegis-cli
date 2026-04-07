@@ -62,18 +62,20 @@ assets = [
 ]
 
 # REQ-BUILD-043: cargo-generate-rpm metadata for unsigned .rpm generation.
-# Run from workspace root: cargo-generate-rpm -p crates/aegis-cli --auto-req disabled
+# Run from workspace root:
+#   cargo build --release --target x86_64-unknown-linux-musl --package aegis-cli
+#   cargo-generate-rpm -p crates/aegis-cli --auto-req disabled
 # Output: target/generate-rpm/aegis-cli-<version>-1.x86_64.rpm
 #
-# Asset source paths are resolved relative to the package directory
-# (crates/aegis-cli/), so "../../target/release/aegis" is the workspace
-# target dir.
+# The binary is built against musl so the resulting .rpm installs on
+# RHEL 9 (glibc 2.34) without runtime linker errors. Asset source paths
+# are resolved relative to the package directory (crates/aegis-cli/).
 [package.metadata.generate-rpm]
 name = "aegis-cli"
 license = "Apache-2.0"
 summary = "Terminal-native agentic AI pair programmer for CUI environments"
 assets = [
-    { source = "../../target/release/aegis", dest = "/usr/bin/aegis", mode = "755" },
+    { source = "../../target/x86_64-unknown-linux-musl/release/aegis", dest = "/usr/bin/aegis", mode = "755" },
     { source = "../../LICENSE", dest = "/usr/share/doc/aegis-cli/LICENSE", mode = "644", doc = true },
     { source = "../../README.md", dest = "/usr/share/doc/aegis-cli/README.md", mode = "644", doc = true },
 ]
