@@ -147,17 +147,26 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-cyclonedx
         run: cargo install cargo-cyclonedx --locked
-      - name: Generate CycloneDX SBOM
+      - name: Generate CycloneDX SBOMs (per crate)
         run: cargo cyclonedx --format json --spec-version 1.5
-      - name: Verify SBOM exists
+      - name: Verify aegis-cli SBOM exists
         run: |
-          test -f bom.json || exit 1
-          echo "SBOM generated: $(wc -c < bom.json) bytes"
+          SBOM=crates/aegis-cli/aegis-cli.cdx.json
+          test -f "$SBOM" || { echo "Missing $SBOM"; exit 1; }
+          COMPONENTS=$(jq '.components | length' "$SBOM")
+          FORMAT=$(jq -r '.bomFormat' "$SBOM")
+          SPEC=$(jq -r '.specVersion' "$SBOM")
+          echo "SBOM: $SBOM"
+          echo "Format: $FORMAT $SPEC"
+          echo "Components: $COMPONENTS"
+          [ "$FORMAT" = "CycloneDX" ] || exit 1
+          [ "$SPEC" = "1.5" ] || exit 1
+          [ "$COMPONENTS" -gt 0 ] || exit 1
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v7
         with:
           name: aegis-cli-sbom
-          path: bom.json
+          path: crates/*/aegis-*.cdx.json
           retention-days: 90
 
   rtmx-health:

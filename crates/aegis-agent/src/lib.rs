@@ -10,6 +10,7 @@ pub mod cancellation;
 pub mod compaction;
 pub mod loop_runner;
 pub mod retry;
+pub mod session;
 pub mod system_prompt;
 pub mod token_counter;
 pub mod tools;
