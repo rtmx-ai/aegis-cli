@@ -257,6 +257,88 @@ jobs:
           path: target/generate-rpm/aegis-cli-*.rpm
           retention-days: 90
 
+  # REQ-BUILD-049: Airgap update bundle with manifest and version file
+  airgap-bundle:
+    name: Airgap Update Bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [sbom, rpm-package]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+      - name: Install musl tools
+        run: sudo apt-get install -y musl-tools
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx --locked
+      - name: Build musl static binary
+        run: cargo build --release --package aegis-cli --target x86_64-unknown-linux-musl
+      - name: Generate CycloneDX SBOM
+        run: cargo cyclonedx --format json --spec-version 1.5
+      - name: Build airgap bundle
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          GIT_SHA=$(git rev-parse --short HEAD)
+          BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          BUNDLE_NAME="aegis-${VERSION}-airgap-linux-x86_64"
+          STAGING="$PWD/target/airgap/${BUNDLE_NAME}"
+
+          mkdir -p "$STAGING"
+          cp target/x86_64-unknown-linux-musl/release/aegis "$STAGING/aegis"
+          cp crates/aegis-cli/aegis-cli.cdx.json "$STAGING/sbom.json"
+          cp LICENSE "$STAGING/LICENSE"
+          cp README.md "$STAGING/README.md"
+
+          # version.json
+          cat > "$STAGING/version.json" <<JSON
+          {
+            "version": "${VERSION}",
+            "git_sha": "${GIT_SHA}",
+            "build_date": "${BUILD_DATE}",
+            "target": "x86_64-unknown-linux-musl"
+          }
+          JSON
+
+          # manifest.txt: SHA-256 of every file in the bundle
+          cd "$STAGING"
+          sha256sum aegis sbom.json LICENSE README.md version.json > manifest.txt
+          cat manifest.txt
+
+          # Tarball
+          cd ..
+          tar czf "${BUNDLE_NAME}.tar.gz" "${BUNDLE_NAME}"
+          echo "Bundle: target/airgap/${BUNDLE_NAME}.tar.gz ($(stat -c%s ${BUNDLE_NAME}.tar.gz) bytes)"
+          tar tzf "${BUNDLE_NAME}.tar.gz" | head -20
+      - name: Verify bundle structure
+        run: |
+          BUNDLE=$(ls target/airgap/aegis-*-airgap-linux-x86_64.tar.gz | head -1)
+          test -f "$BUNDLE" || { echo "Missing bundle"; exit 1; }
+          # Extract and verify contents
+          EXTRACT=$(mktemp -d)
+          tar xzf "$BUNDLE" -C "$EXTRACT"
+          DIR=$(ls "$EXTRACT")
+          cd "$EXTRACT/$DIR"
+          test -f aegis || { echo "Missing binary"; exit 1; }
+          test -f sbom.json || { echo "Missing sbom.json"; exit 1; }
+          test -f manifest.txt || { echo "Missing manifest.txt"; exit 1; }
+          test -f version.json || { echo "Missing version.json"; exit 1; }
+          test -f LICENSE || { echo "Missing LICENSE"; exit 1; }
+          # Verify manifest checksums
+          sha256sum -c manifest.txt
+          # Verify the binary runs
+          ./aegis --version
+          # Verify version.json is valid JSON
+          cat version.json | python3 -c 'import json, sys; json.load(sys.stdin)'
+          echo "Airgap bundle verified"
+      - name: Upload airgap bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: aegis-cli-airgap-bundle
+          path: target/airgap/*.tar.gz
+          retention-days: 90
+
   rtmx-health:
     name: RTMX Requirements Health
     runs-on: ubuntu-latest
@@ -273,7 +355,7 @@ jobs:
     name: Build Gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [format, lint, unit-tests, integration-tests, doc-tests, coverage, cargo-deny, sbom, deb-package, rpm-package, rtmx-health]
+    needs: [format, lint, unit-tests, integration-tests, doc-tests, coverage, cargo-deny, sbom, deb-package, rpm-package, airgap-bundle, rtmx-health]
     if: always()
     steps:
       - name: Check required jobs

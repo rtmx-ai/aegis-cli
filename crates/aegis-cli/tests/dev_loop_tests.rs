@@ -148,6 +148,44 @@ fn test_cargo_toml_has_rpm_metadata() {
     );
 }
 
+// @req REQ-BUILD-049
+#[test]
+fn test_ci_has_airgap_bundle_job() {
+    let ci = read_file(".github/workflows/ci.yml");
+    assert!(
+        ci.contains("airgap-bundle:"),
+        "ci.yml must define airgap-bundle job"
+    );
+    // Bundle must include binary + sbom + manifest + version
+    assert!(
+        ci.contains("sbom.json"),
+        "airgap-bundle job must include sbom.json"
+    );
+    assert!(
+        ci.contains("manifest.txt"),
+        "airgap-bundle job must include SHA-256 manifest.txt"
+    );
+    assert!(
+        ci.contains("version.json"),
+        "airgap-bundle job must include version.json"
+    );
+    // Must be the musl static binary
+    assert!(
+        ci.contains("x86_64-unknown-linux-musl"),
+        "airgap-bundle job must use musl static binary"
+    );
+    // Must verify manifest checksums
+    assert!(
+        ci.contains("sha256sum -c manifest.txt"),
+        "airgap-bundle job must verify manifest.txt checksums"
+    );
+    // Must produce a tarball
+    assert!(
+        ci.contains("airgap-linux-x86_64") && ci.contains("tar"),
+        "airgap-bundle job must produce aegis-*-airgap-linux-x86_64.tar.gz"
+    );
+}
+
 // @req REQ-BUILD-046
 #[test]
 fn test_ci_has_rpm_smoke_test() {
