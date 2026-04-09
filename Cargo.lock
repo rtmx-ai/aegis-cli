@@ -156,7 +156,9 @@ version = "0.1.0"
 dependencies = [
  "aegis-domain",
  "async-trait",
+ "futures",
  "mockall",
+ "reqwest",
  "serde",
  "serde_json",
  "tempfile",
