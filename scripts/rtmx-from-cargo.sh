@@ -26,13 +26,13 @@ MARKERS_RAW="$WORKDIR/markers.txt"
 TEST_OUTPUT="$WORKDIR/cargo-test.txt"
 RESULTS_JSON="$WORKDIR/results.json"
 
-# Step 1: marker->test mapping
+# Step 1: marker->test mapping (scan all source dirs)
 echo "Scanning test markers..." >&2
-rtmx --no-color from-tests crates/ --show-all > "$MARKERS_RAW" 2>&1
+rtmx --no-color from-tests . --show-all > "$MARKERS_RAW" 2>&1
 
-# Step 2: cargo test
+# Step 2: cargo test (lib + integration tests)
 echo "Running cargo test..." >&2
-cargo test --workspace --lib --no-fail-fast > "$TEST_OUTPUT" 2>&1 || true
+cargo test --workspace --no-fail-fast > "$TEST_OUTPUT" 2>&1 || true
 
 # Step 3: build results JSON via Python (cross-platform regex)
 python3 - "$MARKERS_RAW" "$TEST_OUTPUT" "$RESULTS_JSON" <<'PYEOF'
