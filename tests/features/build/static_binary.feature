@@ -389,7 +389,31 @@ Feature: Static Binary Build Pipeline
     Then it should complete successfully without access to repository secrets
 
   # ---------------------------------------------------------------------------
-  # REQ-BUILD-040: GPG signing of Linux release artifacts (future)
+  # REQ-BUILD-040: GPG signing of Linux release artifacts
+  # Validation method: Inspection (release.yml workflow)
+  # ---------------------------------------------------------------------------
+
+  # @req REQ-BUILD-040
+  Scenario: Release workflow signs Linux binary with GPG
+    Given a tag matching "v*" is pushed to the repository
+    When the release workflow sign job completes
+    Then a detached ASCII-armored signature aegis.asc should exist
+    And "gpg --verify aegis.asc aegis" should report "Good signature"
+
+  # @req REQ-BUILD-040
+  Scenario: Release workflow signs all Linux artifacts
+    Given a tag matching "v*" is pushed to the repository
+    When the release workflow sign job completes
+    Then .asc signature files should exist for the binary, .deb, .rpm, tarball, and airgap bundle
+    And each signature should pass gpg --verify
+
+  # @req REQ-BUILD-040
+  Scenario: Release workflow publishes signatures to GitHub Release
+    Given a tag matching "v*" is pushed to the repository
+    When the release workflow release job completes
+    Then the GitHub Release should contain .asc files for every artifact
+
+  # ---------------------------------------------------------------------------
   # REQ-BUILD-041: Authenticode signing of Windows release artifacts (future)
   # Skipped until organizational signing infrastructure is available.
   # ---------------------------------------------------------------------------
