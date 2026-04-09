@@ -1,0 +1,63 @@
+# Ubiquitous Language Glossary for aegis-cli
+# Every term here is used consistently across code, tests, docs, and BDD scenarios.
+
+terms:
+  agent:
+    definition: "The REA-loop AI assistant that reads context, queries the LLM, and executes tools."
+    crate: aegis-agent
+
+  rea_loop:
+    definition: "Read-Evaluate-Act cycle: gather context, send to LLM, execute tool calls, inject results."
+    crate: aegis-agent
+
+  hitl:
+    definition: "Human-In-The-Loop approval gate that blocks mutating tool execution until a human approves."
+    crate: aegis-hitl
+
+  tool_call:
+    definition: "A structured request from the LLM to execute a specific tool with parameters."
+    crate: aegis-domain
+
+  tool_risk:
+    definition: "Risk classification of a tool call: ReadOnly, LocalMutation, NetworkMutation, Destructive."
+    crate: aegis-domain
+
+  session:
+    definition: "A bounded conversation between user and agent, identified by SessionId."
+    crate: aegis-domain
+
+  provider:
+    definition: "An LLM backend (Vertex AI, Bedrock, Azure, Ollama/vLLM) implementing LlmProvider trait."
+    crate: aegis-llm
+
+  plugin:
+    definition: "An external binary implementing the aegis-infra/v1 NDJSON protocol for IaC operations."
+    crate: aegis-infra
+
+  cassette:
+    definition: "A recorded LLM interaction (request/response pairs) for deterministic test replay."
+    crate: aegis-test-support
+
+  ledger:
+    definition: "Append-only JSONL audit log recording session metadata (never CUI content)."
+    crate: aegis-audit
+
+  aegisignore:
+    definition: "Mandatory blocklist file (.aegisignore) preventing sensitive file patterns from agent context."
+    crate: aegis-security
+
+  onboard:
+    definition: "First-run initialization wizard: mode selection, backend config, plugin setup."
+    crate: aegis-onboard
+
+  domain_event:
+    definition: "An immutable fact about something that happened in the system (SessionStarted, ToolApproved, etc.)."
+    crate: aegis-domain
+
+  approval_gate:
+    definition: "Port trait for HITL approval decisions. Implementations: ChannelApprovalGate (TUI), MockApprovalGate (test)."
+    crate: aegis-hitl
+
+  security_filter:
+    definition: "Port trait for content filtering. Checks tool calls and file access against security policy."
+    crate: aegis-security
