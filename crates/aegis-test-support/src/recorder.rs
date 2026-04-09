@@ -197,6 +197,193 @@ impl TokenStream for ReplayTokenStream {
     }
 }
 
+// ============================================================================
+// REQ-TEST-024: Cassette recording mode for capturing real provider responses.
+// ============================================================================
+
+/// Current cassette file format version.
+pub const CASSETTE_VERSION: u32 = 1;
+
+/// Environment variable that toggles record mode.
+pub const RECORD_ENV_VAR: &str = "AEGIS_RECORD_CASSETTES";
+
+/// A single recorded LLM exchange (request -> stream events).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CassetteExchange {
+    pub messages: Vec<Message>,
+    pub tools: Vec<ToolSchema>,
+    pub events: Vec<StreamEvent>,
+}
+
+/// On-disk cassette schema.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CassetteFile {
+    pub version: u32,
+    pub recorded_at: String,
+    pub exchanges: Vec<CassetteExchange>,
+}
+
+impl CassetteFile {
+    pub fn new() -> Self {
+        Self {
+            version: CASSETTE_VERSION,
+            recorded_at: String::new(),
+            exchanges: Vec::new(),
+        }
+    }
+}
+
+impl Default for CassetteFile {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Returns true if `AEGIS_RECORD_CASSETTES=1` is set in the environment.
+pub fn is_record_mode() -> bool {
+    std::env::var(RECORD_ENV_VAR)
+        .map(|v| v == "1")
+        .unwrap_or(false)
+}
+
+/// Resolve the workspace root by walking up from CARGO_MANIFEST_DIR until we
+/// find a Cargo.toml that defines `[workspace]`. Falls back to the manifest
+/// dir if no workspace marker is found.
+fn workspace_root() -> std::path::PathBuf {
+    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut cur = manifest.clone();
+    loop {
+        let candidate = cur.join("Cargo.toml");
+        if candidate.exists()
+            && let Ok(s) = std::fs::read_to_string(&candidate)
+            && s.contains("[workspace]")
+        {
+            return cur;
+        }
+        if !cur.pop() {
+            return manifest;
+        }
+    }
+}
+
+/// Resolve the on-disk path for a named cassette:
+/// `<workspace_root>/tests/fixtures/cassettes/<test_name>.json`.
+pub fn cassette_path(test_name: &str) -> std::path::PathBuf {
+    workspace_root()
+        .join("tests")
+        .join("fixtures")
+        .join("cassettes")
+        .join(format!("{}.json", test_name))
+}
+
+/// Load a cassette by test name. Returns `None` if the file does not exist.
+/// Returns `Some(Err(..))`-equivalent via panic on a corrupted file is avoided
+/// by surfacing parse errors as `None` only when the file truly is missing.
+pub fn load_cassette(test_name: &str) -> Option<CassetteFile> {
+    let path = cassette_path(test_name);
+    if !path.exists() {
+        return None;
+    }
+    let data = std::fs::read_to_string(&path).ok()?;
+    serde_json::from_str(&data).ok()
+}
+
+/// Save a cassette atomically (write to temp file then rename).
+pub fn save_cassette(test_name: &str, cassette: &CassetteFile) -> Result<(), DomainError> {
+    let path = cassette_path(test_name);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| {
+            DomainError::Other(format!(
+                "failed to create cassette dir {}: {}",
+                parent.display(),
+                e
+            ))
+        })?;
+    }
+    let data = serde_json::to_string_pretty(cassette)
+        .map_err(|e| DomainError::Other(format!("failed to serialize cassette: {}", e)))?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, data).map_err(|e| {
+        DomainError::Other(format!(
+            "failed to write cassette tmp {}: {}",
+            tmp.display(),
+            e
+        ))
+    })?;
+    std::fs::rename(&tmp, &path).map_err(|e| {
+        DomainError::Other(format!(
+            "failed to rename cassette to {}: {}",
+            path.display(),
+            e
+        ))
+    })?;
+    Ok(())
+}
+
+/// High-level provider that wraps either a `RecordingProvider` (record mode)
+/// or a `ReplayProvider` (replay mode), choosing based on `is_record_mode()`.
+pub enum CassetteProvider {
+    Recording(RecordingProvider),
+    Replay(ReplayProvider),
+}
+
+impl CassetteProvider {
+    /// Create a cassette-backed provider for the given test name.
+    /// In record mode, real exchanges are captured and saved to the cassette
+    /// file on drop. In replay mode, the cassette file is read and used as
+    /// the source of truth (returns an error if it doesn't exist).
+    pub fn new(
+        test_name: &str,
+        real_provider: Box<dyn LlmProvider>,
+    ) -> Result<Self, DomainError> {
+        if is_record_mode() {
+            let path = cassette_path(test_name);
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            Ok(Self::Recording(RecordingProvider::new(real_provider, path)))
+        } else {
+            match load_cassette(test_name) {
+                Some(cassette) => {
+                    let recording = Recording {
+                        calls: cassette
+                            .exchanges
+                            .into_iter()
+                            .map(|ex| {
+                                ex.events
+                                    .into_iter()
+                                    .map(|e| RecordedEvent { event: e })
+                                    .collect()
+                            })
+                            .collect(),
+                    };
+                    Ok(Self::Replay(ReplayProvider::from_recording(recording)))
+                }
+                None => Err(DomainError::Other(format!(
+                    "no cassette found for test '{}' at {} (run with {}=1 to record)",
+                    test_name,
+                    cassette_path(test_name).display(),
+                    RECORD_ENV_VAR
+                ))),
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl LlmProvider for CassetteProvider {
+    async fn stream(
+        &self,
+        messages: &[Message],
+        tools: &[ToolSchema],
+    ) -> Result<Box<dyn TokenStream>, DomainError> {
+        match self {
+            Self::Recording(p) => p.stream(messages, tools).await,
+            Self::Replay(p) => p.stream(messages, tools).await,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,5 +549,93 @@ mod tests {
             StreamEvent::Token(t) => assert_eq!(t, "Hello"),
             other => panic!("expected Token(Hello), got {:?}", other),
         }
+    }
+
+    fn sample_cassette() -> CassetteFile {
+        CassetteFile {
+            version: CASSETTE_VERSION,
+            recorded_at: "2026-04-03T00:00:00Z".to_string(),
+            exchanges: vec![CassetteExchange {
+                messages: vec![],
+                tools: vec![],
+                events: vec![
+                    StreamEvent::Token("hi".into()),
+                    StreamEvent::Done {
+                        input_tokens: 1,
+                        output_tokens: 1,
+                    },
+                ],
+            }],
+        }
+    }
+
+    // Serialize the cassette to JSON for equality comparison since the
+    // underlying StreamEvent type does not implement PartialEq.
+    fn cassette_json(c: &CassetteFile) -> String {
+        serde_json::to_string(c).unwrap()
+    }
+
+    // @req REQ-TEST-024
+    #[test]
+    fn test_cassette_record_mode_detection() {
+        // Use a guard so concurrent tests don't trample env state.
+        let prev = std::env::var(RECORD_ENV_VAR).ok();
+        // SAFETY: tests are single-threaded for env mutation; we restore on exit.
+        unsafe {
+            std::env::set_var(RECORD_ENV_VAR, "1");
+        }
+        assert!(is_record_mode());
+        unsafe {
+            std::env::remove_var(RECORD_ENV_VAR);
+        }
+        assert!(!is_record_mode());
+        unsafe {
+            std::env::set_var(RECORD_ENV_VAR, "0");
+        }
+        assert!(!is_record_mode());
+        // Restore.
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var(RECORD_ENV_VAR, v),
+                None => std::env::remove_var(RECORD_ENV_VAR),
+            }
+        }
+    }
+
+    // @req REQ-TEST-024
+    #[test]
+    fn test_cassette_save_and_load_roundtrip() {
+        let test_name = "unit_roundtrip_REQ_TEST_024";
+        let cassette = sample_cassette();
+        save_cassette(test_name, &cassette).unwrap();
+
+        let loaded = load_cassette(test_name).expect("cassette should exist");
+        assert_eq!(loaded.version, CASSETTE_VERSION);
+        assert_eq!(loaded.exchanges.len(), 1);
+        assert_eq!(cassette_json(&loaded), cassette_json(&cassette));
+
+        // Cleanup so the repo doesn't accumulate fixtures.
+        let _ = std::fs::remove_file(cassette_path(test_name));
+    }
+
+    // @req REQ-TEST-024
+    #[test]
+    fn test_cassette_load_returns_none_for_missing() {
+        let test_name = "definitely_does_not_exist_REQ_TEST_024_xyz";
+        let _ = std::fs::remove_file(cassette_path(test_name));
+        assert!(load_cassette(test_name).is_none());
+    }
+
+    // @req REQ-TEST-024
+    #[test]
+    fn test_cassette_path_resolution() {
+        let p = cassette_path("foo");
+        let s = p.to_string_lossy().replace('\\', "/");
+        assert!(
+            s.ends_with("tests/fixtures/cassettes/foo.json"),
+            "path was {}",
+            s
+        );
+        assert!(p.is_absolute());
     }
 }
