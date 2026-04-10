@@ -1,0 +1,29 @@
+---
+source: crates/aegis-tui/tests/tui_snapshots.rs
+assertion_line: 136
+expression: frame
+---
+"gemini-2.0-flash                                                                "
+"You: Read Cargo.toml                                                            "
+"                                                                                "
+"  > read_file: Cargo.toml (2.1KB)                                               "
+"                                                                                "
+"The workspace has 10 crates under the crates/ directory.                        "
+"                                                                                "
+"You: Which crate handles the TUI?                                               "
+"                                                                                "
+"The aegis-tui crate handles the terminal user interface.                        "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+" > ─────────────────────────────────────────────────────────────────────────────"
+"                                                                                "
+"                                                                                "
