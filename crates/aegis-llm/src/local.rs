@@ -32,6 +32,13 @@ impl LocalProvider {
                 message: format!("Failed to create HTTP client: {e}"),
             })?;
 
+        tracing::info!(
+            provider = "local",
+            model = %config.model,
+            endpoint = %config.endpoint,
+            "provider initialized"
+        );
+
         Ok(Self {
             client,
             endpoint: config.endpoint.trim_end_matches('/').to_string(),
@@ -99,6 +106,12 @@ impl LlmProvider for LocalProvider {
     ) -> Result<Box<dyn TokenStream>, DomainError> {
         let url = format!("{}/chat/completions", self.endpoint);
         let body = self.build_request_body(messages, tools);
+        tracing::debug!(
+            model = %self.model,
+            messages = messages.len(),
+            tools = tools.len(),
+            "starting LLM stream"
+        );
 
         let response = self
             .client

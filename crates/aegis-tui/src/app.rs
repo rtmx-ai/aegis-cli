@@ -92,6 +92,10 @@ impl App {
             TuiEvent::AgentToolUse(call) => {
                 self.phase = AppPhase::ToolExecuting;
                 let (name, detail) = describe_tool_call_short(&call);
+                tracing::debug!(
+                    tool = %name,
+                    "TUI received tool use event"
+                );
                 self.messages.push(ChatMessage::tool_call(name, detail));
                 Action::Continue
             }
@@ -110,6 +114,7 @@ impl App {
                 Action::Continue
             }
             TuiEvent::AgentError(msg) => {
+                tracing::warn!(error = %msg, "agent error received");
                 // Flush any partial stream buffer
                 if !self.stream_buffer.is_empty() {
                     let content = std::mem::take(&mut self.stream_buffer);

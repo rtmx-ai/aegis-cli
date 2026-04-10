@@ -148,6 +148,7 @@ dependencies = [
  "reqwest",
  "rstest",
  "serde",
+ "tracing",
 ]
 
 [[package]]
@@ -176,6 +177,7 @@ dependencies = [
  "ratatui",
  "rstest",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
