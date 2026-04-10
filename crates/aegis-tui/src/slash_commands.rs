@@ -18,6 +18,10 @@ pub enum SlashCommand {
     Add(String),
     /// Remove a file from the agent's context window.
     Drop(String),
+    /// Plugin operations: /infra <subcommand>.
+    Infra(String),
+    /// Connectivity and health checks.
+    Doctor,
 }
 
 /// Result of attempting to parse a slash command.
@@ -74,6 +78,14 @@ pub fn parse_slash_command(input: &str) -> ParseResult {
                 ParseResult::Command(SlashCommand::Drop(arg))
             }
         }
+        "/infra" => {
+            if arg.is_empty() {
+                ParseResult::Command(SlashCommand::Infra(String::new()))
+            } else {
+                ParseResult::Command(SlashCommand::Infra(arg))
+            }
+        }
+        "/doctor" => ParseResult::Command(SlashCommand::Doctor),
         _ => ParseResult::Unknown(cmd),
     }
 }
@@ -227,6 +239,80 @@ mod tests {
         assert_eq!(
             parse_slash_command("/ADD readme.md"),
             ParseResult::Command(SlashCommand::Add("readme.md".to_string()))
+        );
+    }
+
+    // @req REQ-TUI-026
+    #[test]
+    fn parse_infra_status() {
+        assert_eq!(
+            parse_slash_command("/infra status"),
+            ParseResult::Command(SlashCommand::Infra("status".to_string()))
+        );
+    }
+
+    // @req REQ-TUI-026
+    #[test]
+    fn parse_infra_list() {
+        assert_eq!(
+            parse_slash_command("/infra list"),
+            ParseResult::Command(SlashCommand::Infra("list".to_string()))
+        );
+    }
+
+    // @req REQ-TUI-026
+    #[test]
+    fn parse_infra_preview_with_plugin_name() {
+        assert_eq!(
+            parse_slash_command("/infra preview gcp-assured-workloads"),
+            ParseResult::Command(SlashCommand::Infra(
+                "preview gcp-assured-workloads".to_string()
+            ))
+        );
+    }
+
+    // @req REQ-TUI-026
+    #[test]
+    fn parse_infra_no_subcommand() {
+        assert_eq!(
+            parse_slash_command("/infra"),
+            ParseResult::Command(SlashCommand::Infra(String::new()))
+        );
+    }
+
+    // @req REQ-TUI-026
+    #[test]
+    fn parse_infra_case_insensitive() {
+        assert_eq!(
+            parse_slash_command("/INFRA status"),
+            ParseResult::Command(SlashCommand::Infra("status".to_string()))
+        );
+    }
+
+    // @req REQ-TUI-028
+    #[test]
+    fn parse_doctor_command() {
+        assert_eq!(
+            parse_slash_command("/doctor"),
+            ParseResult::Command(SlashCommand::Doctor)
+        );
+    }
+
+    // @req REQ-TUI-028
+    #[test]
+    fn parse_doctor_case_insensitive() {
+        assert_eq!(
+            parse_slash_command("/DOCTOR"),
+            ParseResult::Command(SlashCommand::Doctor)
+        );
+    }
+
+    // @req REQ-TUI-028
+    #[test]
+    fn parse_doctor_ignores_trailing_args() {
+        assert_eq!(
+            parse_slash_command("/doctor verbose"),
+            ParseResult::Command(SlashCommand::Doctor)
         );
     }
 }
