@@ -59,30 +59,7 @@ async fn main() {
         .await;
 }
 
-// Sanity tests for the harness itself. Cucumber's main() is the
-// production runner; these tests verify the AegisWorld foundation
-// independently and run alongside the cucumber suite when invoked
-// via `cargo test --test cucumber`.
-
-/// @req REQ-TEST-020
-/// Sanity check that the AegisWorld constructs cleanly.
-#[test]
-fn test_aegis_world_default_constructs() {
-    let world = AegisWorld::default();
-    assert!(world.provider.is_none());
-    assert!(world.user_prompt.is_none());
-    assert!(world.tool_calls_seen.is_empty());
-    assert!(world.final_response.is_none());
-    assert!(world.last_error.is_none());
-}
-
-/// @req REQ-TEST-020
-/// Verify the World can be populated and read back.
-#[test]
-fn test_aegis_world_state_round_trip() {
-    let mut world = AegisWorld::default();
-    world.user_prompt = Some("hello".into());
-    world.final_response = Some("hi there".into());
-    assert_eq!(world.user_prompt.as_deref(), Some("hello"));
-    assert_eq!(world.final_response.as_deref(), Some("hi there"));
-}
+// NOTE: AegisWorld sanity tests have been moved to cucumber_world_test.rs
+// which uses the standard test harness (harness = true). The #[test]
+// functions that were here never ran because this binary uses a custom
+// main() with harness = false. See REQ-TEST-020.
