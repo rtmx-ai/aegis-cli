@@ -129,6 +129,7 @@ name = "aegis-onboard"
 version = "0.1.0"
 dependencies = [
  "aegis-domain",
+ "async-trait",
  "reqwest",
  "rstest",
  "serde",
