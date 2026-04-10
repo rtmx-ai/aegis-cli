@@ -12,5 +12,6 @@ pub mod detect;
 pub mod gateway;
 pub mod init;
 pub mod mtls;
+pub mod plugin_download;
 pub mod service_token;
 pub mod tutorial;
