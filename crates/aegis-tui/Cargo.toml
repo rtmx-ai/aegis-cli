@@ -16,3 +16,6 @@ tracing = { workspace = true }
 rstest = { workspace = true }
 insta = { workspace = true }
 tempfile = { workspace = true }
+aegis-agent = { path = "../aegis-agent" }
+aegis-test-support = { path = "../aegis-test-support" }
+tokio = { workspace = true, features = ["test-util"] }

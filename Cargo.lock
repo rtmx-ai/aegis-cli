@@ -171,7 +171,9 @@ dependencies = [
 name = "aegis-tui"
 version = "0.1.0"
 dependencies = [
+ "aegis-agent",
  "aegis-domain",
+ "aegis-test-support",
  "crossterm 0.28.1",
  "insta",
  "ratatui",
