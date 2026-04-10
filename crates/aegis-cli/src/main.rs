@@ -108,13 +108,14 @@ fn main() {
     let cli = Cli::parse();
 
     // Initialize tracing based on mode. TUI mode logs to file; everything else to stderr.
+    // No-subcommand with existing config also launches TUI mode.
     let is_tui_mode = matches!(
         cli.command,
         Some(Commands::Chat {
             headless: false,
             ..
         })
-    );
+    ) || (cli.command.is_none() && !needs_first_run_wizard());
     let _log_guard = if is_tui_mode {
         init_tracing_file()
     } else {
@@ -134,17 +135,35 @@ fn main() {
             std::process::exit(1);
         }
         None => {
-            eprintln!(
-                "aegis: use --help for usage. \
-                 Start with: aegis init --local"
-            );
-            std::process::exit(0);
+            if needs_first_run_wizard() {
+                // First run: launch the init wizard
+                run_init(true)
+            } else {
+                // Config exists: launch interactive chat
+                run_chat(None, false, None)
+            }
         }
     };
 
     if let Err(e) = result {
         eprintln!("aegis: {e}");
         std::process::exit(1);
+    }
+}
+
+/// Check whether the first-run wizard should be shown.
+///
+/// Returns `true` when no config file exists, meaning the user has
+/// never completed `aegis init`. Used by the no-subcommand path to
+/// decide between launching the wizard or starting interactive chat.
+fn needs_first_run_wizard() -> bool {
+    let config_path = aegis_onboard::config::AegisConfig::default_path().ok();
+    match config_path {
+        Some(path) => {
+            let config_dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+            aegis_onboard::init::should_show_wizard(config_dir)
+        }
+        None => true, // Cannot determine home dir, assume first run
     }
 }
 

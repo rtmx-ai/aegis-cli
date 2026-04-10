@@ -57,10 +57,22 @@ fn init_without_local_errors() {
         .stderr(predicate::str::contains("Cloud modes not yet implemented"));
 }
 
-// @req REQ-BUILD-001
+// @req REQ-ONBOARD-020
+// With no subcommand, aegis either launches the first-run wizard (init --local)
+// or starts the TUI. In a test environment without a terminal, the TUI path
+// fails with a terminal error; the wizard path runs init. Both are valid
+// outcomes that prove the no-subcommand dispatch is working.
 #[test]
-fn no_args_exits_zero() {
-    Command::cargo_bin("aegis").unwrap().assert().success();
+fn no_args_launches_wizard_or_chat() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    // Use a fresh HOME with no config to trigger the wizard path.
+    // The wizard calls run_init(local=true) which should succeed.
+    Command::cargo_bin("aegis")
+        .unwrap()
+        .env("HOME", tmp.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("Configuration written to"));
 }
 
 // @req REQ-CLI-001

@@ -4,6 +4,8 @@
 //! Enterprise BYOC, Managed SaaS, and Local (air-gapped).
 //! Also manages ~/.aegis/config.yaml lifecycle.
 
+pub mod adc;
+pub mod backend_select;
 pub mod byoc;
 pub mod config;
 pub mod connectivity;
@@ -13,5 +15,6 @@ pub mod gateway;
 pub mod init;
 pub mod mtls;
 pub mod plugin_download;
+pub mod plugin_preview;
 pub mod service_token;
 pub mod tutorial;

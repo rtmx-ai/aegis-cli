@@ -4,8 +4,9 @@
 //!         -> InfrastructureBinding -> ConfigCommit
 
 use crate::config::{AegisConfig, Mode, merge_config, preserves_audit_ledger};
+use crate::tutorial;
 use aegis_domain::error::DomainError;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// States of the init state machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +44,14 @@ impl InitInputs {
             region: None,
         }
     }
+}
+
+/// Check whether the first-run wizard should be shown.
+///
+/// Returns `true` when no config file exists in the given directory,
+/// meaning the user has never completed `aegis init`.
+pub fn should_show_wizard(config_dir: &Path) -> bool {
+    tutorial::is_first_run(config_dir)
 }
 
 /// Run the init state machine to completion.
@@ -117,6 +126,38 @@ pub fn run_init(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    // @req REQ-ONBOARD-020
+    #[test]
+    fn should_show_wizard_true_when_no_config() {
+        let tmp = TempDir::new().unwrap();
+        assert!(
+            should_show_wizard(tmp.path()),
+            "Should show wizard when no config.yaml exists"
+        );
+    }
+
+    // @req REQ-ONBOARD-020
+    #[test]
+    fn should_show_wizard_false_when_config_exists() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("config.yaml"), "version: '1.0'\n").unwrap();
+        assert!(
+            !should_show_wizard(tmp.path()),
+            "Should NOT show wizard when config.yaml exists"
+        );
+    }
+
+    // @req REQ-ONBOARD-020
+    #[test]
+    fn should_show_wizard_delegates_to_is_first_run() {
+        let tmp = TempDir::new().unwrap();
+        assert_eq!(
+            should_show_wizard(tmp.path()),
+            crate::tutorial::is_first_run(tmp.path()),
+            "should_show_wizard must agree with is_first_run"
+        );
+    }
 
     // @req REQ-ONBOARD-001
     #[test]

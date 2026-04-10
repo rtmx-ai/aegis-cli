@@ -8,7 +8,7 @@ license.workspace = true
 [dependencies]
 aegis-domain = { path = "../aegis-domain" }
 async-trait = { workspace = true }
-tokio = { workspace = true, features = ["fs"] }
+tokio = { workspace = true, features = ["fs", "process"] }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
