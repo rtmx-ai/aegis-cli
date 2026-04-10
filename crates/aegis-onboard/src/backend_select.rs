@@ -53,14 +53,28 @@ pub fn select_default_backend(config_dir: &Path) -> (SelectedBackend, Vec<Detect
 /// Accepts already-detected local providers (from async detection)
 /// and a flag indicating whether gcloud ADC was found.
 pub fn select_default_backend_with_providers(
+    config_dir: &Path,
+    local_providers: &[DetectedProvider],
+    has_gcloud_adc: bool,
+) -> (SelectedBackend, Vec<DetectionResult>) {
+    select_default_backend_inner(config_dir, local_providers, has_gcloud_adc, None)
+}
+
+/// Inner implementation that accepts an optional BYOC URL override
+/// (used by tests to avoid env-var race conditions).
+fn select_default_backend_inner(
     _config_dir: &Path,
     local_providers: &[DetectedProvider],
     has_gcloud_adc: bool,
+    byoc_override: Option<Option<String>>,
 ) -> (SelectedBackend, Vec<DetectionResult>) {
     let mut results = Vec::new();
 
     // 1. Check for enterprise BYOC gateway
-    let byoc_url = byoc::detect_byoc_environment();
+    let byoc_url = match byoc_override {
+        Some(val) => val,
+        None => byoc::detect_byoc_environment(),
+    };
     results.push(DetectionResult {
         check: "Enterprise BYOC gateway".to_string(),
         found: byoc_url.is_some(),
@@ -183,7 +197,7 @@ mod tests {
     #[test]
     fn select_returns_no_backend_when_nothing_available() {
         let tmp = TempDir::new().unwrap();
-        let (backend, results) = select_default_backend_with_providers(tmp.path(), &[], false);
+        let (backend, results) = select_default_backend_inner(tmp.path(), &[], false, Some(None));
         assert_eq!(backend, SelectedBackend::NoBackend);
         assert!(
             !results.is_empty(),
@@ -205,7 +219,8 @@ mod tests {
         }];
 
         // Without BYOC, should find Ollama
-        let (backend, _) = select_default_backend_with_providers(tmp.path(), &providers, false);
+        let (backend, _) =
+            select_default_backend_inner(tmp.path(), &providers, false, Some(None));
         assert!(
             matches!(backend, SelectedBackend::LocalOllama(_)),
             "Should select Ollama when no BYOC: {backend:?}"
@@ -222,7 +237,8 @@ mod tests {
             models: vec!["codellama:7b".to_string(), "llama3:latest".to_string()],
         }];
 
-        let (backend, _) = select_default_backend_with_providers(tmp.path(), &providers, false);
+        let (backend, _) =
+            select_default_backend_inner(tmp.path(), &providers, false, Some(None));
         assert_eq!(
             backend,
             SelectedBackend::LocalOllama("llama3:latest".to_string())
@@ -240,7 +256,7 @@ mod tests {
         }];
 
         let (backend, results) =
-            select_default_backend_with_providers(tmp.path(), &providers, false);
+            select_default_backend_inner(tmp.path(), &providers, false, Some(None));
         assert_eq!(backend, SelectedBackend::NoBackend);
         // Should report that Ollama was found but no llama3
         let ollama_result = results.iter().find(|r| r.check.contains("Ollama"));
@@ -261,7 +277,8 @@ mod tests {
             models: vec!["meta-llama/Llama-3-8B".to_string()],
         }];
 
-        let (backend, _) = select_default_backend_with_providers(tmp.path(), &providers, false);
+        let (backend, _) =
+            select_default_backend_inner(tmp.path(), &providers, false, Some(None));
         assert_eq!(
             backend,
             SelectedBackend::LocalVllm("http://localhost:8000".to_string())
@@ -285,7 +302,8 @@ mod tests {
             },
         ];
 
-        let (backend, _) = select_default_backend_with_providers(tmp.path(), &providers, false);
+        let (backend, _) =
+            select_default_backend_inner(tmp.path(), &providers, false, Some(None));
         assert!(
             matches!(backend, SelectedBackend::LocalOllama(_)),
             "Should prefer Ollama over vLLM"
@@ -311,7 +329,7 @@ mod tests {
     #[test]
     fn select_reports_all_detection_steps() {
         let tmp = TempDir::new().unwrap();
-        let (_, results) = select_default_backend_with_providers(tmp.path(), &[], false);
+        let (_, results) = select_default_backend_inner(tmp.path(), &[], false, Some(None));
         // Should have at least 4 detection steps
         assert!(
             results.len() >= 4,
