@@ -1,0 +1,29 @@
+---
+source: crates/aegis-tui/tests/tui_snapshots.rs
+assertion_line: 99
+expression: frame
+---
+"llama3-il5 | executing tool...                                                  "
+"  > read_file: src/main.rs                                                      "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+" > ─────────────────────────────────────────────────────────────────────────────"
+"                                                                                "
+"                                                                                "
