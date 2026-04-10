@@ -122,6 +122,33 @@ jobs:
           cargo llvm-cov clean --workspace
           cargo llvm-cov --no-report --lib --workspace
           cargo llvm-cov report --lcov --output-path lcov.info
+          cargo llvm-cov report --json --output-path coverage.json
+      - name: Check thresholds
+        # REQ-TEST-004: Coverage threshold enforcement.
+        # Target: 80% line / 70% branch (enforced when project matures).
+        # Current: warn at < 40% line, fail at < 20% line.
+        run: |
+          LINE_COV=$(python3 -c "
+          import json, sys
+          with open('coverage.json') as f:
+              data = json.load(f)
+          totals = data.get('data', [{}])[0].get('totals', {})
+          lines = totals.get('lines', {})
+          pct = lines.get('percent', 0.0)
+          print(f'{pct:.2f}')
+          ")
+          echo "Line coverage: ${LINE_COV}%"
+          FAIL_THRESHOLD=20
+          WARN_THRESHOLD=40
+          if python3 -c "exit(0 if float('${LINE_COV}') < ${FAIL_THRESHOLD} else 1)"; then
+            echo "FAIL: Line coverage ${LINE_COV}% is below minimum ${FAIL_THRESHOLD}%"
+            exit 1
+          fi
+          if python3 -c "exit(0 if float('${LINE_COV}') < ${WARN_THRESHOLD} else 1)"; then
+            echo "WARN: Line coverage ${LINE_COV}% is below target ${WARN_THRESHOLD}%"
+          else
+            echo "OK: Line coverage ${LINE_COV}% meets current threshold"
+          fi
       - uses: codecov/codecov-action@v6
         with:
           files: lcov.info
