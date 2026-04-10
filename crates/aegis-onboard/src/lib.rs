@@ -9,5 +9,8 @@ pub mod config;
 pub mod connectivity;
 pub mod credentials;
 pub mod detect;
+pub mod gateway;
 pub mod init;
+pub mod mtls;
 pub mod service_token;
+pub mod tutorial;
