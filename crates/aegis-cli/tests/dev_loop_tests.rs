@@ -87,6 +87,44 @@ fn test_pre_push_validates_dev_loop_gif() {
     );
 }
 
+// @req REQ-BUILD-032
+#[test]
+fn test_auto_rebuild_pipeline_configured() {
+    let root = workspace_root();
+
+    // bacon.toml has watch job with kill_then_restart
+    let bacon = read_file("bacon.toml");
+    assert!(
+        bacon.contains("kill_then_restart"),
+        "bacon.toml must use kill_then_restart for auto-rebuild"
+    );
+    assert!(
+        bacon.contains("[jobs.watch]"),
+        "bacon.toml must define [jobs.watch]"
+    );
+
+    // dev-run.sh exists
+    let dev_run = root.join("scripts/dev-run.sh");
+    assert!(dev_run.exists(), "scripts/dev-run.sh must exist");
+
+    // dev.sh exists for tmux session
+    let dev_sh = root.join("scripts/dev.sh");
+    assert!(dev_sh.exists(), "scripts/dev.sh must exist");
+}
+
+// @req REQ-BUILD-032
+#[test]
+fn test_dev_run_handles_signals() {
+    let content = read_file("scripts/dev-run.sh");
+    assert!(
+        content.contains("trap")
+            || content.contains("SIGTERM")
+            || content.contains("kill")
+            || content.contains("while true"),
+        "dev-run.sh must handle process lifecycle (trap/signal/loop)"
+    );
+}
+
 // @req REQ-BUILD-039
 #[test]
 fn test_ci_has_sbom_job() {

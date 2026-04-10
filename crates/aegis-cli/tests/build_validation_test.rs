@@ -83,3 +83,33 @@ fn test_release_workflow_has_gpg_signing() {
         "release workflow must verify GPG signatures"
     );
 }
+
+// @req REQ-BUILD-027
+#[test]
+fn test_homebrew_formula_exists() {
+    let formula = workspace_root().join("packaging/homebrew/aegis.rb");
+    assert!(formula.exists(), "packaging/homebrew/aegis.rb must exist");
+    let content = std::fs::read_to_string(&formula).unwrap();
+    assert!(content.contains("on_arm"), "must support ARM");
+    assert!(content.contains("on_intel"), "must support Intel");
+    assert!(content.contains("Apache-2.0"), "must specify license");
+}
+
+// @req REQ-BUILD-027
+#[test]
+fn test_homebrew_formula_has_both_arch_urls() {
+    let formula = workspace_root().join("packaging/homebrew/aegis.rb");
+    let content = std::fs::read_to_string(&formula).unwrap();
+    assert!(
+        content.contains("darwin-aarch64"),
+        "formula must reference darwin-aarch64 tarball"
+    );
+    assert!(
+        content.contains("darwin-x86_64"),
+        "formula must reference darwin-x86_64 tarball"
+    );
+    assert!(
+        content.contains("on_macos"),
+        "formula must use on_macos block"
+    );
+}
