@@ -451,6 +451,27 @@ jobs:
             target/${{ matrix.target }}/ci/aegis
             target/${{ matrix.target }}/ci/aegis.exe
 
+  # REQ-BUILD-026: macOS aarch64 (Apple Silicon) release binary
+  build-macos:
+    name: Build (aarch64-apple-darwin)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [format, lint, unit-tests, integration-tests, doc-tests]
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --profile ci --target aarch64-apple-darwin --package aegis-cli
+      - name: Upload binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: aegis-aarch64-apple-darwin
+          path: target/aarch64-apple-darwin/ci/aegis
+          retention-days: 90
+
   cross-compile-verify:
     name: Cross-compile Verification (${{ matrix.target }})
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

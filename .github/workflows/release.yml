@@ -131,18 +131,69 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
+  # Job 1b: Build macOS aarch64 (Apple Silicon) binary (REQ-BUILD-026)
+  # ---------------------------------------------------------------------------
+  build-macos:
+    name: Build macOS Artifacts
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release binary (aarch64-apple-darwin)
+        run: cargo build --release --package aegis-cli --target aarch64-apple-darwin
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Create release tarball
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TARBALL_NAME="aegis-${VERSION}-macos-aarch64"
+          STAGING="target/release-staging/${TARBALL_NAME}"
+          mkdir -p "$STAGING"
+          cp target/aarch64-apple-darwin/release/aegis "$STAGING/aegis"
+          cp LICENSE "$STAGING/LICENSE"
+          cp README.md "$STAGING/README.md"
+          cd target/release-staging
+          tar czf "${TARBALL_NAME}.tar.gz" "${TARBALL_NAME}"
+          echo "Created: ${TARBALL_NAME}.tar.gz"
+      - name: Collect artifacts
+        run: |
+          mkdir -p target/release-artifacts
+          VERSION="${{ steps.version.outputs.version }}"
+          cp target/aarch64-apple-darwin/release/aegis target/release-artifacts/aegis-macos-aarch64
+          cp target/release-staging/aegis-*-macos-aarch64.tar.gz target/release-artifacts/
+          ls -la target/release-artifacts/
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-artifacts-macos
+          path: target/release-artifacts/*
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
   # Job 2: Import GPG key, sign all artifacts, verify signatures
   # ---------------------------------------------------------------------------
   sign:
     name: Sign Artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [build-linux]
+    needs: [build-linux, build-macos]
     steps:
-      - name: Download build artifacts
+      - name: Download Linux build artifacts
         uses: actions/download-artifact@v8
         with:
           name: release-artifacts
+          path: artifacts
+      - name: Download macOS build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: release-artifacts-macos
           path: artifacts
       - name: Import GPG key
         env:
