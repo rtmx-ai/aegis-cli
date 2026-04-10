@@ -10,4 +10,5 @@ pub mod connectivity;
 pub mod credentials;
 pub mod detect;
 pub mod init;
+pub mod plugin_download;
 pub mod service_token;
