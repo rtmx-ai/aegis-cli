@@ -14,6 +14,10 @@ pub enum SlashCommand {
     Context,
     /// Quit the application.
     Quit,
+    /// Add a file to the agent's context window.
+    Add(String),
+    /// Remove a file from the agent's context window.
+    Drop(String),
 }
 
 /// Result of attempting to parse a slash command.
@@ -44,11 +48,32 @@ pub fn parse_slash_command(input: &str) -> ParseResult {
         .unwrap_or("")
         .to_lowercase();
 
+    // Extract the argument (everything after the first word).
+    let arg = trimmed
+        .split_whitespace()
+        .skip(1)
+        .collect::<Vec<_>>()
+        .join(" ");
+
     match cmd.as_str() {
         "/clear" => ParseResult::Command(SlashCommand::Clear),
         "/help" => ParseResult::Command(SlashCommand::Help),
         "/context" => ParseResult::Command(SlashCommand::Context),
         "/quit" => ParseResult::Command(SlashCommand::Quit),
+        "/add" => {
+            if arg.is_empty() {
+                ParseResult::Command(SlashCommand::Add(String::new()))
+            } else {
+                ParseResult::Command(SlashCommand::Add(arg))
+            }
+        }
+        "/drop" => {
+            if arg.is_empty() {
+                ParseResult::Command(SlashCommand::Drop(String::new()))
+            } else {
+                ParseResult::Command(SlashCommand::Drop(arg))
+            }
+        }
         _ => ParseResult::Unknown(cmd),
     }
 }
@@ -157,6 +182,51 @@ mod tests {
         assert_eq!(
             parse_slash_command("/"),
             ParseResult::Unknown("/".to_string())
+        );
+    }
+
+    // @req REQ-TUI-024
+    #[test]
+    fn parse_add_command_with_path() {
+        assert_eq!(
+            parse_slash_command("/add src/main.rs"),
+            ParseResult::Command(SlashCommand::Add("src/main.rs".to_string()))
+        );
+    }
+
+    // @req REQ-TUI-024
+    #[test]
+    fn parse_add_command_without_path() {
+        assert_eq!(
+            parse_slash_command("/add"),
+            ParseResult::Command(SlashCommand::Add(String::new()))
+        );
+    }
+
+    // @req REQ-TUI-024
+    #[test]
+    fn parse_drop_command_with_path() {
+        assert_eq!(
+            parse_slash_command("/drop src/main.rs"),
+            ParseResult::Command(SlashCommand::Drop("src/main.rs".to_string()))
+        );
+    }
+
+    // @req REQ-TUI-024
+    #[test]
+    fn parse_drop_command_without_path() {
+        assert_eq!(
+            parse_slash_command("/drop"),
+            ParseResult::Command(SlashCommand::Drop(String::new()))
+        );
+    }
+
+    // @req REQ-TUI-024
+    #[test]
+    fn parse_add_case_insensitive() {
+        assert_eq!(
+            parse_slash_command("/ADD readme.md"),
+            ParseResult::Command(SlashCommand::Add("readme.md".to_string()))
         );
     }
 }

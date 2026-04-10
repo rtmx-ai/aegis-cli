@@ -14,8 +14,9 @@ use crate::input::InputState;
 use crate::messages::ChatMessage;
 use crate::slash_commands::{self, SlashCommand};
 use crate::thinking::ThinkingAnimation;
-use aegis_domain::types::{ApprovalDecision, ToolCall};
+use aegis_domain::types::{ApprovalDecision, ToolCall, ToolRisk};
 use crossterm::event::{Event as CtEvent, KeyCode, KeyEvent, KeyModifiers};
+use std::path::PathBuf;
 use tokio::sync::mpsc;
 
 /// The current phase of the TUI interaction.
@@ -38,6 +39,17 @@ pub enum Action {
     Quit,
 }
 
+/// Information about a pending HITL approval displayed as a modal overlay.
+#[derive(Debug, Clone)]
+pub struct ApprovalDisplayInfo {
+    /// Name of the tool requesting approval.
+    pub tool_name: String,
+    /// Summary of the tool's arguments.
+    pub args_summary: String,
+    /// Risk level of the tool call.
+    pub risk: ToolRisk,
+}
+
 /// Central application state.
 pub struct App {
     pub phase: AppPhase,
@@ -46,7 +58,11 @@ pub struct App {
     pub thinking: ThinkingAnimation,
     pub stream_buffer: String,
     pub pending_approval: Option<ApprovalRequestHandle>,
+    pub approval_display: Option<ApprovalDisplayInfo>,
     pub should_quit: bool,
+
+    // Context files for /add and /drop
+    pub context_files: Vec<PathBuf>,
 
     // Metrics
     pub input_tokens: u64,
@@ -67,7 +83,9 @@ impl App {
             thinking: ThinkingAnimation::new(),
             stream_buffer: String::new(),
             pending_approval: None,
+            approval_display: None,
             should_quit: false,
+            context_files: Vec::new(),
             input_tokens: 0,
             output_tokens: 0,
             model_name: model_name.into(),
@@ -129,6 +147,13 @@ impl App {
                     "Approval required: {}",
                     handle.description
                 )));
+                let (tool_name, args_summary) = describe_tool_call_short(&handle.tool_call);
+                let risk = handle.tool_call.risk();
+                self.approval_display = Some(ApprovalDisplayInfo {
+                    tool_name,
+                    args_summary,
+                    risk,
+                });
                 self.pending_approval = Some(handle);
                 self.phase = AppPhase::AwaitingApproval;
                 Action::Continue
@@ -261,6 +286,7 @@ impl App {
         };
 
         if let Some(decision) = decision {
+            self.approval_display = None;
             if let Some(handle) = self.pending_approval.take() {
                 let decision_label = match decision {
                     ApprovalDecision::Approved => "Approved",
@@ -294,7 +320,7 @@ impl App {
             }
             SlashCommand::Help => {
                 self.messages.push(ChatMessage::system(
-                    "Commands: /clear /help /context /quit\n\
+                    "Commands: /add <path> /drop <path> /clear /help /context /quit\n\
                      Shortcuts: Ctrl+C quit, Shift+Enter newline, Esc vim mode\n\
                      Approval: [A]pprove [D]eny [E]dit [S]kip\n\
                      \n\
@@ -304,16 +330,66 @@ impl App {
                 Action::Continue
             }
             SlashCommand::Context => {
+                let files_info = if self.context_files.is_empty() {
+                    "Context files: (none)".to_string()
+                } else {
+                    let paths: Vec<String> = self
+                        .context_files
+                        .iter()
+                        .map(|p| format!("  {}", p.display()))
+                        .collect();
+                    format!("Context files:\n{}", paths.join("\n"))
+                };
                 self.messages.push(ChatMessage::system(format!(
-                    "Model: {}\nTokens: {}in + {}out\nMessages: {}",
+                    "Model: {}\nTokens: {}in + {}out\nMessages: {}\n{}",
                     self.model_name,
                     self.input_tokens,
                     self.output_tokens,
                     self.messages.len(),
+                    files_info,
                 )));
                 Action::Continue
             }
             SlashCommand::Quit => Action::Quit,
+            SlashCommand::Add(path) => {
+                if path.is_empty() {
+                    self.messages
+                        .push(ChatMessage::error("Usage: /add <path>".to_string()));
+                    return Action::Continue;
+                }
+                let pb = PathBuf::from(&path);
+                if !pb.exists() {
+                    self.messages
+                        .push(ChatMessage::error(format!("File not found: {path}")));
+                    return Action::Continue;
+                }
+                if self.context_files.contains(&pb) {
+                    self.messages
+                        .push(ChatMessage::system(format!("Already in context: {path}")));
+                    return Action::Continue;
+                }
+                self.context_files.push(pb);
+                self.messages
+                    .push(ChatMessage::system(format!("Added to context: {path}")));
+                Action::Continue
+            }
+            SlashCommand::Drop(path) => {
+                if path.is_empty() {
+                    self.messages
+                        .push(ChatMessage::error("Usage: /drop <path>".to_string()));
+                    return Action::Continue;
+                }
+                let pb = PathBuf::from(&path);
+                if let Some(pos) = self.context_files.iter().position(|p| p == &pb) {
+                    self.context_files.remove(pos);
+                    self.messages
+                        .push(ChatMessage::system(format!("Removed from context: {path}")));
+                } else {
+                    self.messages
+                        .push(ChatMessage::error(format!("Not in context: {path}")));
+                }
+                Action::Continue
+            }
         }
     }
 
@@ -590,5 +666,253 @@ mod tests {
         let status = app.status_text();
         assert!(status.contains("APPROVE?"));
         assert!(status.contains("[A/D/E/S]"));
+    }
+
+    // @req REQ-TUI-024
+    #[test]
+    fn add_command_adds_existing_file_to_context() {
+        let mut app = make_app();
+        // Use Cargo.toml which always exists at workspace root
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let action = app.execute_slash_command(SlashCommand::Add(path.clone()));
+        assert_eq!(action, Action::Continue);
+        assert_eq!(app.context_files.len(), 1);
+        assert_eq!(app.context_files[0], PathBuf::from(&path));
+        assert!(
+            app.messages
+                .last()
+                .unwrap()
+                .content
+                .contains("Added to context")
+        );
+    }
+
+    // @req REQ-TUI-024
+    #[test]
+    fn add_command_rejects_nonexistent_file() {
+        let mut app = make_app();
+        let action =
+            app.execute_slash_command(SlashCommand::Add("/nonexistent/path/file.rs".to_string()));
+        assert_eq!(action, Action::Continue);
+        assert!(app.context_files.is_empty());
+        assert!(
+            app.messages
+                .last()
+                .unwrap()
+                .content
+                .contains("File not found")
+        );
+    }
+
+    // @req REQ-TUI-024
+    #[test]
+    fn add_command_without_path_shows_usage() {
+        let mut app = make_app();
+        let action = app.execute_slash_command(SlashCommand::Add(String::new()));
+        assert_eq!(action, Action::Continue);
+        assert!(app.messages.last().unwrap().content.contains("Usage"));
+    }
+
+    // @req REQ-TUI-024
+    #[test]
+    fn add_command_rejects_duplicate() {
+        let mut app = make_app();
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        app.execute_slash_command(SlashCommand::Add(path.clone()));
+        app.execute_slash_command(SlashCommand::Add(path));
+        assert_eq!(app.context_files.len(), 1);
+        assert!(
+            app.messages
+                .last()
+                .unwrap()
+                .content
+                .contains("Already in context")
+        );
+    }
+
+    // @req REQ-TUI-024
+    #[test]
+    fn drop_command_removes_file_from_context() {
+        let mut app = make_app();
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        app.execute_slash_command(SlashCommand::Add(path.clone()));
+        assert_eq!(app.context_files.len(), 1);
+        let action = app.execute_slash_command(SlashCommand::Drop(path));
+        assert_eq!(action, Action::Continue);
+        assert!(app.context_files.is_empty());
+        assert!(
+            app.messages
+                .last()
+                .unwrap()
+                .content
+                .contains("Removed from context")
+        );
+    }
+
+    // @req REQ-TUI-024
+    #[test]
+    fn drop_command_errors_when_not_in_context() {
+        let mut app = make_app();
+        let action = app.execute_slash_command(SlashCommand::Drop("not_there.rs".to_string()));
+        assert_eq!(action, Action::Continue);
+        assert!(
+            app.messages
+                .last()
+                .unwrap()
+                .content
+                .contains("Not in context")
+        );
+    }
+
+    // @req REQ-TUI-024
+    #[test]
+    fn drop_command_without_path_shows_usage() {
+        let mut app = make_app();
+        let action = app.execute_slash_command(SlashCommand::Drop(String::new()));
+        assert_eq!(action, Action::Continue);
+        assert!(app.messages.last().unwrap().content.contains("Usage"));
+    }
+
+    // @req REQ-TUI-024
+    #[test]
+    fn context_command_shows_context_files() {
+        let mut app = make_app();
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        app.execute_slash_command(SlashCommand::Add(path.clone()));
+        app.execute_slash_command(SlashCommand::Context);
+        let last = &app.messages.last().unwrap().content;
+        assert!(last.contains("Context files:"));
+        assert!(last.contains(&path));
+    }
+
+    // @req REQ-TUI-024
+    #[test]
+    fn help_command_mentions_add_and_drop() {
+        let mut app = make_app();
+        app.execute_slash_command(SlashCommand::Help);
+        let content = &app.messages[0].content;
+        assert!(content.contains("/add"));
+        assert!(content.contains("/drop"));
+    }
+
+    // @req REQ-TUI-029
+    #[test]
+    fn approval_request_sets_display_info() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        let (resp_tx, _resp_rx) = tokio::sync::oneshot::channel();
+        let handle = ApprovalRequestHandle {
+            tool_call: ToolCall::WriteFile {
+                path: FilePath::new_unchecked("src/main.rs"),
+                content: "fn main() {}".to_string(),
+            },
+            description: "Write to src/main.rs".to_string(),
+            response_tx: resp_tx,
+        };
+        app.handle_event(TuiEvent::ApprovalRequest(handle), &tx);
+        assert!(app.approval_display.is_some());
+        let info = app.approval_display.as_ref().unwrap();
+        assert_eq!(info.tool_name, "write_file");
+        assert!(info.args_summary.contains("src/main.rs"));
+        assert_eq!(info.risk, ToolRisk::StateMutating);
+    }
+
+    // @req REQ-TUI-029
+    #[test]
+    fn approval_decision_clears_display_info() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        let (resp_tx, _resp_rx) = tokio::sync::oneshot::channel();
+        let handle = ApprovalRequestHandle {
+            tool_call: ToolCall::RunCommand {
+                command: "rm -rf /".to_string(),
+                timeout_secs: 10,
+            },
+            description: "Execute: rm -rf /".to_string(),
+            response_tx: resp_tx,
+        };
+        app.handle_event(TuiEvent::ApprovalRequest(handle), &tx);
+        assert!(app.approval_display.is_some());
+
+        // Deny the request
+        let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
+        app.handle_key(key, &tx);
+        assert!(app.approval_display.is_none());
+    }
+
+    // @req REQ-TUI-029
+    #[test]
+    fn approval_modal_blocks_regular_input() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        app.phase = AppPhase::AwaitingApproval;
+        // Try typing a character -- should not affect input
+        let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
+        let action = app.handle_key(key, &tx);
+        // 'x' is not a recognized approval key, so nothing happens
+        assert_eq!(action, Action::Continue);
+        assert_eq!(app.phase, AppPhase::AwaitingApproval);
+    }
+
+    // @req REQ-TUI-032
+    #[test]
+    fn streaming_buffer_accumulates_tokens() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        app.handle_event(TuiEvent::AgentToken("Hello ".to_string()), &tx);
+        app.handle_event(TuiEvent::AgentToken("world".to_string()), &tx);
+        assert_eq!(app.stream_buffer, "Hello world");
+        assert_eq!(app.phase, AppPhase::Streaming);
+    }
+
+    // @req REQ-TUI-032
+    #[test]
+    fn streaming_done_flushes_buffer_to_message() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        app.handle_event(TuiEvent::AgentToken("Complete response".to_string()), &tx);
+        app.handle_event(
+            TuiEvent::AgentDone {
+                input_tokens: 10,
+                output_tokens: 20,
+            },
+            &tx,
+        );
+        assert!(app.stream_buffer.is_empty());
+        assert_eq!(app.messages.len(), 1);
+        assert_eq!(app.messages[0].content, "Complete response");
+        assert_eq!(app.phase, AppPhase::Idle);
+    }
+
+    // @req REQ-TUI-032
+    #[test]
+    fn streaming_buffer_clears_on_new_user_message() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        // Simulate user sending a message which clears and starts streaming
+        app.input.insert_char('h');
+        app.input.insert_char('i');
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        app.handle_key(key, &tx);
+        assert!(app.stream_buffer.is_empty());
+        assert_eq!(app.phase, AppPhase::Streaming);
+    }
+
+    // @req REQ-TUI-032
+    #[test]
+    fn error_during_streaming_flushes_partial_buffer() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        app.handle_event(TuiEvent::AgentToken("partial".to_string()), &tx);
+        app.handle_event(TuiEvent::AgentError("connection lost".to_string()), &tx);
+        // Partial buffer flushed as assistant msg, error appended
+        assert!(app.stream_buffer.is_empty());
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].content, "partial");
+        assert_eq!(app.messages[1].content, "connection lost");
     }
 }

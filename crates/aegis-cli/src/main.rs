@@ -383,6 +383,8 @@ async fn run_interactive_chat(
                     input: app.input.text.clone(),
                     status_text: status,
                     scroll_offset: app.scroll_offset,
+                    stream_buffer: app.stream_buffer.clone(),
+                    approval_display: app.approval_display.clone(),
                 };
                 aegis_tui::layout::render(frame, &view);
             })

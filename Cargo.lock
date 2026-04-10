@@ -176,6 +176,7 @@ dependencies = [
  "insta",
  "ratatui",
  "rstest",
+ "tempfile",
  "tokio",
  "tracing",
 ]

@@ -1,11 +1,13 @@
 //! TUI layout: status line (top), chat log (fill), input (bottom).
 
+use crate::app::ApprovalDisplayInfo;
 use crate::messages::{ChatMessage, MessageKind};
+use aegis_domain::types::ToolRisk;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
 /// Application state for the TUI.
 pub struct AppState {
@@ -13,6 +15,11 @@ pub struct AppState {
     pub input: String,
     pub status_text: String,
     pub scroll_offset: u16,
+    /// Partial streaming response from the LLM, rendered inline below
+    /// the last complete message while tokens are arriving.
+    pub stream_buffer: String,
+    /// When set, a modal overlay is rendered for HITL approval.
+    pub approval_display: Option<ApprovalDisplayInfo>,
 }
 
 impl Default for AppState {
@@ -22,6 +29,8 @@ impl Default for AppState {
             input: String::new(),
             status_text: "aegis v0.1.0".to_string(),
             scroll_offset: 0,
+            stream_buffer: String::new(),
+            approval_display: None,
         }
     }
 }
@@ -67,6 +76,11 @@ pub fn render(frame: &mut Frame, state: &AppState) {
     render_status_line(frame, chunks[0], state);
     render_chat_log(frame, chunks[1], state);
     render_input(frame, chunks[2], state);
+
+    // Render HITL approval modal overlay on top of everything.
+    if let Some(ref info) = state.approval_display {
+        render_approval_modal(frame, frame.area(), info);
+    }
 }
 
 fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
@@ -132,11 +146,94 @@ fn render_chat_log(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppSt
         lines.push(Line::from(""));
     }
 
+    // Render the streaming buffer as a pending assistant message.
+    if !state.stream_buffer.is_empty() {
+        lines.push(Line::from(vec![
+            Span::raw(&state.stream_buffer),
+            Span::styled(
+                " ...",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::DIM),
+            ),
+        ]));
+        lines.push(Line::from(""));
+    }
+
     let chat = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
         .scroll((state.scroll_offset, 0));
 
     frame.render_widget(chat, area);
+}
+
+/// Compute a centered rectangle of approximately the given percentage of the
+/// parent area.
+fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(area);
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
+}
+
+/// Render the HITL approval modal as a centered overlay.
+fn render_approval_modal(frame: &mut Frame, area: Rect, info: &ApprovalDisplayInfo) {
+    let modal_area = centered_rect(60, 40, area);
+
+    // Clear the area behind the modal.
+    frame.render_widget(Clear, modal_area);
+
+    let risk_label = match info.risk {
+        ToolRisk::StateMutating => "STATE-MUTATING",
+        ToolRisk::ReadOnly => "READ-ONLY",
+    };
+    let risk_color = match info.risk {
+        ToolRisk::StateMutating => Color::Red,
+        ToolRisk::ReadOnly => Color::Green,
+    };
+
+    let text = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Tool: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(&info.tool_name),
+        ]),
+        Line::from(vec![
+            Span::styled("  Args: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(&info.args_summary),
+        ]),
+        Line::from(vec![
+            Span::styled("  Risk: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(risk_label, Style::default().fg(risk_color)),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  [Y] Approve   [N] Deny",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+
+    let block = Block::default()
+        .title(" Approval Required ")
+        .title_alignment(Alignment::Center)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+
+    let paragraph = Paragraph::new(text).block(block);
+    frame.render_widget(paragraph, modal_area);
 }
 
 fn render_input(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
@@ -285,6 +382,87 @@ mod tests {
         assert!(output.contains("You:"));
         assert!(output.contains("read_file"));
         assert!(output.contains("main function"));
+    }
+
+    // @req REQ-TUI-032
+    #[test]
+    fn layout_renders_streaming_buffer_inline() {
+        let state = AppState {
+            stream_buffer: "partial response".to_string(),
+            ..Default::default()
+        };
+        let output = render_to_string(&state, 80, 20);
+        assert!(
+            output.contains("partial response"),
+            "Should show streaming buffer content: {output}"
+        );
+        assert!(
+            output.contains("..."),
+            "Should show streaming indicator: {output}"
+        );
+    }
+
+    // @req REQ-TUI-032
+    #[test]
+    fn layout_does_not_render_empty_streaming_buffer() {
+        let state = AppState::default();
+        let output = render_to_string(&state, 60, 20);
+        // The "..." streaming indicator should NOT appear when buffer is empty.
+        // Count occurrences of "..." -- there should be none from the streaming
+        // buffer (the input prompt ">" is present but "..." is not).
+        assert!(
+            !output.contains("..."),
+            "Empty stream buffer should not render indicator: {output}"
+        );
+    }
+
+    // @req REQ-TUI-032
+    #[test]
+    fn layout_renders_streaming_buffer_after_messages() {
+        let mut state = AppState::default();
+        state.push_message(ChatMessage::user("hello"));
+        state.stream_buffer = "responding".to_string();
+        let output = render_to_string(&state, 80, 20);
+        assert!(output.contains("You:"));
+        assert!(output.contains("responding"));
+    }
+
+    // @req REQ-TUI-029
+    #[test]
+    fn layout_renders_approval_modal_overlay() {
+        let state = AppState {
+            approval_display: Some(ApprovalDisplayInfo {
+                tool_name: "write_file".to_string(),
+                args_summary: "src/main.rs".to_string(),
+                risk: ToolRisk::StateMutating,
+            }),
+            ..Default::default()
+        };
+        let output = render_to_string(&state, 80, 25);
+        assert!(
+            output.contains("Approval Required"),
+            "Should show modal title: {output}"
+        );
+        assert!(
+            output.contains("write_file"),
+            "Should show tool name: {output}"
+        );
+        assert!(output.contains("src/main.rs"), "Should show args: {output}");
+        assert!(
+            output.contains("STATE-MUTATING"),
+            "Should show risk level: {output}"
+        );
+    }
+
+    // @req REQ-TUI-029
+    #[test]
+    fn layout_does_not_render_modal_when_no_approval() {
+        let state = AppState::default();
+        let output = render_to_string(&state, 80, 25);
+        assert!(
+            !output.contains("Approval Required"),
+            "Should not show modal when no approval pending: {output}"
+        );
     }
 
     fn state_with_scroll(offset: u16) -> AppState {

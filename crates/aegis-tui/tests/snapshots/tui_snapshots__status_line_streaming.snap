@@ -1,10 +1,9 @@
 ---
 source: crates/aegis-tui/tests/tui_snapshots.rs
-assertion_line: 87
 expression: frame
 ---
 "llama3-il5 | Thinking.                                                          "
-"                                                                                "
+"hello ...                                                                       "
 "                                                                                "
 "                                                                                "
 "                                                                                "

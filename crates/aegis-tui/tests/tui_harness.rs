@@ -79,6 +79,8 @@ impl TuiHarness {
                     input: app.input.text.clone(),
                     status_text: app.status_text(),
                     scroll_offset: app.scroll_offset,
+                    stream_buffer: app.stream_buffer.clone(),
+                    approval_display: app.approval_display.clone(),
                 };
                 aegis_tui::layout::render(frame, &view);
             })
