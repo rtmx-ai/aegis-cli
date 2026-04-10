@@ -50,7 +50,11 @@ impl AegisIgnore {
 
 impl SecurityFilter for AegisIgnore {
     fn is_blocked(&self, path: &str) -> bool {
-        self.patterns.iter().any(|p| self.matches_pattern(path, p))
+        let blocked = self.patterns.iter().any(|p| self.matches_pattern(path, p));
+        if blocked {
+            tracing::warn!(path = %path, "blocked by .aegisignore");
+        }
+        blocked
     }
 
     fn validate_path(&self, path: &str) -> Result<FilePath, DomainError> {

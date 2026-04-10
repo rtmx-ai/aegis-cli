@@ -10,6 +10,7 @@ aegis-domain = { path = "../aegis-domain" }
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

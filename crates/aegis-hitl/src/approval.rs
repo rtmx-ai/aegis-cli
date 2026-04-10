@@ -44,6 +44,11 @@ impl ApprovalGate for ChannelApprovalGate {
         let (response_tx, response_rx) = oneshot::channel();
         let description = describe_tool_call(tool_call);
 
+        tracing::info!(
+            description = %description,
+            "HITL approval requested"
+        );
+
         self.tx
             .send(ApprovalRequest {
                 tool_call: tool_call.clone(),
@@ -53,9 +58,12 @@ impl ApprovalGate for ChannelApprovalGate {
             .await
             .map_err(|_| DomainError::PermissionDenied)?;
 
-        response_rx
+        let decision = response_rx
             .await
-            .map_err(|_| DomainError::Other("Approval channel closed".to_string()))
+            .map_err(|_| DomainError::Other("Approval channel closed".to_string()))?;
+
+        tracing::info!(?decision, "HITL decision received");
+        Ok(decision)
     }
 }
 

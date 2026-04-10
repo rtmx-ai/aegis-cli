@@ -78,6 +78,7 @@ impl JsonlLedger {
 #[async_trait]
 impl AuditLedger for JsonlLedger {
     async fn record(&self, event: &DomainEvent) -> Result<(), DomainError> {
+        tracing::debug!("audit event recorded");
         let (os_user, hostname) = Self::current_identity();
         let entry = LedgerEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
