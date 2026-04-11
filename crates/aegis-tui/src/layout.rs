@@ -1,5 +1,6 @@
 //! TUI layout: status line (top), chat log (fill), input (bottom).
 
+use crate::app::status::format_tokens;
 use crate::app::{AppPhase, ApprovalDisplayInfo};
 use crate::brand;
 use crate::messages::{ChatMessage, MessageKind};
@@ -26,6 +27,13 @@ pub struct StatusInfo {
     pub input_tokens: u64,
     /// Output tokens accumulated this session.
     pub output_tokens: u64,
+}
+
+impl StatusInfo {
+    /// Total tokens (input + output) accumulated this session.
+    pub fn total_tokens(&self) -> u64 {
+        self.input_tokens + self.output_tokens
+    }
 }
 
 /// Application state for the TUI.
@@ -147,8 +155,19 @@ fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &Ap
     };
 
     // Right section: tokens (only if non-zero)
-    let right = if info.input_tokens > 0 || info.output_tokens > 0 {
-        format!("{}in {}out", info.input_tokens, info.output_tokens)
+    let has_tokens = info.input_tokens > 0 || info.output_tokens > 0;
+    let right_text = if has_tokens {
+        format!(
+            "in: {} | out: {}",
+            format_tokens(info.input_tokens),
+            format_tokens(info.output_tokens),
+        )
+    } else {
+        String::new()
+    };
+    // Full right section including brackets for width calculation
+    let right = if has_tokens {
+        format!("[tokens {}]", right_text)
     } else {
         String::new()
     };
@@ -183,14 +202,29 @@ fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &Ap
         }
     }
 
-    // Right: tokens (if room permits)
+    // Right: tokens (if room permits), with distinct colors for in vs out
     if !right.is_empty() {
         let used: usize = spans.iter().map(|s| s.content.len()).sum();
         if used + right.len() + 4 < width {
-            // Pad to push right section to the end
             let padding = width.saturating_sub(used + right.len() + 1);
             spans.push(Span::raw(" ".repeat(padding)));
-            spans.push(Span::styled(right, Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                "[tokens in: ",
+                Style::default().fg(Color::DarkGray),
+            ));
+            spans.push(Span::styled(
+                format_tokens(info.input_tokens),
+                Style::default().fg(Color::Green),
+            ));
+            spans.push(Span::styled(
+                " | out: ",
+                Style::default().fg(Color::DarkGray),
+            ));
+            spans.push(Span::styled(
+                format_tokens(info.output_tokens),
+                Style::default().fg(Color::Rgb(100, 149, 237)),
+            ));
+            spans.push(Span::styled("]", Style::default().fg(Color::DarkGray)));
         }
     }
 
@@ -563,11 +597,11 @@ mod tests {
         let output = render_to_string(&state, 80, 20);
 
         assert!(
-            output.contains("1500in"),
-            "Should show input tokens: {output}"
+            output.contains("1.5k"),
+            "Should show formatted input tokens: {output}"
         );
         assert!(
-            output.contains("320out"),
+            output.contains("320"),
             "Should show output tokens: {output}"
         );
     }
@@ -874,6 +908,66 @@ mod tests {
         let output = render_to_string(&state, 60, 5);
         // Should not panic and should still render
         assert!(!output.is_empty());
+    }
+
+    // @req REQ-TUI-019
+    #[test]
+    fn status_line_renders_formatted_tokens() {
+        let mut state = AppState::default();
+        state.status.input_tokens = 1500;
+        state.status.output_tokens = 3400;
+        let output = render_to_string(&state, 80, 20);
+
+        assert!(
+            output.contains("1.5k"),
+            "Should show formatted input tokens as 1.5k: {output}"
+        );
+        assert!(
+            output.contains("3.4k"),
+            "Should show formatted output tokens as 3.4k: {output}"
+        );
+        assert!(
+            output.contains("tokens"),
+            "Should show tokens label: {output}"
+        );
+    }
+
+    // @req REQ-TUI-019
+    #[test]
+    fn status_line_shows_tokens_during_streaming() {
+        let mut state = AppState::default();
+        state.status.phase = AppPhase::Streaming;
+        state.status.phase_detail = "thinking".to_string();
+        state.status.input_tokens = 2500;
+        state.status.output_tokens = 800;
+        let output = render_to_string(&state, 100, 20);
+
+        assert!(
+            output.contains("2.5k"),
+            "Should show input tokens during streaming: {output}"
+        );
+        assert!(
+            output.contains("800"),
+            "Should show output tokens during streaming: {output}"
+        );
+    }
+
+    // @req REQ-TUI-019
+    #[test]
+    fn status_info_total_tokens() {
+        let info = StatusInfo {
+            input_tokens: 1500,
+            output_tokens: 500,
+            ..Default::default()
+        };
+        assert_eq!(info.total_tokens(), 2000);
+    }
+
+    // @req REQ-TUI-019
+    #[test]
+    fn status_info_total_tokens_zero() {
+        let info = StatusInfo::default();
+        assert_eq!(info.total_tokens(), 0);
     }
 
     // @req REQ-TUI-038

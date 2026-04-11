@@ -14,7 +14,7 @@ mod commands;
 mod input_handler;
 mod phase;
 mod scroll;
-mod status;
+pub mod status;
 
 pub use approval::ApprovalDisplayInfo;
 pub use phase::{Action, AppPhase};
