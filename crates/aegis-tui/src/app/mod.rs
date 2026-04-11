@@ -26,6 +26,7 @@ use crate::thinking::ThinkingAnimation;
 use aegis_domain::types::ToolCall;
 use crossterm::event::Event as CtEvent;
 use std::path::PathBuf;
+use std::time::Instant;
 use tokio::sync::mpsc;
 
 /// Central application state.
@@ -56,7 +57,18 @@ pub struct App {
 
     // Splash screen tick counter (each tick = 150 ms)
     pub splash_ticks: u16,
+
+    // Progress indicator: when the current tool execution started.
+    pub tool_start: Option<Instant>,
+    // Monotonic tick counter for spinner animation.
+    pub tick_count: u64,
+
+    // Search: index of currently matched message.
+    pub search_match_index: Option<usize>,
 }
+
+/// Number of lines to scroll per PageUp/PageDown press.
+pub const PAGE_SCROLL_LINES: u16 = 10;
 
 impl App {
     pub fn new(model_name: impl Into<String>) -> Self {
@@ -77,6 +89,9 @@ impl App {
             scroll_offset: 0,
             auto_scroll: true,
             splash_ticks: 0,
+            tool_start: None,
+            tick_count: 0,
+            search_match_index: None,
         }
     }
 
@@ -95,6 +110,7 @@ impl App {
             }
             TuiEvent::AgentToolUse(call) => {
                 self.phase = AppPhase::ToolExecuting;
+                self.tool_start = Some(Instant::now());
                 let (name, detail) = describe_tool_call_short(&call);
                 tracing::debug!(
                     tool = %name,
@@ -109,6 +125,7 @@ impl App {
             } => {
                 self.input_tokens += input_tokens;
                 self.output_tokens += output_tokens;
+                self.tool_start = None;
                 // Flush stream buffer into a finalized assistant message
                 if !self.stream_buffer.is_empty() {
                     let content = std::mem::take(&mut self.stream_buffer);
@@ -119,6 +136,7 @@ impl App {
             }
             TuiEvent::AgentError(msg) => {
                 tracing::warn!(error = %msg, "agent error received");
+                self.tool_start = None;
                 // Flush any partial stream buffer
                 if !self.stream_buffer.is_empty() {
                     let content = std::mem::take(&mut self.stream_buffer);
@@ -145,6 +163,7 @@ impl App {
                 Action::Continue
             }
             TuiEvent::Tick => {
+                self.tick_count = self.tick_count.wrapping_add(1);
                 if self.phase == AppPhase::Splash {
                     self.splash_ticks += 1;
                     if self.splash_ticks >= crate::splash::SPLASH_TIMEOUT_TICKS {
@@ -944,5 +963,70 @@ mod tests {
         assert_eq!(app.messages.len(), 2);
         assert_eq!(app.messages[0].content, "partial");
         assert_eq!(app.messages[1].content, "connection lost");
+    }
+
+    // @req REQ-TUI-016
+    #[test]
+    fn tool_use_sets_tool_start() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        assert!(app.tool_start.is_none());
+        app.handle_event(
+            TuiEvent::AgentToolUse(ToolCall::ReadFile {
+                path: FilePath::new_unchecked("test.rs"),
+            }),
+            &tx,
+        );
+        assert!(app.tool_start.is_some());
+    }
+
+    // @req REQ-TUI-016
+    #[test]
+    fn agent_done_clears_tool_start() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        app.handle_event(
+            TuiEvent::AgentToolUse(ToolCall::ReadFile {
+                path: FilePath::new_unchecked("test.rs"),
+            }),
+            &tx,
+        );
+        assert!(app.tool_start.is_some());
+        app.handle_event(
+            TuiEvent::AgentDone {
+                input_tokens: 10,
+                output_tokens: 20,
+            },
+            &tx,
+        );
+        assert!(app.tool_start.is_none());
+    }
+
+    // @req REQ-TUI-016
+    #[test]
+    fn agent_error_clears_tool_start() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        app.handle_event(
+            TuiEvent::AgentToolUse(ToolCall::ReadFile {
+                path: FilePath::new_unchecked("test.rs"),
+            }),
+            &tx,
+        );
+        assert!(app.tool_start.is_some());
+        app.handle_event(TuiEvent::AgentError("timeout".to_string()), &tx);
+        assert!(app.tool_start.is_none());
+    }
+
+    // @req REQ-TUI-016
+    #[test]
+    fn tick_increments_tick_count() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        assert_eq!(app.tick_count, 0);
+        app.handle_event(TuiEvent::Tick, &tx);
+        assert_eq!(app.tick_count, 1);
+        app.handle_event(TuiEvent::Tick, &tx);
+        assert_eq!(app.tick_count, 2);
     }
 }

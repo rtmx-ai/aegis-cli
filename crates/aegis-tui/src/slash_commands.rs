@@ -24,6 +24,8 @@ pub enum SlashCommand {
     Doctor,
     /// Toggle key event logging (debug).
     KeyLog,
+    /// Switch or display the active LLM model.
+    Model(String),
 }
 
 /// Result of attempting to parse a slash command.
@@ -89,6 +91,15 @@ pub fn parse_slash_command(input: &str) -> ParseResult {
         }
         "/doctor" => ParseResult::Command(SlashCommand::Doctor),
         "/keylog" => ParseResult::Command(SlashCommand::KeyLog),
+        "/model" => {
+            // Preserve original case of the argument (do not lowercase).
+            let raw_arg = trimmed
+                .split_whitespace()
+                .skip(1)
+                .collect::<Vec<_>>()
+                .join(" ");
+            ParseResult::Command(SlashCommand::Model(raw_arg))
+        }
         _ => ParseResult::Unknown(cmd),
     }
 }
@@ -316,6 +327,42 @@ mod tests {
         assert_eq!(
             parse_slash_command("/doctor verbose"),
             ParseResult::Command(SlashCommand::Doctor)
+        );
+    }
+
+    // @req REQ-TUI-025
+    #[test]
+    fn parse_model_no_arg() {
+        assert_eq!(
+            parse_slash_command("/model"),
+            ParseResult::Command(SlashCommand::Model(String::new()))
+        );
+    }
+
+    // @req REQ-TUI-025
+    #[test]
+    fn parse_model_with_name() {
+        assert_eq!(
+            parse_slash_command("/model gemini-pro"),
+            ParseResult::Command(SlashCommand::Model("gemini-pro".to_string()))
+        );
+    }
+
+    // @req REQ-TUI-025
+    #[test]
+    fn parse_model_case_insensitive_command() {
+        assert_eq!(
+            parse_slash_command("/MODEL gemini-pro"),
+            ParseResult::Command(SlashCommand::Model("gemini-pro".to_string()))
+        );
+    }
+
+    // @req REQ-TUI-025
+    #[test]
+    fn parse_model_preserves_case_of_name() {
+        assert_eq!(
+            parse_slash_command("/model Gemini-1.5-Pro"),
+            ParseResult::Command(SlashCommand::Model("Gemini-1.5-Pro".to_string()))
         );
     }
 }

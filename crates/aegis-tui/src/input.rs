@@ -28,6 +28,8 @@ pub struct InputState {
     history_index: Option<usize>,
     /// Saved text when navigating history.
     saved_text: String,
+    /// Active search query (Some when in search mode, None otherwise).
+    search_query: Option<String>,
 }
 
 impl Default for InputState {
@@ -39,6 +41,7 @@ impl Default for InputState {
             history: Vec::new(),
             history_index: None,
             saved_text: String::new(),
+            search_query: None,
         }
     }
 }
@@ -240,6 +243,40 @@ impl InputState {
     /// Get the history entries.
     pub fn history(&self) -> &[String] {
         &self.history
+    }
+
+    /// Enter search mode (Ctrl+F).
+    pub fn enter_search_mode(&mut self) {
+        self.search_query = Some(String::new());
+    }
+
+    /// Exit search mode (Esc while searching).
+    pub fn exit_search_mode(&mut self) {
+        self.search_query = None;
+    }
+
+    /// Get the current search query, if in search mode.
+    pub fn search_query(&self) -> Option<&str> {
+        self.search_query.as_deref()
+    }
+
+    /// Whether the input is currently in search mode.
+    pub fn in_search_mode(&self) -> bool {
+        self.search_query.is_some()
+    }
+
+    /// Append a character to the search query.
+    pub fn search_insert_char(&mut self, ch: char) {
+        if let Some(ref mut q) = self.search_query {
+            q.push(ch);
+        }
+    }
+
+    /// Remove the last character from the search query.
+    pub fn search_backspace(&mut self) {
+        if let Some(ref mut q) = self.search_query {
+            q.pop();
+        }
     }
 }
 
@@ -497,6 +534,66 @@ mod tests {
         input.enter_normal_mode();
         input.insert_str("hello");
         assert_eq!(input.text, "");
+    }
+
+    // @req REQ-TUI-017
+    #[test]
+    fn enter_search_mode_sets_empty_query() {
+        let mut input = InputState::default();
+        assert!(!input.in_search_mode());
+        input.enter_search_mode();
+        assert!(input.in_search_mode());
+        assert_eq!(input.search_query(), Some(""));
+    }
+
+    // @req REQ-TUI-017
+    #[test]
+    fn exit_search_mode_clears_query() {
+        let mut input = InputState::default();
+        input.enter_search_mode();
+        input.search_insert_char('a');
+        input.exit_search_mode();
+        assert!(!input.in_search_mode());
+        assert_eq!(input.search_query(), None);
+    }
+
+    // @req REQ-TUI-017
+    #[test]
+    fn search_insert_char_appends_to_query() {
+        let mut input = InputState::default();
+        input.enter_search_mode();
+        input.search_insert_char('h');
+        input.search_insert_char('i');
+        assert_eq!(input.search_query(), Some("hi"));
+    }
+
+    // @req REQ-TUI-017
+    #[test]
+    fn search_backspace_removes_last_char() {
+        let mut input = InputState::default();
+        input.enter_search_mode();
+        input.search_insert_char('a');
+        input.search_insert_char('b');
+        input.search_backspace();
+        assert_eq!(input.search_query(), Some("a"));
+    }
+
+    // @req REQ-TUI-017
+    #[test]
+    fn search_backspace_on_empty_query_does_nothing() {
+        let mut input = InputState::default();
+        input.enter_search_mode();
+        input.search_backspace();
+        assert_eq!(input.search_query(), Some(""));
+    }
+
+    // @req REQ-TUI-017
+    #[test]
+    fn search_insert_char_ignored_when_not_in_search_mode() {
+        let mut input = InputState::default();
+        input.search_insert_char('x');
+        assert!(!input.in_search_mode());
+        assert_eq!(input.search_query(), None);
     }
 
     // @req REQ-TUI-004

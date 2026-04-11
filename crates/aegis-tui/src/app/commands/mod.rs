@@ -21,6 +21,7 @@ impl App {
                     "Commands:\n\
                      /add <path>           Add file to context\n\
                      /drop <path>          Remove file from context\n\
+                     /model [name]         Show or switch active model\n\
                      /infra <subcmd>       Plugin ops: status, list, preview <name>\n\
                      /doctor               Run connectivity and health checks\n\
                      /context              Show current context summary\n\
@@ -46,6 +47,25 @@ impl App {
             }
             SlashCommand::Doctor => {
                 self.handle_doctor_command();
+                Action::Continue
+            }
+            SlashCommand::Model(name) => {
+                if name.is_empty() {
+                    tracing::info!(model = %self.model_name, "displaying current model");
+                    self.messages.push(ChatMessage::system(format!(
+                        "Current model: {}",
+                        self.model_name
+                    )));
+                } else {
+                    tracing::info!(
+                        old = %self.model_name,
+                        new = %name,
+                        "switching model"
+                    );
+                    self.model_name = name.clone();
+                    self.messages
+                        .push(ChatMessage::system(format!("Model switched to: {name}")));
+                }
                 Action::Continue
             }
             SlashCommand::KeyLog => {

@@ -45,6 +45,14 @@ pub enum InputModeDisplay {
     Normal,
 }
 
+/// Spinner animation characters for tool execution.
+const SPINNER_CHARS: [char; 4] = ['|', '/', '-', '\\'];
+
+/// Return the spinner character for a given frame index.
+fn spinner_char(frame: u8) -> char {
+    SPINNER_CHARS[(frame as usize) % SPINNER_CHARS.len()]
+}
+
 pub struct AppState {
     pub messages: Vec<ChatMessage>,
     pub input: String,
@@ -61,6 +69,8 @@ pub struct AppState {
     pub stream_buffer: String,
     /// When set, a modal overlay is rendered for HITL approval.
     pub approval_display: Option<ApprovalDisplayInfo>,
+    /// Current spinner animation frame (cycles 0..3).
+    pub spinner_frame: u8,
 }
 
 impl Default for AppState {
@@ -78,6 +88,7 @@ impl Default for AppState {
             newline_hint: "Esc, o new line".to_string(),
             stream_buffer: String::new(),
             approval_display: None,
+            spinner_frame: 0,
         }
     }
 }
@@ -283,6 +294,29 @@ fn render_chat_log(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppSt
             }
         }
         lines.push(Line::from(""));
+    }
+
+    // Render a spinner on the last tool call line when executing.
+    if state.status.phase == AppPhase::ToolExecuting {
+        // Find the last ToolCall line and prepend a spinner character.
+        if let Some(last_tool_idx) = state
+            .messages
+            .iter()
+            .rposition(|m| matches!(m.kind, MessageKind::ToolCall { .. }))
+        {
+            // Each message produces 2 lines (content + blank), so the
+            // content line for message at index i is at position i*2.
+            let line_idx = last_tool_idx * 2;
+            if line_idx < lines.len() {
+                let sc = spinner_char(state.spinner_frame);
+                let mut spans = vec![Span::styled(
+                    format!("{sc} "),
+                    Style::default().fg(Color::Yellow),
+                )];
+                spans.extend(lines[line_idx].spans.iter().cloned());
+                lines[line_idx] = Line::from(spans);
+            }
+        }
     }
 
     // Render the streaming buffer as a pending assistant message.
@@ -968,6 +1002,51 @@ mod tests {
     fn status_info_total_tokens_zero() {
         let info = StatusInfo::default();
         assert_eq!(info.total_tokens(), 0);
+    }
+
+    // @req REQ-TUI-016
+    #[test]
+    fn spinner_char_cycles_through_frames() {
+        assert_eq!(spinner_char(0), '|');
+        assert_eq!(spinner_char(1), '/');
+        assert_eq!(spinner_char(2), '-');
+        assert_eq!(spinner_char(3), '\\');
+        assert_eq!(spinner_char(4), '|'); // wraps
+    }
+
+    // @req REQ-TUI-016
+    #[test]
+    fn spinner_renders_during_tool_executing() {
+        let mut state = AppState::default();
+        state.status.phase = AppPhase::ToolExecuting;
+        state.push_message(ChatMessage::tool_call("read_file", "src/main.rs"));
+        state.spinner_frame = 1; // '/'
+        let output = render_to_string(&state, 80, 20);
+        assert!(
+            output.contains('/'),
+            "Should show spinner character during tool execution: {output}"
+        );
+    }
+
+    // @req REQ-TUI-016
+    #[test]
+    fn no_spinner_when_idle() {
+        let mut state = AppState::default();
+        state.status.phase = AppPhase::Idle;
+        state.push_message(ChatMessage::tool_call("read_file", "src/main.rs"));
+        state.spinner_frame = 1;
+        let output = render_to_string(&state, 80, 20);
+        // The tool call line should NOT have a spinner prefix when idle.
+        // Look for the tool call without the spinner prefix pattern.
+        let has_spinner_prefix = output.lines().any(|line| {
+            let trimmed = line.trim_start();
+            trimmed.starts_with("/ ")
+                && (trimmed.contains("read_file") || trimmed.contains("src/main.rs"))
+        });
+        assert!(
+            !has_spinner_prefix,
+            "Should not show spinner when idle: {output}"
+        );
     }
 
     // @req REQ-TUI-038

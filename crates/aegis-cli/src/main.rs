@@ -624,6 +624,7 @@ async fn run_interactive_chat(
                         newline_hint: platform.newline_hint.to_string(),
                         stream_buffer: app.stream_buffer.clone(),
                         approval_display: app.approval_display.clone(),
+                        spinner_frame: (app.tick_count % 4) as u8,
                     };
                     aegis_tui::layout::render(frame, &view);
                 }

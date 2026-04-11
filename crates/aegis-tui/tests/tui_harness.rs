@@ -93,6 +93,7 @@ impl TuiHarness {
                     scroll_offset: app.scroll_offset,
                     input_mode,
                     newline_hint: "Ctrl+O newline".to_string(),
+                    spinner_frame: (app.tick_count % 4) as u8,
                     stream_buffer: app.stream_buffer.clone(),
                     approval_display: app.approval_display.clone(),
                 };

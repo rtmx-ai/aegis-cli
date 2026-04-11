@@ -39,6 +39,28 @@ impl App {
             AppPhase::Idle => {}
         }
 
+        // Search-mode intercept: capture keystrokes when search is active.
+        if self.input.in_search_mode() {
+            match key.code {
+                KeyCode::Char(c) => {
+                    self.input.search_insert_char(c);
+                    self.recompute_search_match();
+                    return Action::Continue;
+                }
+                KeyCode::Backspace => {
+                    self.input.search_backspace();
+                    self.recompute_search_match();
+                    return Action::Continue;
+                }
+                KeyCode::Esc => {
+                    self.input.exit_search_mode();
+                    self.search_match_index = None;
+                    return Action::Continue;
+                }
+                _ => return Action::Continue,
+            }
+        }
+
         // Idle-phase key handling
         match key.code {
             KeyCode::Enter if !key.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -74,6 +96,10 @@ impl App {
             }
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Quit,
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Quit,
+            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.input.enter_search_mode();
+                Action::Continue
+            }
             KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 match self.input.paste_from_clipboard() {
                     Ok(true) => {}
@@ -103,6 +129,27 @@ impl App {
             // Vim normal mode: 'i' enters insert mode (explicit for clarity)
             KeyCode::Char('i') if self.input.mode == crate::input::InputMode::Normal => {
                 self.input.enter_insert_mode();
+                Action::Continue
+            }
+            // Vim normal mode: n/N cycle search matches forward/backward
+            KeyCode::Char('n') if self.input.mode == crate::input::InputMode::Normal => {
+                self.cycle_search_match(true);
+                Action::Continue
+            }
+            KeyCode::Char('N') if self.input.mode == crate::input::InputMode::Normal => {
+                self.cycle_search_match(false);
+                Action::Continue
+            }
+            KeyCode::PageUp => {
+                self.scroll_offset = self.scroll_offset.saturating_add(super::PAGE_SCROLL_LINES);
+                self.auto_scroll = false;
+                Action::Continue
+            }
+            KeyCode::PageDown => {
+                self.scroll_offset = self.scroll_offset.saturating_sub(super::PAGE_SCROLL_LINES);
+                if self.scroll_offset == 0 {
+                    self.auto_scroll = true;
+                }
                 Action::Continue
             }
             KeyCode::Up => {
@@ -139,5 +186,55 @@ impl App {
             }
             _ => Action::Continue,
         }
+    }
+
+    /// Find the first message whose content matches the search query
+    /// (case-insensitive). Sets `search_match_index` accordingly.
+    fn recompute_search_match(&mut self) {
+        let query = match self.input.search_query() {
+            Some(q) if !q.is_empty() => q.to_lowercase(),
+            _ => {
+                self.search_match_index = None;
+                return;
+            }
+        };
+        self.search_match_index = self
+            .messages
+            .iter()
+            .position(|m| m.content.to_lowercase().contains(&query));
+    }
+
+    /// Cycle the search match forward or backward, wrapping around.
+    fn cycle_search_match(&mut self, forward: bool) {
+        let query = match self.input.search_query() {
+            Some(q) if !q.is_empty() => q.to_lowercase(),
+            _ => return,
+        };
+        let len = self.messages.len();
+        if len == 0 {
+            return;
+        }
+        let start = match self.search_match_index {
+            Some(idx) => {
+                if forward {
+                    (idx + 1) % len
+                } else {
+                    (idx + len - 1) % len
+                }
+            }
+            None => 0,
+        };
+        for i in 0..len {
+            let idx = if forward {
+                (start + i) % len
+            } else {
+                (start + len - i) % len
+            };
+            if self.messages[idx].content.to_lowercase().contains(&query) {
+                self.search_match_index = Some(idx);
+                return;
+            }
+        }
+        self.search_match_index = None;
     }
 }
