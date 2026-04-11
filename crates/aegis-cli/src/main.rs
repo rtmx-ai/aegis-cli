@@ -94,6 +94,9 @@ enum Commands {
         /// Run without TUI (for E2E testing and scripting)
         #[arg(long)]
         headless: bool,
+        /// Plain-text interactive mode (no TUI, screen-reader friendly)
+        #[arg(long)]
+        no_tui: bool,
         /// Override LLM endpoint (for testing)
         #[arg(long)]
         local_endpoint: Option<String>,
@@ -113,9 +116,12 @@ fn main() {
         cli.command,
         Some(Commands::Chat {
             headless: false,
+            no_tui: false,
             ..
         })
     ) || (cli.command.is_none() && !needs_first_run_wizard());
+    // Plain-text and headless modes use stderr; auto-detect NO_COLOR/TERM=dumb
+    let is_tui_mode = is_tui_mode && !aegis_tui::terminal::should_use_plain_text(false);
     let _log_guard = if is_tui_mode {
         init_tracing_file()
     } else {
@@ -128,8 +134,9 @@ fn main() {
         Some(Commands::Chat {
             prompt,
             headless,
+            no_tui,
             local_endpoint,
-        }) => run_chat(prompt, headless, local_endpoint),
+        }) => run_chat(prompt, headless, no_tui, local_endpoint),
         Some(Commands::Doctor) => {
             eprintln!("aegis doctor: not yet implemented");
             std::process::exit(1);
@@ -140,7 +147,7 @@ fn main() {
                 run_init(true)
             } else {
                 // Config exists: launch interactive chat
-                run_chat(None, false, None)
+                run_chat(None, false, false, None)
             }
         }
     };
@@ -190,6 +197,7 @@ fn run_init(local: bool) -> Result<(), String> {
 fn run_chat(
     prompt: Option<String>,
     headless: bool,
+    no_tui: bool,
     local_endpoint: Option<String>,
 ) -> Result<(), String> {
     if headless {
@@ -201,6 +209,14 @@ fn run_chat(
         let (endpoint, model) = resolve_endpoint_model(local_endpoint)?;
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("Runtime error: {e}"))?;
         return rt.block_on(async { run_headless_chat(&prompt, &endpoint, &model).await });
+    }
+
+    // Check for plain-text mode: explicit flag or env detection
+    let use_plain_text = aegis_tui::terminal::should_use_plain_text(no_tui);
+    if use_plain_text {
+        let (endpoint, model) = resolve_endpoint_model(local_endpoint)?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("Runtime error: {e}"))?;
+        return rt.block_on(async { run_plaintext_chat(&endpoint, &model, prompt).await });
     }
 
     // Interactive TUI mode
@@ -266,6 +282,174 @@ async fn run_headless_chat(prompt: &str, endpoint: &str, model: &str) -> Result<
         "[{} iterations, {}in + {}out tokens]",
         result.iterations, result.input_tokens, result.output_tokens
     );
+
+    Ok(())
+}
+
+/// Format a ToolCall enum variant for plain-text display.
+fn format_tool_call_plain(call: &ToolCall) -> String {
+    match call {
+        ToolCall::ReadFile { path } => format!("read_file: {path}"),
+        ToolCall::WriteFile { path, .. } => format!("write_file: {path}"),
+        ToolCall::RunCommand { command, .. } => format!("run_command: {command}"),
+        ToolCall::ListDir { path } => format!("list_dir: {path}"),
+        ToolCall::Grep { pattern, path } => {
+            format!("grep: {pattern} in {path}")
+        }
+    }
+}
+
+/// Plain-text interactive chat loop (REQ-TUI-013).
+///
+/// No ratatui, no alternate screen, no raw mode. Reads lines from stdin,
+/// sends them through the agent, and prints responses to stdout with
+/// simple text prefixes. Compatible with screen readers and dumb terminals.
+async fn run_plaintext_chat(
+    endpoint: &str,
+    model: &str,
+    initial_prompt: Option<String>,
+) -> Result<(), String> {
+    use std::io::{BufRead, Write};
+
+    println!("[system] aegis plain-text mode (model: {model})");
+    println!("[system] type /help for commands, /quit to exit");
+    println!();
+
+    // Process an initial prompt if supplied
+    if let Some(ref prompt) = initial_prompt {
+        println!("> {prompt}");
+        run_plaintext_turn(prompt, endpoint, model).await?;
+    }
+
+    let stdin = std::io::stdin();
+    let mut stdout = std::io::stdout();
+    loop {
+        // Prompt indicator
+        print!("aegis> ");
+        stdout.flush().map_err(|e| format!("IO error: {e}"))?;
+
+        let mut line = String::new();
+        let bytes = stdin
+            .lock()
+            .read_line(&mut line)
+            .map_err(|e| format!("IO error: {e}"))?;
+
+        // EOF (Ctrl-D)
+        if bytes == 0 {
+            println!();
+            println!("[system] goodbye");
+            break;
+        }
+
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        // Slash commands
+        match trimmed {
+            "/quit" | "/exit" => {
+                println!("[system] goodbye");
+                break;
+            }
+            "/help" => {
+                println!("[system] commands:");
+                println!("[system]   /help  -- show this help");
+                println!("[system]   /quit  -- exit the session");
+                println!();
+                continue;
+            }
+            _ => {}
+        }
+
+        // Echo user input
+        println!("> {trimmed}");
+
+        // Run the agent for this turn
+        run_plaintext_turn(trimmed, endpoint, model).await?;
+    }
+
+    Ok(())
+}
+
+/// Execute a single agent turn in plain-text mode, printing streamed output.
+async fn run_plaintext_turn(prompt: &str, endpoint: &str, model: &str) -> Result<(), String> {
+    use aegis_domain::ports::StreamEvent;
+
+    let provider_config = aegis_llm::config::ProviderConfig::local(endpoint, model);
+    let provider =
+        aegis_llm::local::LocalProvider::new(&provider_config).map_err(|e| e.to_string())?;
+
+    let filter: Arc<aegis_security::aegisignore::AegisIgnore> =
+        Arc::new(aegis_security::aegisignore::AegisIgnore::with_defaults());
+    let work_dir = std::env::current_dir().map_err(|e| format!("Cannot get cwd: {e}"))?;
+    let executor = aegis_agent::tools::BuiltinExecutor::new(filter.clone(), &work_dir);
+
+    let gate = HeadlessApprovalGate;
+
+    let log_dir = dirs_next::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".aegis/logs");
+    let ledger = aegis_audit::ledger::JsonlLedger::new(&log_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let config = aegis_agent::loop_runner::AgentConfig {
+        max_iterations: 20,
+        system_prompt: "You are a helpful coding assistant. \
+             You have access to tools: read_file, \
+             write_file, run_command, list_dir, grep."
+            .to_string(),
+    };
+
+    // Set up stream event channel for tool-use visibility
+    let (stream_tx, mut stream_rx) = tokio::sync::mpsc::unbounded_channel::<StreamEvent>();
+
+    // Spawn a task to print stream events as they arrive
+    let printer = tokio::spawn(async move {
+        use std::io::Write;
+        let mut stdout = std::io::stdout();
+        while let Some(event) = stream_rx.recv().await {
+            match event {
+                StreamEvent::Token(text) => {
+                    print!("{text}");
+                    let _ = stdout.flush();
+                }
+                StreamEvent::ToolUse(call) => {
+                    println!();
+                    let desc = format_tool_call_plain(&call);
+                    println!("[tool] {desc}");
+                }
+                StreamEvent::Done {
+                    input_tokens,
+                    output_tokens,
+                } => {
+                    println!();
+                    eprintln!("[{input_tokens}in + {output_tokens}out tokens]");
+                }
+                StreamEvent::Error(msg) => {
+                    println!();
+                    println!("[error] {msg}");
+                }
+            }
+        }
+    });
+
+    let agent = aegis_agent::loop_runner::AgentLoop::new(
+        provider, gate, executor, ledger, filter, config,
+    )
+    .with_event_sink(stream_tx);
+
+    match agent.run(prompt).await {
+        Ok(_result) => {}
+        Err(e) => {
+            println!("[error] {e}");
+        }
+    }
+
+    // Wait for the printer to finish draining
+    let _ = printer.await;
+    println!();
 
     Ok(())
 }

@@ -134,6 +134,33 @@ fn chat_headless_has_help_flag() {
         .stdout(predicate::str::contains("--headless"));
 }
 
+// @req REQ-TUI-013
+#[test]
+fn chat_no_tui_flag_appears_in_help() {
+    Command::cargo_bin("aegis")
+        .unwrap()
+        .arg("chat")
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--no-tui"));
+}
+
+// @req REQ-TUI-013
+#[test]
+fn chat_no_tui_without_config_errors_gracefully() {
+    // --no-tui without a config should produce a config error, not a crash.
+    let tmp = tempfile::TempDir::new().unwrap();
+    Command::cargo_bin("aegis")
+        .unwrap()
+        .arg("chat")
+        .arg("--no-tui")
+        .env("HOME", tmp.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("No config found"));
+}
+
 // @req REQ-BUILD-007
 #[test]
 fn release_profile_binary_compiles() {

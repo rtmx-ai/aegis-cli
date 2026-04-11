@@ -105,6 +105,33 @@ pub fn should_simplify_rendering(env: &TerminalEnv) -> bool {
     env.is_ssh || env.is_tmux || env.is_screen || env.color_depth == ColorDepth::Monochrome
 }
 
+/// Determine whether the TUI should be bypassed in favor of plain-text mode.
+///
+/// Returns `true` when any of the following conditions hold:
+/// - `no_tui_flag` is `true` (the `--no-tui` CLI flag was passed)
+/// - The `NO_COLOR` environment variable is set (any value, per <https://no-color.org/>)
+/// - `TERM` is `dumb` or empty
+///
+/// This is the testable core -- callers supply the flag value and raw env
+/// var values so the function is deterministic and safe for parallel tests.
+pub fn should_use_plain_text_from(no_tui_flag: bool, term: &str, no_color: Option<&str>) -> bool {
+    if no_tui_flag {
+        return true;
+    }
+    if no_color.is_some() {
+        return true;
+    }
+    let t = term.to_lowercase();
+    t.is_empty() || t == "dumb"
+}
+
+/// Convenience wrapper that reads the live process environment.
+pub fn should_use_plain_text(no_tui_flag: bool) -> bool {
+    let term = env::var("TERM").unwrap_or_default();
+    let no_color = env::var("NO_COLOR").ok();
+    should_use_plain_text_from(no_tui_flag, &term, no_color.as_deref())
+}
+
 // --- private helpers -------------------------------------------------------
 
 fn is_ssh_session() -> bool {
@@ -332,5 +359,60 @@ mod tests {
             color_depth: ColorDepth::Color256,
         };
         assert!(!should_simplify_rendering(&env));
+    }
+
+    // -- should_use_plain_text_from (REQ-TUI-013) -----------------------------
+
+    #[test]
+    // @req REQ-TUI-013
+    fn plain_text_when_no_tui_flag() {
+        assert!(should_use_plain_text_from(true, "xterm-256color", None));
+    }
+
+    #[test]
+    // @req REQ-TUI-013
+    fn plain_text_when_no_color_set() {
+        assert!(should_use_plain_text_from(
+            false,
+            "xterm-256color",
+            Some("")
+        ));
+    }
+
+    #[test]
+    // @req REQ-TUI-013
+    fn plain_text_when_no_color_set_with_value() {
+        assert!(should_use_plain_text_from(false, "xterm", Some("1")));
+    }
+
+    #[test]
+    // @req REQ-TUI-013
+    fn plain_text_when_term_dumb() {
+        assert!(should_use_plain_text_from(false, "dumb", None));
+    }
+
+    #[test]
+    // @req REQ-TUI-013
+    fn plain_text_when_term_empty() {
+        assert!(should_use_plain_text_from(false, "", None));
+    }
+
+    #[test]
+    // @req REQ-TUI-013
+    fn no_plain_text_normal_terminal() {
+        assert!(!should_use_plain_text_from(false, "xterm-256color", None));
+    }
+
+    #[test]
+    // @req REQ-TUI-013
+    fn plain_text_flag_overrides_good_terminal() {
+        // Even with a good terminal, the flag forces plain text.
+        assert!(should_use_plain_text_from(true, "xterm-256color", None));
+    }
+
+    #[test]
+    // @req REQ-TUI-013
+    fn plain_text_term_dumb_case_insensitive() {
+        assert!(should_use_plain_text_from(false, "DUMB", None));
     }
 }

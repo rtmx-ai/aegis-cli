@@ -12,6 +12,7 @@ crossterm = { workspace = true }
 arboard = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+syntect = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
