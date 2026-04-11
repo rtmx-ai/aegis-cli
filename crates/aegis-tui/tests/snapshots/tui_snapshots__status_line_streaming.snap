@@ -2,7 +2,7 @@
 source: crates/aegis-tui/tests/tui_snapshots.rs
 expression: frame
 ---
-"llama3-il5 | Thinking.                                                          "
+"llama3-il5 | STREAMING Thinking.                                                "
 "hello ...                                                                       "
 "                                                                                "
 "                                                                                "
@@ -23,6 +23,6 @@ expression: frame
 "                                                                                "
 "                                                                                "
 "                                                                                "
-" > ─────────────────────────────────────────────────────────────────────────────"
-"                                                                                "
-"                                                                                "
+"--------------------------------------------------------------------------------"
+">                                                                               "
+" INSERT   Enter send | Ctrl+O newline | Esc vim                                 "

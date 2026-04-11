@@ -1,9 +1,8 @@
 ---
 source: crates/aegis-tui/tests/tui_snapshots.rs
-assertion_line: 110
 expression: frame
 ---
-"llama3-il5 | 1500in + 3200out                                                   "
+"llama3-il5                                                       1500in 3200out "
 "done                                                                            "
 "                                                                                "
 "                                                                                "
@@ -24,6 +23,6 @@ expression: frame
 "                                                                                "
 "                                                                                "
 "                                                                                "
-" > ─────────────────────────────────────────────────────────────────────────────"
-"                                                                                "
-"                                                                                "
+"--------------------------------------------------------------------------------"
+">                                                                               "
+" INSERT   Enter send | Ctrl+O newline | Esc vim                                 "

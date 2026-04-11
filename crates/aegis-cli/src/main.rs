@@ -284,8 +284,28 @@ async fn run_interactive_chat(
     // 1. Set up terminal
     crossterm::terminal::enable_raw_mode().map_err(|e| format!("Terminal error: {e}"))?;
     let mut stdout = std::io::stdout();
-    crossterm::execute!(stdout, EnterAlternateScreen)
-        .map_err(|e| format!("Terminal error: {e}"))?;
+    crossterm::execute!(
+        stdout,
+        EnterAlternateScreen,
+        crossterm::event::EnableBracketedPaste,
+        crossterm::event::EnableMouseCapture,
+        crossterm::cursor::SetCursorStyle::SteadyBlock
+    )
+    .map_err(|e| format!("Terminal error: {e}"))?;
+
+    // Enable Kitty keyboard protocol if the terminal supports it.
+    // This allows Shift+Enter to be distinguished from Enter.
+    let enhanced_keyboard = crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false);
+    if enhanced_keyboard {
+        crossterm::execute!(
+            stdout,
+            crossterm::event::PushKeyboardEnhancementFlags(
+                crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+            )
+        )
+        .map_err(|e| format!("Keyboard enhancement error: {e}"))?;
+    }
+
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).map_err(|e| format!("Terminal error: {e}"))?;
 
@@ -361,7 +381,10 @@ async fn run_interactive_chat(
         }
     });
 
-    // 9. Create App state, restoring previous session if available (REQ-BUILD-036)
+    // 9. Detect platform (immutable for session lifetime)
+    let platform = aegis_tui::platform::Platform::detect();
+
+    // 10. Create App state, restoring previous session if available (REQ-BUILD-036)
     let mut app = App::new(model);
     let session_dir = aegis_agent::session::default_session_dir();
     if let Some(ref dir) = session_dir {
@@ -396,16 +419,30 @@ async fn run_interactive_chat(
         // Render current state
         terminal
             .draw(|frame| {
-                let status = app.status_text();
-                let view = aegis_tui::layout::AppState {
-                    messages: app.messages.clone(),
-                    input: app.input.text.clone(),
-                    status_text: status,
-                    scroll_offset: app.scroll_offset,
-                    stream_buffer: app.stream_buffer.clone(),
-                    approval_display: app.approval_display.clone(),
-                };
-                aegis_tui::layout::render(frame, &view);
+                if app.phase == aegis_tui::app::AppPhase::Splash {
+                    aegis_tui::splash::render_splash(frame, frame.area());
+                } else {
+                    let input_mode = match app.input.mode {
+                        aegis_tui::input::InputMode::Insert => {
+                            aegis_tui::layout::InputModeDisplay::Insert
+                        }
+                        aegis_tui::input::InputMode::Normal => {
+                            aegis_tui::layout::InputModeDisplay::Normal
+                        }
+                    };
+                    let view = aegis_tui::layout::AppState {
+                        messages: app.messages.clone(),
+                        input: app.input.text.clone(),
+                        cursor: app.input.cursor,
+                        status: app.status_info(),
+                        scroll_offset: app.scroll_offset,
+                        input_mode,
+                        newline_hint: platform.newline_hint.to_string(),
+                        stream_buffer: app.stream_buffer.clone(),
+                        approval_display: app.approval_display.clone(),
+                    };
+                    aegis_tui::layout::render(frame, &view);
+                }
             })
             .map_err(|e| format!("Render error: {e}"))?;
 
@@ -443,8 +480,22 @@ async fn run_interactive_chat(
     }
 
     // 13. Cleanup terminal
+    if enhanced_keyboard {
+        crossterm::execute!(
+            terminal.backend_mut(),
+            crossterm::event::PopKeyboardEnhancementFlags
+        )
+        .ok();
+    }
     crossterm::terminal::disable_raw_mode().ok();
-    crossterm::execute!(terminal.backend_mut(), LeaveAlternateScreen).ok();
+    crossterm::execute!(
+        terminal.backend_mut(),
+        crossterm::cursor::SetCursorStyle::DefaultUserShape,
+        crossterm::event::DisableMouseCapture,
+        crossterm::event::DisableBracketedPaste,
+        LeaveAlternateScreen
+    )
+    .ok();
     terminal.show_cursor().ok();
 
     Ok(())
@@ -506,6 +557,8 @@ fn restore_app_from_snapshot(app: &mut App, snapshot: &aegis_agent::session::Ses
     app.input_tokens = snapshot.input_tokens;
     app.output_tokens = snapshot.output_tokens;
     if !snapshot.messages.is_empty() {
+        // Skip splash when resuming a session
+        app.phase = aegis_tui::app::AppPhase::Idle;
         app.messages.push(ChatMessage::system(format!(
             "(restored {} messages from previous session)",
             snapshot.messages.len()

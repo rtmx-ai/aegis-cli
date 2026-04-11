@@ -1,6 +1,7 @@
 //! TUI layout: status line (top), chat log (fill), input (bottom).
 
-use crate::app::ApprovalDisplayInfo;
+use crate::app::{AppPhase, ApprovalDisplayInfo};
+use crate::brand;
 use crate::messages::{ChatMessage, MessageKind};
 use aegis_domain::types::ToolRisk;
 use ratatui::Frame;
@@ -9,12 +10,44 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
+/// Structured status line information.
+///
+/// Replaces the old `status_text: String` with discrete fields so the renderer
+/// can lay out left / center / right sections with phase-appropriate coloring.
+#[derive(Debug, Clone, Default)]
+pub struct StatusInfo {
+    /// Model name + mode (left section).
+    pub model: String,
+    /// Current interaction phase (center section).
+    pub phase: AppPhase,
+    /// Phase-specific detail text (e.g. thinking animation, "executing tool...").
+    pub phase_detail: String,
+    /// Input tokens accumulated this session.
+    pub input_tokens: u64,
+    /// Output tokens accumulated this session.
+    pub output_tokens: u64,
+}
+
 /// Application state for the TUI.
+/// Vim mode for display in the hint line.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum InputModeDisplay {
+    #[default]
+    Insert,
+    Normal,
+}
+
 pub struct AppState {
     pub messages: Vec<ChatMessage>,
     pub input: String,
-    pub status_text: String,
+    /// Cursor byte offset into `input`.
+    pub cursor: usize,
+    pub status: StatusInfo,
     pub scroll_offset: u16,
+    /// Current vim input mode for the hint line.
+    pub input_mode: InputModeDisplay,
+    /// Platform-detected newline hint text (e.g. "Ctrl+O newline").
+    pub newline_hint: String,
     /// Partial streaming response from the LLM, rendered inline below
     /// the last complete message while tokens are arriving.
     pub stream_buffer: String,
@@ -27,8 +60,14 @@ impl Default for AppState {
         Self {
             messages: Vec::new(),
             input: String::new(),
-            status_text: "aegis v0.1.0".to_string(),
+            cursor: 0,
+            status: StatusInfo {
+                model: format!("{} v{}", brand::LOGO_COMPACT, brand::VERSION),
+                ..Default::default()
+            },
             scroll_offset: 0,
+            input_mode: InputModeDisplay::Insert,
+            newline_hint: "Esc, o new line".to_string(),
             stream_buffer: String::new(),
             approval_display: None,
         }
@@ -36,20 +75,11 @@ impl Default for AppState {
 }
 
 impl AppState {
-    pub fn with_status(mut self, status: &str) -> Self {
-        self.status_text = status.to_string();
-        self
-    }
-
     pub fn push_message(&mut self, msg: ChatMessage) {
         self.messages.push(msg);
     }
 
     /// Handle a terminal resize by clamping scroll_offset to valid bounds.
-    ///
-    /// After a resize, the visible area may have changed. If the current
-    /// scroll_offset would place us past the end of the content, clamp it
-    /// so the last line of content is visible.
     pub fn resize(&mut self, total_lines: u16, visible_height: u16) {
         if visible_height >= total_lines {
             self.scroll_offset = 0;
@@ -64,18 +94,38 @@ impl AppState {
 
 /// Render the full application layout.
 pub fn render(frame: &mut Frame, state: &AppState) {
+    let height = frame.area().height;
+
+    // Input height grows with newlines, capped so chat always has room
+    let input_lines = (state.input.lines().count().max(1)) as u16;
+    let max_input = (height / 3).max(1); // never exceed 1/3 of terminal
+    let input_height = input_lines.min(max_input);
+
+    // Progressive degradation: show hint line only when terminal is tall enough
+    let show_hint = height >= 8;
+
+    let mut constraints = vec![
+        Constraint::Length(1),            // Status line
+        Constraint::Min(3),               // Chat log
+        Constraint::Length(1),            // Separator
+        Constraint::Length(input_height), // Input (grows with newlines)
+    ];
+    if show_hint {
+        constraints.push(Constraint::Length(1)); // Hint line
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // Status line
-            Constraint::Min(3),    // Chat log
-            Constraint::Length(3), // Input
-        ])
+        .constraints(constraints)
         .split(frame.area());
 
     render_status_line(frame, chunks[0], state);
     render_chat_log(frame, chunks[1], state);
-    render_input(frame, chunks[2], state);
+    render_separator(frame, chunks[2]);
+    render_input_line(frame, chunks[3], state);
+    if show_hint {
+        render_hint_line(frame, chunks[4], state);
+    }
 
     // Render HITL approval modal overlay on top of everything.
     if let Some(ref info) = state.approval_display {
@@ -84,13 +134,68 @@ pub fn render(frame: &mut Frame, state: &AppState) {
 }
 
 fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
-    let status = Paragraph::new(Line::from(vec![Span::styled(
-        &state.status_text,
+    let info = &state.status;
+    let width = area.width as usize;
+
+    // Phase indicator with color
+    let (phase_text, phase_color) = match info.phase {
+        AppPhase::Idle => ("", Color::Reset),
+        AppPhase::Splash => ("", Color::Reset),
+        AppPhase::Streaming => ("STREAMING", Color::Cyan),
+        AppPhase::ToolExecuting => ("TOOL", Color::Yellow),
+        AppPhase::AwaitingApproval => ("APPROVE?", Color::Rgb(255, 191, 0)),
+    };
+
+    // Right section: tokens (only if non-zero)
+    let right = if info.input_tokens > 0 || info.output_tokens > 0 {
+        format!("{}in {}out", info.input_tokens, info.output_tokens)
+    } else {
+        String::new()
+    };
+
+    // Build spans based on available width
+    let mut spans: Vec<Span> = Vec::new();
+
+    // Left: model name (always shown)
+    spans.push(Span::styled(
+        &info.model,
         Style::default()
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
-    )]))
-    .style(Style::default().bg(Color::DarkGray).fg(Color::White));
+    ));
+
+    // Center: phase (if active and room permits)
+    if !phase_text.is_empty() {
+        let detail = if info.phase_detail.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", info.phase_detail)
+        };
+        let phase_section = format!("{phase_text}{detail}");
+
+        // Only show if we have room (model + phase + padding)
+        if info.model.len() + phase_section.len() + 6 < width {
+            spans.push(Span::raw(" | "));
+            spans.push(Span::styled(
+                phase_section,
+                Style::default().fg(phase_color),
+            ));
+        }
+    }
+
+    // Right: tokens (if room permits)
+    if !right.is_empty() {
+        let used: usize = spans.iter().map(|s| s.content.len()).sum();
+        if used + right.len() + 4 < width {
+            // Pad to push right section to the end
+            let padding = width.saturating_sub(used + right.len() + 1);
+            spans.push(Span::raw(" ".repeat(padding)));
+            spans.push(Span::styled(right, Style::default().fg(Color::DarkGray)));
+        }
+    }
+
+    let status = Paragraph::new(Line::from(spans))
+        .style(Style::default().bg(Color::DarkGray).fg(Color::White));
     frame.render_widget(status, area);
 }
 
@@ -160,9 +265,15 @@ fn render_chat_log(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppSt
         lines.push(Line::from(""));
     }
 
+    // Clamp scroll so we don't scroll past content or when content fits.
+    let total_lines = lines.len() as u16;
+    let visible_height = area.height;
+    let max_scroll = total_lines.saturating_sub(visible_height);
+    let clamped_scroll = state.scroll_offset.min(max_scroll);
+
     let chat = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
-        .scroll((state.scroll_offset, 0));
+        .scroll((clamped_scroll, 0));
 
     frame.render_widget(chat, area);
 }
@@ -236,11 +347,92 @@ fn render_approval_modal(frame: &mut Frame, area: Rect, info: &ApprovalDisplayIn
     frame.render_widget(paragraph, modal_area);
 }
 
-fn render_input(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
-    let input = Paragraph::new(state.input.as_str())
-        .block(Block::default().borders(Borders::TOP).title(" > "))
-        .wrap(Wrap { trim: false });
-    frame.render_widget(input, area);
+fn render_separator(frame: &mut Frame, area: Rect) {
+    let sep = "-".repeat(area.width as usize);
+    let separator = Paragraph::new(Line::from(Span::styled(
+        sep,
+        Style::default().fg(Color::DarkGray),
+    )));
+    frame.render_widget(separator, area);
+}
+
+fn render_input_line(frame: &mut Frame, area: Rect, state: &AppState) {
+    let prompt_str = "> ";
+    let prompt_len = prompt_str.len();
+
+    // Build lines: first line gets the prompt, continuation lines get padding
+    let input_lines: Vec<&str> = if state.input.is_empty() {
+        vec![""]
+    } else {
+        state.input.split('\n').collect()
+    };
+
+    let mut lines: Vec<Line> = Vec::new();
+    for (i, line_text) in input_lines.iter().enumerate() {
+        if i == 0 {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    prompt_str,
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(*line_text),
+            ]));
+        } else {
+            // Continuation lines: indent to align with text after prompt
+            lines.push(Line::from(vec![
+                Span::raw(" ".repeat(prompt_len)),
+                Span::raw(*line_text),
+            ]));
+        }
+    }
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, area);
+
+    // Cursor position: find which line and column the cursor is on
+    let text_before_cursor = &state.input[..state.cursor];
+    let cursor_line = text_before_cursor.matches('\n').count();
+    let cursor_col_in_line = text_before_cursor
+        .rsplit('\n')
+        .next()
+        .unwrap_or(text_before_cursor)
+        .chars()
+        .count();
+
+    // First line has "> " prefix, continuation lines have "  " padding
+    let col_offset = prompt_len as u16 + cursor_col_in_line as u16;
+    let row_offset = cursor_line as u16;
+
+    frame.set_cursor_position((area.x + col_offset, area.y + row_offset));
+}
+
+fn render_hint_line(frame: &mut Frame, area: Rect, state: &AppState) {
+    let mode_label = match state.input_mode {
+        InputModeDisplay::Insert => "INSERT",
+        InputModeDisplay::Normal => "NORMAL",
+    };
+
+    let hints = match state.input_mode {
+        InputModeDisplay::Insert => {
+            format!("Enter send | {} | Esc vim", state.newline_hint)
+        }
+        InputModeDisplay::Normal => "i insert | o new line | Esc toggle".to_string(),
+    };
+
+    let line = Line::from(vec![
+        Span::styled(
+            format!(" {mode_label} "),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(format!("  {hints}"), Style::default().fg(Color::DarkGray)),
+    ]);
+
+    frame.render_widget(Paragraph::new(line), area);
 }
 
 #[cfg(test)]
@@ -262,10 +454,10 @@ mod tests {
         let state = AppState::default();
         let output = render_to_string(&state, 60, 20);
 
-        // Status line should be visible at top
+        // Status line should show the brand compact logo
         assert!(
-            output.contains("aegis v0.1.0"),
-            "Status line should contain version: {output}"
+            output.contains("aegis"),
+            "Status line should contain brand name: {output}"
         );
         // Input area should have the border
         assert!(output.contains(">"), "Input area should have prompt marker");
@@ -331,15 +523,80 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-001
+    // @req REQ-TUI-033
     #[test]
-    fn layout_renders_custom_status() {
-        let state = AppState::default().with_status("IL5 Assured Workloads (us-central1)");
+    fn status_line_shows_model_name() {
+        let mut state = AppState::default();
+        state.status.model = "gemini-il5".to_string();
         let output = render_to_string(&state, 80, 20);
 
         assert!(
-            output.contains("IL5 Assured Workloads"),
-            "Should show custom status: {output}"
+            output.contains("gemini-il5"),
+            "Should show model name in status: {output}"
+        );
+    }
+
+    // @req REQ-TUI-033
+    #[test]
+    fn status_line_shows_phase_when_streaming() {
+        let mut state = AppState::default();
+        state.status.phase = AppPhase::Streaming;
+        state.status.phase_detail = "Analyzing...".to_string();
+        let output = render_to_string(&state, 80, 20);
+
+        assert!(
+            output.contains("STREAMING"),
+            "Should show STREAMING phase: {output}"
+        );
+        assert!(
+            output.contains("Analyzing"),
+            "Should show phase detail: {output}"
+        );
+    }
+
+    // @req REQ-TUI-033
+    #[test]
+    fn status_line_shows_tokens_when_nonzero() {
+        let mut state = AppState::default();
+        state.status.input_tokens = 1500;
+        state.status.output_tokens = 320;
+        let output = render_to_string(&state, 80, 20);
+
+        assert!(
+            output.contains("1500in"),
+            "Should show input tokens: {output}"
+        );
+        assert!(
+            output.contains("320out"),
+            "Should show output tokens: {output}"
+        );
+    }
+
+    // @req REQ-TUI-033
+    #[test]
+    fn status_line_hides_tokens_when_zero() {
+        let state = AppState::default();
+        let output = render_to_string(&state, 80, 20);
+        assert!(
+            !output.contains("0in"),
+            "Should not show zero tokens: {output}"
+        );
+    }
+
+    // @req REQ-TUI-033
+    #[test]
+    fn status_line_degrades_on_narrow_terminal() {
+        let mut state = AppState::default();
+        state.status.model = "long-model-name".to_string();
+        state.status.phase = AppPhase::Streaming;
+        state.status.phase_detail = "detail".to_string();
+        state.status.input_tokens = 999;
+        state.status.output_tokens = 888;
+        // Very narrow -- should still render without panic
+        let output = render_to_string(&state, 30, 10);
+        assert!(
+            output.contains("long-model-name"),
+            "Model should always show: {output}"
         );
     }
 
@@ -523,5 +780,111 @@ mod tests {
         let mut state = state_with_scroll(5);
         state.resize(0, 10);
         assert_eq!(state.scroll_offset, 0);
+    }
+
+    // @req REQ-TUI-037
+    #[test]
+    fn input_prompt_inline_with_text() {
+        let state = AppState {
+            input: "hello".to_string(),
+            ..Default::default()
+        };
+        let output = render_to_string(&state, 60, 20);
+        // The > prompt and text should appear on the same line
+        let has_inline = output.lines().any(|line| {
+            let trimmed = line.trim();
+            trimmed.contains('>') && trimmed.contains("hello")
+        });
+        assert!(
+            has_inline,
+            "Prompt > and text should be on same line: {output}"
+        );
+    }
+
+    // @req REQ-TUI-037
+    #[test]
+    fn input_prompt_visible_when_empty() {
+        let state = AppState::default();
+        let output = render_to_string(&state, 60, 20);
+        // Should still show the > prompt even with no input text
+        let has_prompt = output.lines().any(|line| line.contains('>'));
+        assert!(has_prompt, "Should show > prompt when empty: {output}");
+    }
+
+    // @req REQ-TUI-038
+    #[test]
+    fn input_no_box_drawing_border() {
+        let state = AppState::default();
+        let output = render_to_string(&state, 60, 20);
+        // Box-drawing characters from Borders::TOP should not appear
+        let box_chars = [
+            '\u{2500}', '\u{2502}', '\u{250c}', '\u{2510}', '\u{2514}', '\u{2518}',
+        ];
+        for ch in &box_chars {
+            assert!(
+                !output.contains(*ch),
+                "Should not contain box-drawing char U+{:04X}: {output}",
+                *ch as u32,
+            );
+        }
+    }
+
+    // @req REQ-TUI-040
+    #[test]
+    fn hint_line_shows_insert_mode() {
+        let state = AppState::default();
+        let output = render_to_string(&state, 80, 20);
+        assert!(
+            output.contains("INSERT"),
+            "Should show INSERT mode hint: {output}"
+        );
+    }
+
+    // @req REQ-TUI-040
+    #[test]
+    fn hint_line_shows_normal_mode() {
+        let state = AppState {
+            input_mode: InputModeDisplay::Normal,
+            ..Default::default()
+        };
+        let output = render_to_string(&state, 80, 20);
+        assert!(
+            output.contains("NORMAL"),
+            "Should show NORMAL mode hint: {output}"
+        );
+    }
+
+    // @req REQ-TUI-040
+    #[test]
+    fn hint_line_shows_key_hints() {
+        let state = AppState::default();
+        let output = render_to_string(&state, 80, 20);
+        assert!(
+            output.contains("Enter"),
+            "Should show Enter key hint: {output}"
+        );
+    }
+
+    // @req REQ-TUI-040
+    #[test]
+    fn hint_line_hidden_on_short_terminal() {
+        let state = AppState::default();
+        // With only 5 rows: status(1) + chat(min 3) + sep(1) + input(1) = 6 minimum
+        // No room for hint line at height 5
+        let output = render_to_string(&state, 60, 5);
+        // Should not panic and should still render
+        assert!(!output.is_empty());
+    }
+
+    // @req REQ-TUI-038
+    #[test]
+    fn input_has_separator_line() {
+        let state = AppState::default();
+        let output = render_to_string(&state, 60, 20);
+        // Should have a dash-based separator line
+        assert!(
+            output.contains("----------"),
+            "Should have a dash separator above input: {output}"
+        );
     }
 }

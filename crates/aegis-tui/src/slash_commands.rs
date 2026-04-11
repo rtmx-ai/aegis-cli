@@ -22,6 +22,8 @@ pub enum SlashCommand {
     Infra(String),
     /// Connectivity and health checks.
     Doctor,
+    /// Toggle key event logging (debug).
+    KeyLog,
 }
 
 /// Result of attempting to parse a slash command.
@@ -86,6 +88,7 @@ pub fn parse_slash_command(input: &str) -> ParseResult {
             }
         }
         "/doctor" => ParseResult::Command(SlashCommand::Doctor),
+        "/keylog" => ParseResult::Command(SlashCommand::KeyLog),
         _ => ParseResult::Unknown(cmd),
     }
 }

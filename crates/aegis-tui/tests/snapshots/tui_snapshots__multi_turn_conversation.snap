@@ -1,6 +1,5 @@
 ---
 source: crates/aegis-tui/tests/tui_snapshots.rs
-assertion_line: 136
 expression: frame
 ---
 "gemini-2.0-flash                                                                "
@@ -24,6 +23,6 @@ expression: frame
 "                                                                                "
 "                                                                                "
 "                                                                                "
-" > ─────────────────────────────────────────────────────────────────────────────"
-"                                                                                "
-"                                                                                "
+"--------------------------------------------------------------------------------"
+">                                                                               "
+" INSERT   Enter send | Ctrl+O newline | Esc vim                                 "

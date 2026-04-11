@@ -5,12 +5,15 @@
 //! and HITL approval dialogs within the chat flow.
 
 pub mod app;
+pub mod brand;
 pub mod diff;
 pub mod event;
 pub mod input;
 pub mod layout;
 pub mod markdown;
 pub mod messages;
+pub mod platform;
 pub mod slash_commands;
+pub mod splash;
 pub mod terminal;
 pub mod thinking;

@@ -11,6 +11,12 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BINARY="$PROJECT_DIR/target/debug/aegis"
 SANDBOX="$HOME/aegis-sandbox"
 
+# Enable tmux extended keys so Shift+Enter is distinguishable from Enter.
+# Requires tmux 3.3a+. Silently ignored outside tmux.
+if [ -n "${TMUX:-}" ]; then
+    tmux set -g extended-keys on 2>/dev/null || true
+fi
+
 # Ensure sandbox exists
 if [ ! -d "$SANDBOX/.git" ]; then
     echo "Creating sandbox clone at $SANDBOX..."

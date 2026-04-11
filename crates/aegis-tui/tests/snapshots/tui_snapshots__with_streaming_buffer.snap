@@ -2,7 +2,7 @@
 source: crates/aegis-tui/tests/tui_snapshots.rs
 expression: frame
 ---
-"gemini-2.0-flash | Thinking.                                                    "
+"gemini-2.0-flash | STREAMING Thinking.                                          "
 "You: Summarize this file                                                        "
 "                                                                                "
 "The file contains several important functions that... ...                       "
@@ -23,6 +23,6 @@ expression: frame
 "                                                                                "
 "                                                                                "
 "                                                                                "
-" > ─────────────────────────────────────────────────────────────────────────────"
-"                                                                                "
-"                                                                                "
+"--------------------------------------------------------------------------------"
+">                                                                               "
+" INSERT   Enter send | Ctrl+O newline | Esc vim                                 "

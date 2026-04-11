@@ -15,14 +15,19 @@ use crate::messages::ChatMessage;
 use crate::slash_commands::{self, SlashCommand};
 use crate::thinking::ThinkingAnimation;
 use aegis_domain::types::{ApprovalDecision, ToolCall, ToolRisk};
-use crossterm::event::{Event as CtEvent, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{
+    Event as CtEvent, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind,
+};
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 
 /// The current phase of the TUI interaction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum AppPhase {
+    /// Splash screen displayed on first launch; dismissed by keypress or timeout.
+    Splash,
     /// Waiting for user input.
+    #[default]
     Idle,
     /// LLM is generating tokens; streaming into `stream_buffer`.
     Streaming,
@@ -64,6 +69,9 @@ pub struct App {
     // Context files for /add and /drop
     pub context_files: Vec<PathBuf>,
 
+    // Debug: when true, every key event is logged to chat
+    pub keylog: bool,
+
     // Metrics
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -72,12 +80,15 @@ pub struct App {
     // Scrolling
     pub scroll_offset: u16,
     pub auto_scroll: bool,
+
+    // Splash screen tick counter (each tick = 150 ms)
+    pub splash_ticks: u16,
 }
 
 impl App {
     pub fn new(model_name: impl Into<String>) -> Self {
         Self {
-            phase: AppPhase::Idle,
+            phase: AppPhase::Splash,
             messages: Vec::new(),
             input: InputState::default(),
             thinking: ThinkingAnimation::new(),
@@ -86,11 +97,13 @@ impl App {
             approval_display: None,
             should_quit: false,
             context_files: Vec::new(),
+            keylog: false,
             input_tokens: 0,
             output_tokens: 0,
             model_name: model_name.into(),
             scroll_offset: 0,
             auto_scroll: true,
+            splash_ticks: 0,
         }
     }
 
@@ -159,7 +172,12 @@ impl App {
                 Action::Continue
             }
             TuiEvent::Tick => {
-                if self.phase == AppPhase::Streaming {
+                if self.phase == AppPhase::Splash {
+                    self.splash_ticks += 1;
+                    if self.splash_ticks >= crate::splash::SPLASH_TIMEOUT_TICKS {
+                        self.phase = AppPhase::Idle;
+                    }
+                } else if self.phase == AppPhase::Streaming {
                     self.thinking.tick();
                 }
                 Action::Continue
@@ -174,14 +192,34 @@ impl App {
     ) -> Action {
         match event {
             CtEvent::Key(key) => self.handle_key(key, agent_tx),
+            CtEvent::Paste(text) => {
+                if self.phase == AppPhase::Idle {
+                    self.input.insert_paste(&text);
+                }
+                Action::Continue
+            }
+            CtEvent::Mouse(mouse) => self.handle_mouse(mouse),
             CtEvent::Resize(_, _) => Action::Continue,
             _ => Action::Continue,
         }
     }
 
     fn handle_key(&mut self, key: KeyEvent, agent_tx: &mpsc::UnboundedSender<String>) -> Action {
+        // Debug: log every key event when /keylog is active
+        if self.keylog {
+            self.messages.push(ChatMessage::system(format!(
+                "[keylog] code={:?} modifiers={:?} kind={:?}",
+                key.code, key.modifiers, key.kind,
+            )));
+        }
+
         // Phase-specific key handling
         match self.phase {
+            AppPhase::Splash => {
+                // Any keypress dismisses the splash screen
+                self.phase = AppPhase::Idle;
+                return Action::Continue;
+            }
             AppPhase::AwaitingApproval => return self.handle_approval_key(key),
             AppPhase::Streaming | AppPhase::ToolExecuting => {
                 // Ctrl+C cancels (handled by caller via cancel_token)
@@ -223,14 +261,41 @@ impl App {
                 self.input.insert_newline();
                 Action::Continue
             }
+            KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
+                self.input.insert_newline();
+                Action::Continue
+            }
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Quit,
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Quit,
+            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                match self.input.paste_from_clipboard() {
+                    Ok(true) => {}
+                    Ok(false) => {} // Empty clipboard, silently ignore
+                    Err(e) => {
+                        tracing::warn!(error = %e, "clipboard paste failed");
+                        self.messages.push(ChatMessage::error(e));
+                    }
+                }
+                Action::Continue
+            }
             KeyCode::Esc => {
                 if self.input.mode == crate::input::InputMode::Insert {
                     self.input.enter_normal_mode();
                 } else {
                     self.input.enter_insert_mode();
                 }
+                Action::Continue
+            }
+            // Vim normal mode: 'o' opens new line below cursor and enters insert
+            KeyCode::Char('o') if self.input.mode == crate::input::InputMode::Normal => {
+                self.input.enter_insert_mode();
+                self.input.move_end();
+                self.input.insert_newline();
+                Action::Continue
+            }
+            // Vim normal mode: 'i' enters insert mode (explicit for clarity)
+            KeyCode::Char('i') if self.input.mode == crate::input::InputMode::Normal => {
+                self.input.enter_insert_mode();
                 Action::Continue
             }
             KeyCode::Up => {
@@ -309,6 +374,27 @@ impl App {
         }
 
         Action::Continue
+    }
+
+    /// Lines scrolled per mouse wheel tick.
+    const MOUSE_SCROLL_LINES: u16 = 1;
+
+    fn handle_mouse(&mut self, mouse: MouseEvent) -> Action {
+        match mouse.kind {
+            MouseEventKind::ScrollUp => {
+                self.scroll_offset = self.scroll_offset.saturating_add(Self::MOUSE_SCROLL_LINES);
+                self.auto_scroll = false;
+                Action::Continue
+            }
+            MouseEventKind::ScrollDown => {
+                self.scroll_offset = self.scroll_offset.saturating_sub(Self::MOUSE_SCROLL_LINES);
+                if self.scroll_offset == 0 {
+                    self.auto_scroll = true;
+                }
+                Action::Continue
+            }
+            _ => Action::Continue,
+        }
     }
 
     fn execute_slash_command(&mut self, cmd: SlashCommand) -> Action {
@@ -405,6 +491,14 @@ impl App {
             }
             SlashCommand::Doctor => {
                 self.handle_doctor_command();
+                Action::Continue
+            }
+            SlashCommand::KeyLog => {
+                self.keylog = !self.keylog;
+                let state = if self.keylog { "ON" } else { "OFF" };
+                self.messages.push(ChatMessage::system(format!(
+                    "Key event logging: {state}. Press keys to see raw events."
+                )));
                 Action::Continue
             }
         }
@@ -538,20 +632,39 @@ impl App {
         self.messages.push(ChatMessage::system(results.join("\n")));
     }
 
-    /// Status text for the status line, reflecting current phase.
+    /// Build a `StatusInfo` for the structured status line.
+    pub fn status_info(&self) -> crate::layout::StatusInfo {
+        let phase_detail = match self.phase {
+            AppPhase::Streaming => self.thinking.current_text().to_string(),
+            AppPhase::ToolExecuting => "executing...".to_string(),
+            AppPhase::AwaitingApproval => "[A/D/E/S]".to_string(),
+            _ => String::new(),
+        };
+        crate::layout::StatusInfo {
+            model: self.model_name.clone(),
+            phase: self.phase,
+            phase_detail,
+            input_tokens: self.input_tokens,
+            output_tokens: self.output_tokens,
+        }
+    }
+
+    /// Legacy status text for backward compatibility with tests.
     pub fn status_text(&self) -> String {
+        let info = self.status_info();
         let phase = match self.phase {
+            AppPhase::Splash => return String::new(),
             AppPhase::Idle => String::new(),
             AppPhase::Streaming => format!(" | {}", self.thinking.current_text()),
             AppPhase::ToolExecuting => " | executing tool...".to_string(),
             AppPhase::AwaitingApproval => " | APPROVE? [A/D/E/S]".to_string(),
         };
-        let tokens = if self.input_tokens > 0 || self.output_tokens > 0 {
-            format!(" | {}in + {}out", self.input_tokens, self.output_tokens)
+        let tokens = if info.input_tokens > 0 || info.output_tokens > 0 {
+            format!(" | {}in + {}out", info.input_tokens, info.output_tokens)
         } else {
             String::new()
         };
-        format!("{}{}{}", self.model_name, phase, tokens)
+        format!("{}{}{}", info.model, phase, tokens)
     }
 }
 
@@ -603,8 +716,11 @@ mod tests {
     use super::*;
     use aegis_domain::types::FilePath;
 
+    /// Create an app in Idle phase (post-splash) for testing normal interaction.
     fn make_app() -> App {
-        App::new("llama3")
+        let mut app = App::new("llama3");
+        app.phase = AppPhase::Idle;
+        app
     }
 
     fn make_agent_tx() -> (
@@ -614,9 +730,148 @@ mod tests {
         mpsc::unbounded_channel()
     }
 
+    // @req REQ-TUI-030
+    #[test]
+    fn app_starts_in_splash_phase() {
+        let app = App::new("llama3");
+        assert_eq!(app.phase, AppPhase::Splash);
+        assert_eq!(app.splash_ticks, 0);
+    }
+
+    // @req REQ-TUI-030
+    #[test]
+    fn splash_dismissed_by_keypress() {
+        let mut app = App::new("llama3");
+        assert_eq!(app.phase, AppPhase::Splash);
+        let (tx, _rx) = make_agent_tx();
+        app.handle_event(
+            TuiEvent::Terminal(CtEvent::Key(KeyEvent::from(KeyCode::Char(' ')))),
+            &tx,
+        );
+        assert_eq!(app.phase, AppPhase::Idle);
+    }
+
+    // @req REQ-TUI-030
+    #[test]
+    fn splash_dismissed_by_timeout() {
+        let mut app = App::new("llama3");
+        let (tx, _rx) = make_agent_tx();
+        for _ in 0..crate::splash::SPLASH_TIMEOUT_TICKS {
+            app.handle_event(TuiEvent::Tick, &tx);
+        }
+        assert_eq!(app.phase, AppPhase::Idle);
+    }
+
+    // @req REQ-TUI-008
+    #[test]
+    fn mouse_scroll_up_increases_offset() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        let mouse = MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        };
+        app.handle_event(TuiEvent::Terminal(CtEvent::Mouse(mouse)), &tx);
+        assert_eq!(app.scroll_offset, 1);
+        assert!(!app.auto_scroll);
+    }
+
+    // @req REQ-TUI-004
+    #[test]
+    fn vim_o_opens_new_line_and_enters_insert() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        // Type some text
+        for ch in "hello".chars() {
+            app.handle_event(
+                TuiEvent::Terminal(CtEvent::Key(KeyEvent::from(KeyCode::Char(ch)))),
+                &tx,
+            );
+        }
+        // Enter normal mode
+        app.handle_event(
+            TuiEvent::Terminal(CtEvent::Key(KeyEvent::from(KeyCode::Esc))),
+            &tx,
+        );
+        assert_eq!(app.input.mode, crate::input::InputMode::Normal);
+        // Press 'o' to open new line
+        app.handle_event(
+            TuiEvent::Terminal(CtEvent::Key(KeyEvent::from(KeyCode::Char('o')))),
+            &tx,
+        );
+        assert_eq!(app.input.mode, crate::input::InputMode::Insert);
+        assert!(
+            app.input.text.contains('\n'),
+            "Should have newline: {:?}",
+            app.input.text
+        );
+    }
+
+    // @req REQ-TUI-008
+    #[test]
+    fn mouse_scroll_down_decreases_offset() {
+        let mut app = make_app();
+        app.scroll_offset = 10;
+        app.auto_scroll = false;
+        let (tx, _rx) = make_agent_tx();
+        let mouse = MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        };
+        app.handle_event(TuiEvent::Terminal(CtEvent::Mouse(mouse)), &tx);
+        assert_eq!(app.scroll_offset, 9);
+    }
+
+    // @req REQ-TUI-008
+    #[test]
+    fn mouse_scroll_down_to_zero_enables_auto_scroll() {
+        let mut app = make_app();
+        app.scroll_offset = 1;
+        app.auto_scroll = false;
+        let (tx, _rx) = make_agent_tx();
+        let mouse = MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        };
+        app.handle_event(TuiEvent::Terminal(CtEvent::Mouse(mouse)), &tx);
+        assert_eq!(app.scroll_offset, 0);
+        assert!(app.auto_scroll);
+    }
+
+    // @req REQ-TUI-034
+    #[test]
+    fn bracketed_paste_inserts_text() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        app.handle_event(
+            TuiEvent::Terminal(CtEvent::Paste("pasted text".to_string())),
+            &tx,
+        );
+        assert_eq!(app.input.text, "pasted text");
+    }
+
+    // @req REQ-TUI-034
+    #[test]
+    fn bracketed_paste_ignored_during_streaming() {
+        let mut app = make_app();
+        app.phase = AppPhase::Streaming;
+        let (tx, _rx) = make_agent_tx();
+        app.handle_event(
+            TuiEvent::Terminal(CtEvent::Paste("should not appear".to_string())),
+            &tx,
+        );
+        assert_eq!(app.input.text, "");
+    }
+
     // @req REQ-TUI-001
     #[test]
-    fn app_starts_in_idle_phase() {
+    fn app_idle_after_splash() {
         let app = make_app();
         assert_eq!(app.phase, AppPhase::Idle);
         assert!(app.messages.is_empty());

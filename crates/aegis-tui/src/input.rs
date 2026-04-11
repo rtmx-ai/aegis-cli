@@ -117,6 +117,70 @@ impl InputState {
         }
     }
 
+    /// Maximum paste size in bytes (64 KB).
+    const MAX_PASTE_BYTES: usize = 64 * 1024;
+
+    /// Insert a string at the cursor position, truncating at 64 KB.
+    pub fn insert_str(&mut self, s: &str) {
+        if self.mode != InputMode::Insert {
+            return;
+        }
+        let truncated = if s.len() > Self::MAX_PASTE_BYTES {
+            // Truncate at a char boundary
+            let mut end = Self::MAX_PASTE_BYTES;
+            while end > 0 && !s.is_char_boundary(end) {
+                end -= 1;
+            }
+            &s[..end]
+        } else {
+            s
+        };
+        self.text.insert_str(self.cursor, truncated);
+        self.cursor += truncated.len();
+    }
+
+    /// Sanitize pasted text: strip non-printable control characters except
+    /// newline and tab, then truncate at 64 KB.
+    pub fn sanitize_paste(text: &str) -> String {
+        let cleaned: String = text
+            .chars()
+            .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+            .collect();
+        if cleaned.len() <= Self::MAX_PASTE_BYTES {
+            cleaned
+        } else {
+            let mut end = Self::MAX_PASTE_BYTES;
+            while end > 0 && !cleaned.is_char_boundary(end) {
+                end -= 1;
+            }
+            cleaned[..end].to_string()
+        }
+    }
+
+    /// Insert sanitized pasted text at the cursor position.
+    pub fn insert_paste(&mut self, raw: &str) {
+        let cleaned = Self::sanitize_paste(raw);
+        if !cleaned.is_empty() {
+            self.insert_str(&cleaned);
+        }
+    }
+
+    /// Paste from the system clipboard. Returns Ok(true) if pasted,
+    /// Ok(false) if clipboard was empty, Err on clipboard access failure.
+    pub fn paste_from_clipboard(&mut self) -> Result<bool, String> {
+        let mut clipboard =
+            arboard::Clipboard::new().map_err(|e| format!("clipboard error: {e}"))?;
+        match clipboard.get_text() {
+            Ok(text) if text.is_empty() => Ok(false),
+            Ok(text) => {
+                self.insert_str(&text);
+                Ok(true)
+            }
+            Err(arboard::Error::ContentNotAvailable) => Ok(false),
+            Err(e) => Err(format!("clipboard read error: {e}")),
+        }
+    }
+
     /// Submit the current text: add to history and return it.
     /// Clears the input state.
     pub fn submit(&mut self) -> String {
@@ -363,6 +427,76 @@ mod tests {
         input.text = "test".to_string();
         input.submit();
         assert_eq!(input.mode, InputMode::Insert);
+    }
+
+    // @req REQ-TUI-034
+    #[test]
+    fn sanitize_paste_strips_control_chars() {
+        let raw = "hello\x00world\x07test\nkeep\ttabs";
+        let cleaned = InputState::sanitize_paste(raw);
+        assert_eq!(cleaned, "helloworldtest\nkeep\ttabs");
+    }
+
+    // @req REQ-TUI-034
+    #[test]
+    fn sanitize_paste_preserves_newlines_and_tabs() {
+        let raw = "line1\nline2\tindented";
+        let cleaned = InputState::sanitize_paste(raw);
+        assert_eq!(cleaned, raw);
+    }
+
+    // @req REQ-TUI-034
+    #[test]
+    fn sanitize_paste_truncates_at_64kb() {
+        let big = "x".repeat(128 * 1024);
+        let cleaned = InputState::sanitize_paste(&big);
+        assert_eq!(cleaned.len(), 64 * 1024);
+    }
+
+    // @req REQ-TUI-034
+    #[test]
+    fn insert_paste_sanitizes_and_inserts() {
+        let mut input = InputState::default();
+        input.insert_paste("hello\x00world");
+        assert_eq!(input.text, "helloworld");
+    }
+
+    // @req REQ-TUI-022
+    #[test]
+    fn insert_str_at_cursor() {
+        let mut input = InputState::default();
+        input.insert_char('a');
+        input.insert_char('d');
+        input.move_left(); // cursor before 'd'
+        input.insert_str("bc");
+        assert_eq!(input.text, "abcd");
+        assert_eq!(input.cursor, 3); // after "abc"
+    }
+
+    // @req REQ-TUI-022
+    #[test]
+    fn insert_str_multiline() {
+        let mut input = InputState::default();
+        input.insert_str("line1\nline2\nline3");
+        assert_eq!(input.text, "line1\nline2\nline3");
+    }
+
+    // @req REQ-TUI-022
+    #[test]
+    fn insert_str_truncates_at_64kb() {
+        let mut input = InputState::default();
+        let big = "x".repeat(128 * 1024);
+        input.insert_str(&big);
+        assert_eq!(input.text.len(), 64 * 1024);
+    }
+
+    // @req REQ-TUI-022
+    #[test]
+    fn insert_str_ignored_in_normal_mode() {
+        let mut input = InputState::default();
+        input.enter_normal_mode();
+        input.insert_str("hello");
+        assert_eq!(input.text, "");
     }
 
     // @req REQ-TUI-004

@@ -38,6 +38,7 @@ bytes = "1"
 # TUI
 ratatui = "0.30"
 crossterm = "0.28"
+arboard = "3"
 tui-markdown = "0.3"
 tui-scrollview = "0.6"
 tui-textarea = "0.7"

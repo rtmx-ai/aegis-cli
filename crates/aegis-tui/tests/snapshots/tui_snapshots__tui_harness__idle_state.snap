@@ -1,6 +1,5 @@
 ---
 source: crates/aegis-tui/tests/tui_harness.rs
-assertion_line: 118
 expression: frame
 ---
 "llama3-il5                                                                      "
@@ -20,6 +19,6 @@ expression: frame
 "                                                                                "
 "                                                                                "
 "                                                                                "
-" > ─────────────────────────────────────────────────────────────────────────────"
-"                                                                                "
-"                                                                                "
+"--------------------------------------------------------------------------------"
+">                                                                               "
+" INSERT   Enter send | Ctrl+O newline | Esc vim                                 "

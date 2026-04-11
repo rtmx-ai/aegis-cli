@@ -30,8 +30,11 @@ impl TuiHarness {
         let backend = TestBackend::new(width, height);
         let terminal = Terminal::new(backend).expect("test backend terminal");
         let (agent_tx, agent_rx) = mpsc::unbounded_channel();
+        let mut app = App::new(model);
+        // Skip splash for test harness -- tests exercise post-splash behaviour
+        app.phase = aegis_tui::app::AppPhase::Idle;
         Self {
-            app: App::new(model),
+            app,
             terminal,
             agent_tx,
             agent_rx,
@@ -74,11 +77,22 @@ impl TuiHarness {
         let app = &self.app;
         self.terminal
             .draw(|frame| {
+                let input_mode = match app.input.mode {
+                    aegis_tui::input::InputMode::Insert => {
+                        aegis_tui::layout::InputModeDisplay::Insert
+                    }
+                    aegis_tui::input::InputMode::Normal => {
+                        aegis_tui::layout::InputModeDisplay::Normal
+                    }
+                };
                 let view = aegis_tui::layout::AppState {
                     messages: app.messages.clone(),
                     input: app.input.text.clone(),
-                    status_text: app.status_text(),
+                    cursor: app.input.cursor,
+                    status: app.status_info(),
                     scroll_offset: app.scroll_offset,
+                    input_mode,
+                    newline_hint: "Ctrl+O newline".to_string(),
                     stream_buffer: app.stream_buffer.clone(),
                     approval_display: app.approval_display.clone(),
                 };
