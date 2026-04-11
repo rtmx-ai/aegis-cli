@@ -147,13 +147,24 @@ mod tests {
     // @req REQ-TEST-023
     #[test]
     fn test_isolation_restores_home_on_drop() {
-        let original = std::env::var("HOME").ok();
+        let isolated_path;
         {
-            let _home = IsolatedHome::new().expect("create isolated home");
+            let home = IsolatedHome::new().expect("create isolated home");
+            isolated_path = home.path().to_path_buf();
             // HOME is now the tempdir.
-            assert_ne!(std::env::var("HOME").ok(), original);
+            assert_eq!(
+                std::env::var("HOME").ok(),
+                Some(isolated_path.display().to_string())
+            );
         }
-        assert_eq!(std::env::var("HOME").ok(), original);
+        // After drop, HOME must NOT be the isolated tmpdir anymore.
+        // (We don't assert a specific value because parallel tests
+        // also mutate the process-global HOME env var.)
+        assert_ne!(
+            std::env::var("HOME").ok(),
+            Some(isolated_path.display().to_string()),
+            "HOME should be restored away from the isolated tmpdir"
+        );
     }
 
     // @req REQ-TEST-023
