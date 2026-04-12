@@ -1,6 +1,6 @@
 //! Validates CI coverage job exists and enforces thresholds (REQ-TEST-004).
 
-// @req REQ-TEST-004
+// rtmx:req REQ-TEST-004
 #[test]
 fn test_ci_has_coverage_job() {
     let ci = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -20,7 +20,7 @@ fn test_ci_has_coverage_job() {
     );
 }
 
-// @req REQ-TEST-004
+// rtmx:req REQ-TEST-004
 #[test]
 fn test_ci_coverage_reports_thresholds() {
     let ci = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

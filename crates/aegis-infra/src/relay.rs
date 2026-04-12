@@ -73,7 +73,7 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    // @req REQ-INFRA-005
+    // rtmx:req REQ-INFRA-005
     #[test]
     fn format_progress_with_name() {
         let event = ProgressEvent {
@@ -88,7 +88,7 @@ mod tests {
         );
     }
 
-    // @req REQ-INFRA-005
+    // rtmx:req REQ-INFRA-005
     #[test]
     fn format_progress_without_name() {
         let event = ProgressEvent {
@@ -100,7 +100,7 @@ mod tests {
         assert_eq!(format_progress(&event), "[vpc] update: in-progress");
     }
 
-    // @req REQ-INFRA-005
+    // rtmx:req REQ-INFRA-005
     #[test]
     fn format_diagnostic_info() {
         let event = DiagnosticEvent {
@@ -110,7 +110,7 @@ mod tests {
         assert_eq!(format_diagnostic(&event), "[info] Starting provisioning");
     }
 
-    // @req REQ-INFRA-005
+    // rtmx:req REQ-INFRA-005
     #[test]
     fn format_diagnostic_warning() {
         let event = DiagnosticEvent {
@@ -120,7 +120,7 @@ mod tests {
         assert_eq!(format_diagnostic(&event), "[warning] Quota near limit");
     }
 
-    // @req REQ-INFRA-005
+    // rtmx:req REQ-INFRA-005
     #[test]
     fn format_check_pass() {
         let event = CheckEvent {
@@ -134,7 +134,7 @@ mod tests {
         );
     }
 
-    // @req REQ-INFRA-005
+    // rtmx:req REQ-INFRA-005
     #[test]
     fn format_check_fail_no_detail() {
         let event = CheckEvent {
@@ -145,7 +145,7 @@ mod tests {
         assert_eq!(format_check(&event), "[FAIL] vpc_perimeter");
     }
 
-    // @req REQ-INFRA-005
+    // rtmx:req REQ-INFRA-005
     #[test]
     fn format_check_warn_with_detail() {
         let event = CheckEvent {
@@ -156,7 +156,7 @@ mod tests {
         assert_eq!(format_check(&event), "[warn] audit_sink: Permission denied");
     }
 
-    // @req REQ-INFRA-005
+    // rtmx:req REQ-INFRA-005
     #[test]
     fn format_result_success_with_summary() {
         let event = ResultEvent {
@@ -171,7 +171,7 @@ mod tests {
         );
     }
 
-    // @req REQ-INFRA-005
+    // rtmx:req REQ-INFRA-005
     #[test]
     fn format_result_success_no_summary() {
         let event = ResultEvent {
@@ -183,7 +183,7 @@ mod tests {
         assert_eq!(format_result(&event), "Result: success");
     }
 
-    // @req REQ-INFRA-005
+    // rtmx:req REQ-INFRA-005
     #[test]
     fn format_result_failure_with_error() {
         let event = ResultEvent {
@@ -195,7 +195,7 @@ mod tests {
         assert_eq!(format_result(&event), "Result: FAILED -- Quota exceeded");
     }
 
-    // @req REQ-INFRA-005
+    // rtmx:req REQ-INFRA-005
     #[test]
     fn format_result_failure_no_error() {
         let event = ResultEvent {
@@ -207,7 +207,7 @@ mod tests {
         assert_eq!(format_result(&event), "Result: FAILED");
     }
 
-    // @req REQ-INFRA-005
+    // rtmx:req REQ-INFRA-005
     #[test]
     fn format_event_dispatches_correctly() {
         let progress = PluginEvent::Progress(ProgressEvent {
@@ -240,7 +240,7 @@ mod tests {
         assert_eq!(format_event(&result), "Result: success");
     }
 
-    // @req REQ-INFRA-005
+    // rtmx:req REQ-INFRA-005
     #[test]
     fn relay_output_converts_all_events() {
         let output = PluginOutput {
@@ -285,7 +285,7 @@ mod tests {
         assert_eq!(lines[3], "Result: success -- Done");
     }
 
-    // @req REQ-INFRA-005
+    // rtmx:req REQ-INFRA-005
     #[test]
     fn relay_output_empty_events() {
         let output = PluginOutput {

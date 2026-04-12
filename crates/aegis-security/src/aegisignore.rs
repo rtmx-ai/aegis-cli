@@ -73,7 +73,7 @@ mod tests {
     use super::*;
     use rstest::*;
 
-    // @req REQ-SECURITY-001
+    // rtmx:req REQ-SECURITY-001
     #[rstest]
     #[case(".env", true)]
     #[case("config/.env", true)]
@@ -90,7 +90,7 @@ mod tests {
         assert_eq!(filter.is_blocked(path), blocked, "path: {}", path);
     }
 
-    // @req REQ-SECURITY-001
+    // rtmx:req REQ-SECURITY-001
     #[test]
     fn validate_path_returns_error_for_blocked() {
         let filter = AegisIgnore::with_defaults();

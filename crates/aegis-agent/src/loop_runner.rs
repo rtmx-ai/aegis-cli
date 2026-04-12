@@ -439,14 +439,14 @@ mod tests {
         )
     }
 
-    // @req REQ-AGENT-001
+    // rtmx:req REQ-AGENT-001
     #[test]
     fn test_agent_config_defaults() {
         let config = AgentConfig::default();
         assert_eq!(config.max_iterations, 100);
     }
 
-    // @req REQ-AGENT-001
+    // rtmx:req REQ-AGENT-001
     #[tokio::test]
     async fn agent_completes_simple_text_response() {
         let provider = MockLlmProvider::new();
@@ -467,7 +467,7 @@ mod tests {
         assert_eq!(result.output_tokens, 2);
     }
 
-    // @req REQ-AGENT-001
+    // rtmx:req REQ-AGENT-001
     #[tokio::test]
     async fn agent_loops_on_tool_use_then_completes() {
         let provider = MockLlmProvider::new();
@@ -501,7 +501,7 @@ mod tests {
         assert_eq!(result.output_tokens, 15);
     }
 
-    // @req REQ-AGENT-005
+    // rtmx:req REQ-AGENT-005
     #[tokio::test]
     async fn tool_results_are_injected_into_history() {
         let provider = MockLlmProvider::new();
@@ -533,7 +533,7 @@ mod tests {
         assert_eq!(result.response, "Done.");
     }
 
-    // @req REQ-AGENT-008
+    // rtmx:req REQ-AGENT-008
     #[tokio::test]
     async fn agent_halts_at_max_iterations() {
         let provider = MockLlmProvider::new();
@@ -572,7 +572,7 @@ mod tests {
         );
     }
 
-    // @req REQ-HITL-001
+    // rtmx:req REQ-HITL-001
     #[tokio::test]
     async fn denied_tool_call_injects_permission_denied() {
         let provider = MockLlmProvider::new();
@@ -609,7 +609,7 @@ mod tests {
         assert_eq!(result.response, "Understood, skipping.");
     }
 
-    // @req REQ-AGENT-001
+    // rtmx:req REQ-AGENT-001
     #[tokio::test]
     async fn safe_tools_auto_execute_without_hitl() {
         let provider = MockLlmProvider::new();
@@ -650,7 +650,7 @@ mod tests {
         assert_eq!(result.response, "Got it.");
     }
 
-    // @req REQ-AGENT-001
+    // rtmx:req REQ-AGENT-001
     #[tokio::test]
     async fn stream_error_propagates() {
         let provider = MockLlmProvider::new();
@@ -661,7 +661,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // @req REQ-AGENT-001
+    // rtmx:req REQ-AGENT-001
     #[test]
     fn builtin_tools_has_five_entries() {
         let tools = builtin_tool_schemas();
@@ -676,7 +676,7 @@ mod tests {
 
     // --- REQ-AGENT-009: Cancellation ---
 
-    // @req REQ-AGENT-009
+    // rtmx:req REQ-AGENT-009
     #[tokio::test]
     async fn cancellation_before_first_iteration_returns_cancelled() {
         let provider = MockLlmProvider::new();
@@ -701,7 +701,7 @@ mod tests {
         );
     }
 
-    // @req REQ-AGENT-009
+    // rtmx:req REQ-AGENT-009
     #[tokio::test]
     async fn cancellation_between_iterations_stops_loop() {
         let provider = MockLlmProvider::new();
@@ -763,7 +763,7 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("Cancelled"));
     }
 
-    // @req REQ-AGENT-009
+    // rtmx:req REQ-AGENT-009
     #[tokio::test]
     async fn uncancelled_token_allows_completion() {
         let provider = MockLlmProvider::new();
@@ -784,7 +784,7 @@ mod tests {
 
     // --- REQ-AGENT-013: Banned commands ---
 
-    // @req REQ-AGENT-013
+    // rtmx:req REQ-AGENT-013
     #[tokio::test]
     async fn banned_command_is_rejected_before_hitl() {
         let provider = MockLlmProvider::new();
@@ -815,7 +815,7 @@ mod tests {
         assert_eq!(result.response, "That command is banned.");
     }
 
-    // @req REQ-AGENT-013
+    // rtmx:req REQ-AGENT-013
     #[tokio::test]
     async fn safe_command_passes_through() {
         let provider = MockLlmProvider::new();
@@ -846,7 +846,7 @@ mod tests {
 
     // --- REQ-AGENT-010: Error recovery ---
 
-    // @req REQ-AGENT-010
+    // rtmx:req REQ-AGENT-010
     #[tokio::test]
     async fn tool_error_is_injected_and_loop_continues() {
         let provider = MockLlmProvider::new();
@@ -894,7 +894,7 @@ mod tests {
         assert_eq!(result.iterations, 2);
     }
 
-    // @req REQ-AGENT-010
+    // rtmx:req REQ-AGENT-010
     #[tokio::test]
     async fn executor_domain_error_becomes_tool_error_not_halt() {
         use aegis_domain::error::DomainError;
@@ -952,7 +952,7 @@ mod tests {
 
     // --- REQ-AGENT-012: Output truncation ---
 
-    // @req REQ-AGENT-012
+    // rtmx:req REQ-AGENT-012
     #[tokio::test]
     async fn large_tool_output_is_truncated_in_history() {
         let provider = MockLlmProvider::new();
@@ -1000,7 +1000,7 @@ mod tests {
         assert_eq!(result.response, "Output was truncated.");
     }
 
-    // @req REQ-AGENT-012
+    // rtmx:req REQ-AGENT-012
     #[tokio::test]
     async fn small_tool_output_passes_through_unmodified() {
         let provider = MockLlmProvider::new();

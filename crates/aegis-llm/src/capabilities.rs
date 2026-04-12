@@ -123,7 +123,7 @@ mod tests {
 
     // --- Gemini family ---
 
-    // @req REQ-LLM-017
+    // rtmx:req REQ-LLM-017
     #[test]
     fn gemini_2_5_pro_supports_tool_use() {
         let caps = detect_capabilities("gemini-2.5-pro-001");
@@ -131,7 +131,7 @@ mod tests {
         assert_eq!(caps.context_window_tokens, 1_048_576);
     }
 
-    // @req REQ-LLM-017
+    // rtmx:req REQ-LLM-017
     #[test]
     fn gemini_2_0_flash_supports_tool_use() {
         let caps = detect_capabilities("gemini-2.0-flash-001");
@@ -141,7 +141,7 @@ mod tests {
 
     // --- Claude family ---
 
-    // @req REQ-LLM-017
+    // rtmx:req REQ-LLM-017
     #[test]
     fn claude_3_sonnet_supports_tool_use() {
         let caps = detect_capabilities("claude-3-sonnet-20241022");
@@ -149,7 +149,7 @@ mod tests {
         assert_eq!(caps.context_window_tokens, 200_000);
     }
 
-    // @req REQ-LLM-017
+    // rtmx:req REQ-LLM-017
     #[test]
     fn claude_4_supports_tool_use() {
         let caps = detect_capabilities("claude-4-opus-20260101");
@@ -159,7 +159,7 @@ mod tests {
 
     // --- GPT family ---
 
-    // @req REQ-LLM-017
+    // rtmx:req REQ-LLM-017
     #[test]
     fn gpt_4o_supports_tool_use() {
         let caps = detect_capabilities("gpt-4o-2024-05-13");
@@ -169,7 +169,7 @@ mod tests {
 
     // --- Local / air-gapped models ---
 
-    // @req REQ-LLM-017
+    // rtmx:req REQ-LLM-017
     #[test]
     fn llama3_no_tool_use() {
         let caps = detect_capabilities("llama3-8b");
@@ -177,7 +177,7 @@ mod tests {
         assert_eq!(caps.context_window_tokens, 8_192);
     }
 
-    // @req REQ-LLM-017
+    // rtmx:req REQ-LLM-017
     #[test]
     fn granite_no_tool_use() {
         let caps = detect_capabilities("granite-3.3-2b");
@@ -185,7 +185,7 @@ mod tests {
         assert_eq!(caps.context_window_tokens, 8_192);
     }
 
-    // @req REQ-LLM-017
+    // rtmx:req REQ-LLM-017
     #[test]
     fn mistral_no_tool_use() {
         let caps = detect_capabilities("mistral-7b-instruct");
@@ -195,7 +195,7 @@ mod tests {
 
     // --- Unknown models get conservative defaults ---
 
-    // @req REQ-LLM-017
+    // rtmx:req REQ-LLM-017
     #[test]
     fn unknown_model_gets_conservative_defaults() {
         let caps = detect_capabilities("some-random-model");
@@ -203,7 +203,7 @@ mod tests {
         assert_eq!(caps.context_window_tokens, 4_096);
     }
 
-    // @req REQ-LLM-017
+    // rtmx:req REQ-LLM-017
     #[test]
     fn empty_model_string_gets_defaults() {
         let caps = detect_capabilities("");
@@ -213,7 +213,7 @@ mod tests {
 
     // --- Prefix matching ---
 
-    // @req REQ-LLM-017
+    // rtmx:req REQ-LLM-017
     #[test]
     fn prefix_match_is_case_sensitive() {
         // "Gemini" (capital G) should NOT match "gemini-2.5"
@@ -222,7 +222,7 @@ mod tests {
         assert_eq!(caps.context_window_tokens, 4_096);
     }
 
-    // @req REQ-LLM-017
+    // rtmx:req REQ-LLM-017
     #[test]
     fn exact_prefix_matches_without_suffix() {
         // "gemini-2.5" alone (no trailing chars) should still match
@@ -232,19 +232,19 @@ mod tests {
 
     // --- ToolShim auto-enable ---
 
-    // @req REQ-LLM-017
+    // rtmx:req REQ-LLM-017
     #[test]
     fn tool_shim_needed_for_llama3() {
         assert!(needs_tool_shim("llama3-8b"));
     }
 
-    // @req REQ-LLM-017
+    // rtmx:req REQ-LLM-017
     #[test]
     fn tool_shim_not_needed_for_gemini() {
         assert!(!needs_tool_shim("gemini-2.5-pro-001"));
     }
 
-    // @req REQ-LLM-017
+    // rtmx:req REQ-LLM-017
     #[test]
     fn tool_shim_needed_for_unknown_model() {
         assert!(needs_tool_shim("totally-unknown"));

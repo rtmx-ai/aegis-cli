@@ -332,7 +332,7 @@ mod tests {
         )
     }
 
-    // @req REQ-LLM-004
+    // rtmx:req REQ-LLM-004
     #[tokio::test]
     async fn local_provider_streams_text_response() {
         let server = MockServer::start().await;
@@ -372,7 +372,7 @@ mod tests {
         assert_eq!(tokens, vec!["Hello", " world"]);
     }
 
-    // @req REQ-LLM-004
+    // rtmx:req REQ-LLM-004
     #[tokio::test]
     async fn local_provider_handles_tool_calls() {
         let server = MockServer::start().await;
@@ -405,7 +405,7 @@ mod tests {
         assert!(got_tool_use, "Expected a ToolUse event");
     }
 
-    // @req REQ-LLM-004
+    // rtmx:req REQ-LLM-004
     #[tokio::test]
     async fn local_provider_surfaces_http_errors() {
         let server = MockServer::start().await;
@@ -437,7 +437,7 @@ mod tests {
         }
     }
 
-    // @req REQ-LLM-004
+    // rtmx:req REQ-LLM-004
     #[tokio::test]
     async fn local_provider_tracks_usage() {
         let server = MockServer::start().await;
@@ -476,7 +476,7 @@ mod tests {
         assert_eq!(output, 5);
     }
 
-    // @req REQ-LLM-001
+    // rtmx:req REQ-LLM-001
     #[test]
     fn request_body_includes_model_and_messages() {
         let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
@@ -504,7 +504,7 @@ mod tests {
         assert!(body.get("tools").is_none());
     }
 
-    // @req REQ-LLM-001
+    // rtmx:req REQ-LLM-001
     #[test]
     fn request_body_includes_tools_when_provided() {
         let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
@@ -533,7 +533,7 @@ mod tests {
         assert_eq!(tools_arr[0]["function"]["name"], "read_file");
     }
 
-    // @req REQ-LLM-016
+    // rtmx:req REQ-LLM-016
     #[test]
     fn endpoint_url_constructed_correctly() {
         let cfg = ProviderConfig::local("http://localhost:11434/v1/", "llama3");

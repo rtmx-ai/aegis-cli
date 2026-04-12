@@ -28,7 +28,7 @@ fn workspace_toml() -> String {
     std::fs::read_to_string(&root).expect("read workspace Cargo.toml")
 }
 
-// @req REQ-BUILD-008
+// rtmx:req REQ-BUILD-008
 #[test]
 fn test_tls_backend_is_fips_capable() {
     let content = workspace_toml();
@@ -40,7 +40,7 @@ fn test_tls_backend_is_fips_capable() {
     );
 }
 
-// @req REQ-BUILD-008
+// rtmx:req REQ-BUILD-008
 #[test]
 fn test_reqwest_uses_rustls_feature() {
     let content = workspace_toml();
@@ -51,7 +51,7 @@ fn test_reqwest_uses_rustls_feature() {
     );
 }
 
-// @req REQ-BUILD-008
+// rtmx:req REQ-BUILD-008
 #[test]
 fn test_no_native_tls_as_primary_backend() {
     let content = workspace_toml();
@@ -68,7 +68,7 @@ fn test_no_native_tls_as_primary_backend() {
     );
 }
 
-// @req REQ-BUILD-008
+// rtmx:req REQ-BUILD-008
 #[test]
 fn test_reqwest_disables_default_features() {
     let content = workspace_toml();
@@ -85,7 +85,7 @@ fn test_reqwest_disables_default_features() {
     );
 }
 
-// @req REQ-BUILD-008
+// rtmx:req REQ-BUILD-008
 #[test]
 fn test_cargo_lock_contains_rustls() {
     let lock = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -101,7 +101,7 @@ fn test_cargo_lock_contains_rustls() {
     );
 }
 
-// @req REQ-BUILD-008
+// rtmx:req REQ-BUILD-008
 #[test]
 fn test_cargo_lock_contains_ring_crypto_provider() {
     let lock = Path::new(env!("CARGO_MANIFEST_DIR"))

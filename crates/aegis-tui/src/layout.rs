@@ -708,7 +708,7 @@ mod tests {
         terminal.backend().to_string()
     }
 
-    // @req REQ-TUI-001
+    // rtmx:req REQ-TUI-001
     #[test]
     fn layout_renders_three_sections() {
         let state = AppState::default();
@@ -723,7 +723,7 @@ mod tests {
         assert!(output.contains(">"), "Input area should have prompt marker");
     }
 
-    // @req REQ-TUI-001
+    // rtmx:req REQ-TUI-001
     #[test]
     fn layout_renders_user_message() {
         let mut state = AppState::default();
@@ -740,7 +740,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-001
+    // rtmx:req REQ-TUI-001
     #[test]
     fn layout_renders_assistant_message() {
         let mut state = AppState::default();
@@ -753,7 +753,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-005
+    // rtmx:req REQ-TUI-005
     #[test]
     fn layout_renders_tool_call() {
         let mut state = AppState::default();
@@ -770,7 +770,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-015
+    // rtmx:req REQ-TUI-015
     #[test]
     fn layout_renders_error_message() {
         let mut state = AppState::default();
@@ -783,7 +783,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-033
+    // rtmx:req REQ-TUI-033
     #[test]
     fn status_line_shows_model_name() {
         let mut state = AppState::default();
@@ -796,7 +796,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-033
+    // rtmx:req REQ-TUI-033
     #[test]
     fn status_line_shows_phase_when_streaming() {
         let mut state = AppState::default();
@@ -814,7 +814,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-033
+    // rtmx:req REQ-TUI-033
     #[test]
     fn status_line_shows_tokens_when_nonzero() {
         let mut state = AppState::default();
@@ -832,7 +832,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-033
+    // rtmx:req REQ-TUI-033
     #[test]
     fn status_line_hides_tokens_when_zero() {
         let state = AppState::default();
@@ -843,7 +843,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-033
+    // rtmx:req REQ-TUI-033
     #[test]
     fn status_line_degrades_on_narrow_terminal() {
         let mut state = AppState::default();
@@ -860,7 +860,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-001
+    // rtmx:req REQ-TUI-001
     #[test]
     fn layout_renders_input_text() {
         let state = AppState {
@@ -875,7 +875,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-001
+    // rtmx:req REQ-TUI-001
     #[test]
     fn layout_handles_empty_state() {
         let state = AppState::default();
@@ -885,7 +885,7 @@ mod tests {
         assert!(!output.is_empty());
     }
 
-    // @req REQ-TUI-001
+    // rtmx:req REQ-TUI-001
     #[test]
     fn layout_renders_multiple_messages() {
         let mut state = AppState::default();
@@ -901,7 +901,7 @@ mod tests {
         assert!(output.contains("main function"));
     }
 
-    // @req REQ-TUI-032
+    // rtmx:req REQ-TUI-032
     #[test]
     fn layout_renders_streaming_buffer_inline() {
         let state = AppState {
@@ -919,7 +919,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-032
+    // rtmx:req REQ-TUI-032
     #[test]
     fn layout_does_not_render_empty_streaming_buffer() {
         let state = AppState::default();
@@ -933,7 +933,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-032
+    // rtmx:req REQ-TUI-032
     #[test]
     fn layout_renders_streaming_buffer_after_messages() {
         let mut state = AppState::default();
@@ -944,7 +944,7 @@ mod tests {
         assert!(output.contains("responding"));
     }
 
-    // @req REQ-TUI-029
+    // rtmx:req REQ-TUI-029
     #[test]
     fn layout_renders_approval_modal_overlay() {
         let state = AppState {
@@ -971,7 +971,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-029
+    // rtmx:req REQ-TUI-029
     #[test]
     fn layout_does_not_render_modal_when_no_approval() {
         let state = AppState::default();
@@ -989,7 +989,7 @@ mod tests {
         }
     }
 
-    // @req REQ-TUI-007
+    // rtmx:req REQ-TUI-007
     #[test]
     fn resize_clamps_scroll_offset_when_exceeds_max() {
         let mut state = state_with_scroll(50);
@@ -998,7 +998,7 @@ mod tests {
         assert_eq!(state.scroll_offset, 20);
     }
 
-    // @req REQ-TUI-007
+    // rtmx:req REQ-TUI-007
     #[test]
     fn resize_keeps_scroll_offset_when_within_bounds() {
         let mut state = state_with_scroll(5);
@@ -1007,7 +1007,7 @@ mod tests {
         assert_eq!(state.scroll_offset, 5);
     }
 
-    // @req REQ-TUI-007
+    // rtmx:req REQ-TUI-007
     #[test]
     fn resize_resets_to_zero_when_content_fits() {
         let mut state = state_with_scroll(10);
@@ -1016,7 +1016,7 @@ mod tests {
         assert_eq!(state.scroll_offset, 0);
     }
 
-    // @req REQ-TUI-007
+    // rtmx:req REQ-TUI-007
     #[test]
     fn resize_handles_equal_height_and_lines() {
         let mut state = state_with_scroll(3);
@@ -1025,7 +1025,7 @@ mod tests {
         assert_eq!(state.scroll_offset, 0);
     }
 
-    // @req REQ-TUI-007
+    // rtmx:req REQ-TUI-007
     #[test]
     fn resize_at_exact_max_scroll_stays() {
         let mut state = state_with_scroll(20);
@@ -1034,7 +1034,7 @@ mod tests {
         assert_eq!(state.scroll_offset, 20);
     }
 
-    // @req REQ-TUI-007
+    // rtmx:req REQ-TUI-007
     #[test]
     fn resize_zero_total_lines_resets_offset() {
         let mut state = state_with_scroll(5);
@@ -1042,7 +1042,7 @@ mod tests {
         assert_eq!(state.scroll_offset, 0);
     }
 
-    // @req REQ-TUI-037
+    // rtmx:req REQ-TUI-037
     #[test]
     fn input_prompt_inline_with_text() {
         let state = AppState {
@@ -1061,7 +1061,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-037
+    // rtmx:req REQ-TUI-037
     #[test]
     fn input_prompt_visible_when_empty() {
         let state = AppState::default();
@@ -1071,7 +1071,7 @@ mod tests {
         assert!(has_prompt, "Should show > prompt when empty: {output}");
     }
 
-    // @req REQ-TUI-038
+    // rtmx:req REQ-TUI-038
     #[test]
     fn input_no_box_drawing_border() {
         let state = AppState::default();
@@ -1089,7 +1089,7 @@ mod tests {
         }
     }
 
-    // @req REQ-TUI-040
+    // rtmx:req REQ-TUI-040
     #[test]
     fn hint_line_shows_insert_mode() {
         let state = AppState::default();
@@ -1100,7 +1100,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-040
+    // rtmx:req REQ-TUI-040
     #[test]
     fn hint_line_shows_normal_mode() {
         let state = AppState {
@@ -1114,7 +1114,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-040
+    // rtmx:req REQ-TUI-040
     #[test]
     fn hint_line_shows_key_hints() {
         let state = AppState::default();
@@ -1125,7 +1125,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-040
+    // rtmx:req REQ-TUI-040
     #[test]
     fn hint_line_hidden_on_short_terminal() {
         let state = AppState::default();
@@ -1136,7 +1136,7 @@ mod tests {
         assert!(!output.is_empty());
     }
 
-    // @req REQ-TUI-019
+    // rtmx:req REQ-TUI-019
     #[test]
     fn status_line_renders_formatted_tokens() {
         let mut state = AppState::default();
@@ -1158,7 +1158,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-019
+    // rtmx:req REQ-TUI-019
     #[test]
     fn status_line_shows_tokens_during_streaming() {
         let mut state = AppState::default();
@@ -1178,7 +1178,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-019
+    // rtmx:req REQ-TUI-019
     #[test]
     fn status_info_total_tokens() {
         let info = StatusInfo {
@@ -1189,14 +1189,14 @@ mod tests {
         assert_eq!(info.total_tokens(), 2000);
     }
 
-    // @req REQ-TUI-019
+    // rtmx:req REQ-TUI-019
     #[test]
     fn status_info_total_tokens_zero() {
         let info = StatusInfo::default();
         assert_eq!(info.total_tokens(), 0);
     }
 
-    // @req REQ-TUI-016
+    // rtmx:req REQ-TUI-016
     #[test]
     fn spinner_char_cycles_through_frames() {
         assert_eq!(spinner_char(0), '|');
@@ -1206,7 +1206,7 @@ mod tests {
         assert_eq!(spinner_char(4), '|'); // wraps
     }
 
-    // @req REQ-TUI-016
+    // rtmx:req REQ-TUI-016
     #[test]
     fn spinner_renders_during_tool_executing() {
         let mut state = AppState::default();
@@ -1220,7 +1220,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-016
+    // rtmx:req REQ-TUI-016
     #[test]
     fn no_spinner_when_idle() {
         let mut state = AppState::default();
@@ -1241,7 +1241,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-038
+    // rtmx:req REQ-TUI-038
     #[test]
     fn input_has_separator_line() {
         let state = AppState::default();
@@ -1253,7 +1253,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-049
+    // rtmx:req REQ-TUI-049
     #[test]
     fn layout_renders_file_picker_dropdown() {
         let state = AppState {
@@ -1291,7 +1291,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-049
+    // rtmx:req REQ-TUI-049
     #[test]
     fn layout_does_not_render_file_picker_when_none() {
         let state = AppState::default();
@@ -1302,7 +1302,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-049
+    // rtmx:req REQ-TUI-049
     #[test]
     fn layout_renders_file_picker_query() {
         let state = AppState {
@@ -1328,7 +1328,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-049
+    // rtmx:req REQ-TUI-049
     #[test]
     fn layout_renders_no_matching_files_hint() {
         let state = AppState {
@@ -1348,7 +1348,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-049
+    // rtmx:req REQ-TUI-049
     #[test]
     fn layout_renders_dirs_distinctly_in_picker() {
         let state = AppState {
@@ -1385,7 +1385,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-048
+    // rtmx:req REQ-TUI-048
     #[test]
     fn layout_splits_picker_into_two_panels_with_preview() {
         let state = AppState {
@@ -1416,7 +1416,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-048
+    // rtmx:req REQ-TUI-048
     #[test]
     fn layout_shows_directory_label_for_dir_selection() {
         let state = AppState {
@@ -1441,7 +1441,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-048
+    // rtmx:req REQ-TUI-048
     #[test]
     fn layout_shows_no_preview_for_unreadable_file() {
         let state = AppState {
@@ -1466,7 +1466,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-048
+    // rtmx:req REQ-TUI-048
     #[test]
     fn layout_shows_line_numbers_in_preview() {
         let content = "line one\nline two\nline three".to_string();

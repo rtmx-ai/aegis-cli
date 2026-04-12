@@ -35,7 +35,7 @@ fn stream_event_to_tui_event(event: StreamEvent) -> TuiEvent {
     }
 }
 
-// @req REQ-CLI-003
+// rtmx:req REQ-CLI-003
 #[tokio::test]
 async fn test_multi_tool_chat_e2e() {
     // 1. Set up mock provider with three turns:

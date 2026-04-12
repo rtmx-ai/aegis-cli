@@ -65,7 +65,7 @@ fn style_diff_line(line: &str) -> Line<'static> {
 mod tests {
     use super::*;
 
-    // @req REQ-TUI-003
+    // rtmx:req REQ-TUI-003
     #[test]
     fn added_lines_get_green_style() {
         let lines = render_diff("+added line");
@@ -74,7 +74,7 @@ mod tests {
         assert_eq!(lines[0].spans[0].content, "+added line");
     }
 
-    // @req REQ-TUI-003
+    // rtmx:req REQ-TUI-003
     #[test]
     fn removed_lines_get_red_style() {
         let lines = render_diff("-removed line");
@@ -83,7 +83,7 @@ mod tests {
         assert_eq!(lines[0].spans[0].content, "-removed line");
     }
 
-    // @req REQ-TUI-003
+    // rtmx:req REQ-TUI-003
     #[test]
     fn hunk_headers_get_cyan_style() {
         let lines = render_diff("@@ -1,3 +1,4 @@");
@@ -92,7 +92,7 @@ mod tests {
         assert_eq!(lines[0].spans[0].content, "@@ -1,3 +1,4 @@");
     }
 
-    // @req REQ-TUI-003
+    // rtmx:req REQ-TUI-003
     #[test]
     fn file_headers_get_bold_style() {
         let diff = "--- a/src/main.rs\n+++ b/src/main.rs";
@@ -114,7 +114,7 @@ mod tests {
         assert_eq!(lines[1].spans[0].content, "+++ b/src/main.rs");
     }
 
-    // @req REQ-TUI-003
+    // rtmx:req REQ-TUI-003
     #[test]
     fn context_lines_are_unstyled() {
         let lines = render_diff(" context line here");
@@ -123,21 +123,21 @@ mod tests {
         assert_eq!(lines[0].spans[0].content, " context line here");
     }
 
-    // @req REQ-TUI-003
+    // rtmx:req REQ-TUI-003
     #[test]
     fn is_diff_detects_unified_diff() {
         let diff = "--- a/file.rs\n+++ b/file.rs\n@@ -1,3 +1,4 @@\n context\n+added";
         assert!(is_diff(diff));
     }
 
-    // @req REQ-TUI-003
+    // rtmx:req REQ-TUI-003
     #[test]
     fn is_diff_rejects_plain_text() {
         assert!(!is_diff("Hello world"));
         assert!(!is_diff("Just some lines\nof text"));
     }
 
-    // @req REQ-TUI-003
+    // rtmx:req REQ-TUI-003
     #[test]
     fn is_diff_requires_both_hunk_and_file_header() {
         // Only hunk header, no file header
@@ -146,7 +146,7 @@ mod tests {
         assert!(!is_diff("--- a/file.rs\n+++ b/file.rs\n+added"));
     }
 
-    // @req REQ-TUI-003
+    // rtmx:req REQ-TUI-003
     #[test]
     fn empty_input_produces_single_empty_line() {
         let lines = render_diff("");
@@ -154,7 +154,7 @@ mod tests {
         assert_eq!(lines[0].spans[0].content, "");
     }
 
-    // @req REQ-TUI-003
+    // rtmx:req REQ-TUI-003
     #[test]
     fn full_diff_renders_all_line_types() {
         let diff = "\

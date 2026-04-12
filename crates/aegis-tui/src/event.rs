@@ -50,7 +50,7 @@ mod tests {
     use super::*;
     use aegis_domain::types::FilePath;
 
-    // @req REQ-TUI-001
+    // rtmx:req REQ-TUI-001
     #[test]
     fn tui_event_variants_are_constructible() {
         let token = TuiEvent::AgentToken("hello".to_string());
@@ -74,7 +74,7 @@ mod tests {
         assert!(matches!(tool, TuiEvent::AgentToolUse(_)));
     }
 
-    // @req REQ-TUI-001
+    // rtmx:req REQ-TUI-001
     #[test]
     fn approval_request_handle_is_debuggable() {
         let (tx, _rx) = tokio::sync::oneshot::channel();

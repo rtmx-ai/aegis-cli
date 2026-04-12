@@ -90,7 +90,7 @@ pub fn parse_manifest(json: &str) -> std::result::Result<PluginManifest, String>
 mod tests {
     use super::*;
 
-    // @req REQ-INFRA-004
+    // rtmx:req REQ-INFRA-004
     #[test]
     fn parse_progress_event() {
         let line = r#"{"type":"progress","resource":"gcp:kms:KeyRing","name":"aegis-keyring","operation":"create","status":"complete"}"#;
@@ -105,7 +105,7 @@ mod tests {
         }
     }
 
-    // @req REQ-INFRA-004
+    // rtmx:req REQ-INFRA-004
     #[test]
     fn parse_diagnostic_event() {
         let line =
@@ -120,7 +120,7 @@ mod tests {
         }
     }
 
-    // @req REQ-INFRA-004
+    // rtmx:req REQ-INFRA-004
     #[test]
     fn parse_check_event() {
         let line = r#"{"type":"check","name":"kms_key_active","status":"pass","detail":"Key is ENABLED"}"#;
@@ -135,7 +135,7 @@ mod tests {
         }
     }
 
-    // @req REQ-INFRA-004
+    // rtmx:req REQ-INFRA-004
     #[test]
     fn parse_result_event_success() {
         let line = r#"{"type":"result","success":true,"outputs":{"vertex_endpoint":"us-central1-aiplatform.googleapis.com","vpc_name":"aegis-vpc"}}"#;
@@ -153,7 +153,7 @@ mod tests {
         }
     }
 
-    // @req REQ-INFRA-004
+    // rtmx:req REQ-INFRA-004
     #[test]
     fn parse_result_event_failure() {
         let line = r#"{"type":"result","success":false,"error":"Quota exceeded"}"#;
@@ -167,21 +167,21 @@ mod tests {
         }
     }
 
-    // @req REQ-INFRA-004
+    // rtmx:req REQ-INFRA-004
     #[test]
     fn parse_empty_line_returns_none() {
         assert!(parse_event("").is_none());
         assert!(parse_event("   ").is_none());
     }
 
-    // @req REQ-INFRA-004
+    // rtmx:req REQ-INFRA-004
     #[test]
     fn parse_malformed_json_returns_none() {
         assert!(parse_event("{not json}").is_none());
         assert!(parse_event("just text").is_none());
     }
 
-    // @req REQ-INFRA-002
+    // rtmx:req REQ-INFRA-002
     #[test]
     fn parse_manifest_valid() {
         let json = r#"{
@@ -195,14 +195,14 @@ mod tests {
         assert_eq!(manifest.contract, "aegis-infra/v1");
     }
 
-    // @req REQ-INFRA-002
+    // rtmx:req REQ-INFRA-002
     #[test]
     fn parse_manifest_invalid() {
         let result = parse_manifest("{bad json}");
         assert!(result.is_err());
     }
 
-    // @req REQ-INFRA-004
+    // rtmx:req REQ-INFRA-004
     #[test]
     fn check_status_deserializes() {
         assert_eq!(

@@ -157,7 +157,7 @@ mod tests {
     // -- ColorDepth detection -----------------------------------------------
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn truecolor_via_colorterm() {
         assert_eq!(
             detect_color_depth("xterm-256color", Some("truecolor")),
@@ -166,7 +166,7 @@ mod tests {
     }
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn truecolor_via_24bit() {
         assert_eq!(
             detect_color_depth("xterm", Some("24bit")),
@@ -175,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn color256_via_term() {
         assert_eq!(
             detect_color_depth("xterm-256color", None),
@@ -184,7 +184,7 @@ mod tests {
     }
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn color256_via_screen_term() {
         assert_eq!(
             detect_color_depth("screen-256color", None),
@@ -193,25 +193,25 @@ mod tests {
     }
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn color16_plain_xterm() {
         assert_eq!(detect_color_depth("xterm", None), ColorDepth::Color16,);
     }
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn monochrome_dumb_terminal() {
         assert_eq!(detect_color_depth("dumb", None), ColorDepth::Monochrome,);
     }
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn monochrome_empty_term() {
         assert_eq!(detect_color_depth("", None), ColorDepth::Monochrome,);
     }
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn colorterm_overrides_term() {
         // Even though TERM says 256color, COLORTERM=truecolor wins.
         assert_eq!(
@@ -223,7 +223,7 @@ mod tests {
     // -- TerminalEnv detection via detect_env_from --------------------------
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn detect_ssh_via_ssh_connection() {
         let env = detect_env_from(
             "xterm",
@@ -239,14 +239,14 @@ mod tests {
     }
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn detect_ssh_via_ssh_client() {
         let env = detect_env_from("xterm", None, None, Some("10.0.0.1 12345 22"), None, None);
         assert!(env.is_ssh);
     }
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn detect_tmux_session() {
         let env = detect_env_from(
             "screen-256color",
@@ -263,7 +263,7 @@ mod tests {
     }
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn detect_screen_session() {
         let env = detect_env_from(
             "screen",
@@ -278,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn detect_plain_local_terminal() {
         let env = detect_env_from("xterm-256color", Some("truecolor"), None, None, None, None);
         assert!(!env.is_ssh);
@@ -290,7 +290,7 @@ mod tests {
     // -- should_simplify_rendering ------------------------------------------
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn simplify_for_ssh() {
         let env = TerminalEnv {
             is_ssh: true,
@@ -302,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn simplify_for_tmux() {
         let env = TerminalEnv {
             is_ssh: false,
@@ -314,7 +314,7 @@ mod tests {
     }
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn simplify_for_screen() {
         let env = TerminalEnv {
             is_ssh: false,
@@ -326,7 +326,7 @@ mod tests {
     }
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn simplify_for_monochrome() {
         let env = TerminalEnv {
             is_ssh: false,
@@ -338,7 +338,7 @@ mod tests {
     }
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn no_simplify_for_local_truecolor() {
         let env = TerminalEnv {
             is_ssh: false,
@@ -350,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    // @req REQ-TUI-014
+    // rtmx:req REQ-TUI-014
     fn no_simplify_for_local_256color() {
         let env = TerminalEnv {
             is_ssh: false,
@@ -364,13 +364,13 @@ mod tests {
     // -- should_use_plain_text_from (REQ-TUI-013) -----------------------------
 
     #[test]
-    // @req REQ-TUI-013
+    // rtmx:req REQ-TUI-013
     fn plain_text_when_no_tui_flag() {
         assert!(should_use_plain_text_from(true, "xterm-256color", None));
     }
 
     #[test]
-    // @req REQ-TUI-013
+    // rtmx:req REQ-TUI-013
     fn plain_text_when_no_color_set() {
         assert!(should_use_plain_text_from(
             false,
@@ -380,38 +380,38 @@ mod tests {
     }
 
     #[test]
-    // @req REQ-TUI-013
+    // rtmx:req REQ-TUI-013
     fn plain_text_when_no_color_set_with_value() {
         assert!(should_use_plain_text_from(false, "xterm", Some("1")));
     }
 
     #[test]
-    // @req REQ-TUI-013
+    // rtmx:req REQ-TUI-013
     fn plain_text_when_term_dumb() {
         assert!(should_use_plain_text_from(false, "dumb", None));
     }
 
     #[test]
-    // @req REQ-TUI-013
+    // rtmx:req REQ-TUI-013
     fn plain_text_when_term_empty() {
         assert!(should_use_plain_text_from(false, "", None));
     }
 
     #[test]
-    // @req REQ-TUI-013
+    // rtmx:req REQ-TUI-013
     fn no_plain_text_normal_terminal() {
         assert!(!should_use_plain_text_from(false, "xterm-256color", None));
     }
 
     #[test]
-    // @req REQ-TUI-013
+    // rtmx:req REQ-TUI-013
     fn plain_text_flag_overrides_good_terminal() {
         // Even with a good terminal, the flag forces plain text.
         assert!(should_use_plain_text_from(true, "xterm-256color", None));
     }
 
     #[test]
-    // @req REQ-TUI-013
+    // rtmx:req REQ-TUI-013
     fn plain_text_term_dumb_case_insensitive() {
         assert!(should_use_plain_text_from(false, "DUMB", None));
     }

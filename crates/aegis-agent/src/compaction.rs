@@ -123,7 +123,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AGENT-006
+    // rtmx:req REQ-AGENT-006
     #[test]
     fn needs_compaction_returns_false_below_threshold() {
         let config = default_config(); // threshold = 85 tokens
@@ -132,7 +132,7 @@ mod tests {
         assert!(!needs_compaction(&messages, &config));
     }
 
-    // @req REQ-AGENT-006
+    // rtmx:req REQ-AGENT-006
     #[test]
     fn needs_compaction_returns_true_above_threshold() {
         let config = default_config(); // threshold = 85 tokens
@@ -141,7 +141,7 @@ mod tests {
         assert!(needs_compaction(&messages, &config));
     }
 
-    // @req REQ-AGENT-006
+    // rtmx:req REQ-AGENT-006
     #[test]
     fn compact_preserves_all_when_short_enough() {
         let config = default_config(); // keep_recent = 3
@@ -152,7 +152,7 @@ mod tests {
         assert_eq!(result.messages_dropped, 0);
     }
 
-    // @req REQ-AGENT-006
+    // rtmx:req REQ-AGENT-006
     #[test]
     fn compact_drops_old_non_system_messages() {
         let config = default_config(); // keep_recent = 3
@@ -171,7 +171,7 @@ mod tests {
         assert_eq!(result.messages[0].content, COMPACTION_PLACEHOLDER);
     }
 
-    // @req REQ-AGENT-006
+    // rtmx:req REQ-AGENT-006
     #[test]
     fn compact_never_drops_system_messages() {
         let config = default_config(); // keep_recent = 2
@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(result.messages[1].content, COMPACTION_PLACEHOLDER);
     }
 
-    // @req REQ-AGENT-006
+    // rtmx:req REQ-AGENT-006
     #[test]
     fn compact_reports_tokens_freed() {
         let config = CompactionConfig {
@@ -218,7 +218,7 @@ mod tests {
         assert_eq!(result.messages_dropped, 2);
     }
 
-    // @req REQ-AGENT-006
+    // rtmx:req REQ-AGENT-006
     #[test]
     fn compact_with_only_system_messages_in_candidate_region() {
         let config = CompactionConfig {
@@ -238,7 +238,7 @@ mod tests {
         assert_eq!(result.messages.len(), 4);
     }
 
-    // @req REQ-AGENT-006
+    // rtmx:req REQ-AGENT-006
     #[test]
     fn compact_empty_messages() {
         let config = default_config();
@@ -249,7 +249,7 @@ mod tests {
         assert_eq!(result.messages_dropped, 0);
     }
 
-    // @req REQ-AGENT-006
+    // rtmx:req REQ-AGENT-006
     #[test]
     fn compact_preserves_message_order() {
         let config = CompactionConfig {
@@ -273,7 +273,7 @@ mod tests {
         assert_eq!(result.messages[3].content, "recent_assistant");
     }
 
-    // @req REQ-AGENT-006
+    // rtmx:req REQ-AGENT-006
     #[test]
     fn default_config_has_expected_values() {
         let config = CompactionConfig::default();

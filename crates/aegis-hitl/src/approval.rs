@@ -100,7 +100,7 @@ pub fn describe_tool_call(tool_call: &ToolCall) -> String {
 mod tests {
     use super::*;
 
-    // @req REQ-HITL-001
+    // rtmx:req REQ-HITL-001
     #[test]
     fn describe_write_file() {
         let call = ToolCall::WriteFile {
@@ -113,7 +113,7 @@ mod tests {
         assert!(desc.contains("fn main"));
     }
 
-    // @req REQ-HITL-001
+    // rtmx:req REQ-HITL-001
     #[test]
     fn describe_write_file_truncates_long_content() {
         let call = ToolCall::WriteFile {
@@ -125,7 +125,7 @@ mod tests {
         assert!(desc.len() < 500);
     }
 
-    // @req REQ-HITL-001
+    // rtmx:req REQ-HITL-001
     #[test]
     fn describe_run_command() {
         let call = ToolCall::RunCommand {
@@ -137,7 +137,7 @@ mod tests {
         assert!(desc.contains("60s"));
     }
 
-    // @req REQ-HITL-001
+    // rtmx:req REQ-HITL-001
     #[test]
     fn describe_read_file() {
         let call = ToolCall::ReadFile {
@@ -148,7 +148,7 @@ mod tests {
         assert!(desc.contains("readme.md"));
     }
 
-    // @req REQ-HITL-001
+    // rtmx:req REQ-HITL-001
     #[tokio::test]
     async fn channel_gate_sends_and_receives_approval() {
         let (gate, mut rx) = create_approval_channel(1);
@@ -173,7 +173,7 @@ mod tests {
         assert_eq!(decision, ApprovalDecision::Approved);
     }
 
-    // @req REQ-HITL-001
+    // rtmx:req REQ-HITL-001
     #[tokio::test]
     async fn channel_gate_handles_denial() {
         let (gate, mut rx) = create_approval_channel(1);
@@ -194,7 +194,7 @@ mod tests {
         assert_eq!(decision, ApprovalDecision::Denied);
     }
 
-    // @req REQ-HITL-001
+    // rtmx:req REQ-HITL-001
     #[tokio::test]
     async fn channel_gate_errors_on_dropped_receiver() {
         let (gate, rx) = create_approval_channel(1);
@@ -208,7 +208,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // @req REQ-HITL-001
+    // rtmx:req REQ-HITL-001
     #[tokio::test]
     async fn channel_gate_errors_on_dropped_response() {
         let (gate, mut rx) = create_approval_channel(1);

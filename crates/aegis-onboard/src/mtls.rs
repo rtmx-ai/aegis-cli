@@ -134,7 +134,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    // @req REQ-ONBOARD-018
+    // rtmx:req REQ-ONBOARD-018
     #[test]
     fn detect_mtls_certs_returns_some_when_both_exist() {
         let tmp = TempDir::new().unwrap();
@@ -156,7 +156,7 @@ mod tests {
         assert_eq!(config.key_path, tmp.path().join("client-key.pem"));
     }
 
-    // @req REQ-ONBOARD-018
+    // rtmx:req REQ-ONBOARD-018
     #[test]
     fn detect_mtls_certs_returns_none_when_cert_missing() {
         let tmp = TempDir::new().unwrap();
@@ -166,7 +166,7 @@ mod tests {
         assert!(result.is_none(), "Should return None when cert is missing");
     }
 
-    // @req REQ-ONBOARD-018
+    // rtmx:req REQ-ONBOARD-018
     #[test]
     fn detect_mtls_certs_returns_none_when_key_missing() {
         let tmp = TempDir::new().unwrap();
@@ -176,7 +176,7 @@ mod tests {
         assert!(result.is_none(), "Should return None when key is missing");
     }
 
-    // @req REQ-ONBOARD-018
+    // rtmx:req REQ-ONBOARD-018
     #[test]
     fn detect_mtls_certs_returns_none_when_neither_exists() {
         let tmp = TempDir::new().unwrap();
@@ -187,7 +187,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-018
+    // rtmx:req REQ-ONBOARD-018
     #[test]
     fn validate_mtls_config_accepts_valid_files() {
         let tmp = TempDir::new().unwrap();
@@ -203,7 +203,7 @@ mod tests {
         assert!(validate_mtls_config(&config).is_ok());
     }
 
-    // @req REQ-ONBOARD-018
+    // rtmx:req REQ-ONBOARD-018
     #[test]
     fn validate_mtls_config_rejects_missing_cert() {
         let tmp = TempDir::new().unwrap();
@@ -221,7 +221,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-018
+    // rtmx:req REQ-ONBOARD-018
     #[test]
     fn validate_mtls_config_rejects_missing_key() {
         let tmp = TempDir::new().unwrap();
@@ -239,7 +239,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-018
+    // rtmx:req REQ-ONBOARD-018
     #[test]
     fn validate_mtls_config_rejects_empty_cert() {
         let tmp = TempDir::new().unwrap();
@@ -259,7 +259,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-018
+    // rtmx:req REQ-ONBOARD-018
     #[test]
     fn validate_mtls_config_rejects_empty_key() {
         let tmp = TempDir::new().unwrap();
@@ -279,7 +279,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-018
+    // rtmx:req REQ-ONBOARD-018
     //
     // All env-var scenarios run in a single test to avoid race
     // conditions from parallel tests mutating process-wide env vars.
@@ -357,7 +357,7 @@ mod tests {
         clear();
     }
 
-    // @req REQ-ONBOARD-018
+    // rtmx:req REQ-ONBOARD-018
     #[test]
     fn mtls_error_display_messages() {
         let cert_err = MtlsError::CertNotFound(PathBuf::from("/a/cert.pem"));
@@ -389,7 +389,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-018
+    // rtmx:req REQ-ONBOARD-018
     #[test]
     fn mtls_config_equality() {
         let a = MtlsConfig {

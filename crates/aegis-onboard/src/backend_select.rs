@@ -193,7 +193,7 @@ mod tests {
     use crate::detect::DetectedProvider;
     use tempfile::TempDir;
 
-    // @req REQ-ONBOARD-022
+    // rtmx:req REQ-ONBOARD-022
     #[test]
     fn select_returns_no_backend_when_nothing_available() {
         let tmp = TempDir::new().unwrap();
@@ -205,7 +205,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-022
+    // rtmx:req REQ-ONBOARD-022
     #[test]
     fn select_prefers_byoc_over_local() {
         // This test uses the env var path; run in isolation.
@@ -227,7 +227,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-022
+    // rtmx:req REQ-ONBOARD-022
     #[test]
     fn select_finds_ollama_with_llama3() {
         let tmp = TempDir::new().unwrap();
@@ -245,7 +245,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-022
+    // rtmx:req REQ-ONBOARD-022
     #[test]
     fn select_skips_ollama_without_llama3() {
         let tmp = TempDir::new().unwrap();
@@ -267,7 +267,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-022
+    // rtmx:req REQ-ONBOARD-022
     #[test]
     fn select_finds_vllm_when_no_ollama_llama3() {
         let tmp = TempDir::new().unwrap();
@@ -285,7 +285,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-022
+    // rtmx:req REQ-ONBOARD-022
     #[test]
     fn select_prefers_ollama_over_vllm() {
         let tmp = TempDir::new().unwrap();
@@ -310,7 +310,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-022
+    // rtmx:req REQ-ONBOARD-022
     #[test]
     fn select_falls_back_to_cloud_credentials() {
         let tmp = TempDir::new().unwrap();
@@ -325,7 +325,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-022
+    // rtmx:req REQ-ONBOARD-022
     #[test]
     fn select_reports_all_detection_steps() {
         let tmp = TempDir::new().unwrap();
@@ -338,14 +338,14 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-027
+    // rtmx:req REQ-ONBOARD-027
     #[test]
     fn no_backend_message_is_non_empty() {
         let msg = no_backend_message();
         assert!(!msg.is_empty());
     }
 
-    // @req REQ-ONBOARD-027
+    // rtmx:req REQ-ONBOARD-027
     #[test]
     fn no_backend_message_mentions_ollama() {
         let msg = no_backend_message();
@@ -355,7 +355,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-027
+    // rtmx:req REQ-ONBOARD-027
     #[test]
     fn no_backend_message_mentions_gcloud() {
         let msg = no_backend_message();
@@ -365,7 +365,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-027
+    // rtmx:req REQ-ONBOARD-027
     #[test]
     fn no_backend_message_mentions_gateway() {
         let msg = no_backend_message();
@@ -375,7 +375,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-027
+    // rtmx:req REQ-ONBOARD-027
     #[test]
     fn no_backend_message_suggests_next_steps() {
         let msg = no_backend_message();
@@ -385,7 +385,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-027
+    // rtmx:req REQ-ONBOARD-027
     #[test]
     fn format_detection_results_shows_all_steps() {
         let results = vec![
@@ -407,7 +407,7 @@ mod tests {
         assert!(output.contains("[  -- ]"));
     }
 
-    // @req REQ-ONBOARD-027
+    // rtmx:req REQ-ONBOARD-027
     #[test]
     fn format_detection_results_empty_input() {
         let output = format_detection_results(&[]);
@@ -417,7 +417,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-027
+    // rtmx:req REQ-ONBOARD-027
     #[test]
     fn format_detection_results_includes_detail() {
         let results = vec![DetectionResult {

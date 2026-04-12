@@ -123,7 +123,7 @@ impl Drop for IsolatedHome {
 mod tests {
     use super::*;
 
-    // @req REQ-TEST-023
+    // rtmx:req REQ-TEST-023
     #[test]
     fn test_isolation_creates_fresh_home() {
         let home = IsolatedHome::new().expect("create isolated home");
@@ -136,7 +136,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TEST-023
+    // rtmx:req REQ-TEST-023
     #[test]
     fn test_isolation_sets_home_env_var() {
         let home = IsolatedHome::new().expect("create isolated home");
@@ -144,7 +144,7 @@ mod tests {
         assert_eq!(PathBuf::from(env_home), home.path());
     }
 
-    // @req REQ-TEST-023
+    // rtmx:req REQ-TEST-023
     #[test]
     fn test_isolation_restores_home_on_drop() {
         let isolated_path;
@@ -167,7 +167,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TEST-023
+    // rtmx:req REQ-TEST-023
     #[test]
     fn test_isolation_provides_subdirectories() {
         let home = IsolatedHome::new().expect("create isolated home");

@@ -5,7 +5,7 @@ use aegis_test_support::isolation::IsolatedHome;
 use aegis_test_support::wiremock_llm::WireMockLlm;
 use std::collections::HashSet;
 
-// @req REQ-TEST-001
+// rtmx:req REQ-TEST-001
 #[test]
 fn test_no_shared_global_state() {
     // Two sequential IsolatedHome instances get completely independent paths.
@@ -20,7 +20,7 @@ fn test_no_shared_global_state() {
     assert_ne!(path_a, path_b, "each test must get a unique HOME");
 }
 
-// @req REQ-TEST-006
+// rtmx:req REQ-TEST-006
 #[test]
 fn test_parallel_isolation() {
     // Filesystem writes in one IsolatedHome are invisible to the next.
@@ -39,7 +39,7 @@ fn test_parallel_isolation() {
     }
 }
 
-// @req REQ-TEST-007
+// rtmx:req REQ-TEST-007
 #[test]
 fn test_fixture_factory_builds_valid_artifacts() {
     let (dir, workspace) = create_test_workspace();
@@ -62,7 +62,7 @@ fn test_fixture_factory_builds_valid_artifacts() {
     );
 }
 
-// @req REQ-TEST-014
+// rtmx:req REQ-TEST-014
 #[test]
 fn test_unique_tempdir_per_test() {
     let mut paths = HashSet::new();
@@ -74,7 +74,7 @@ fn test_unique_tempdir_per_test() {
     assert_eq!(paths.len(), 5);
 }
 
-// @req REQ-TEST-016
+// rtmx:req REQ-TEST-016
 #[test]
 fn test_order_independence() {
     // Running the same fixture setup twice yields structurally identical
@@ -93,7 +93,7 @@ fn test_order_independence() {
     );
 }
 
-// @req REQ-TEST-017
+// rtmx:req REQ-TEST-017
 #[test]
 fn test_tempdir_isolation() {
     let home_a = IsolatedHome::new().expect("home A");
@@ -110,7 +110,7 @@ fn test_tempdir_isolation() {
     drop(home_b);
 }
 
-// @req REQ-TEST-018
+// rtmx:req REQ-TEST-018
 #[tokio::test]
 async fn test_wiremock_ephemeral_port() {
     let mock_a = WireMockLlm::new().await;
@@ -122,7 +122,7 @@ async fn test_wiremock_ephemeral_port() {
     );
 }
 
-// @req REQ-TEST-019
+// rtmx:req REQ-TEST-019
 #[test]
 fn test_home_dir_mocked() {
     let real_home = std::env::var("HOME").ok();
@@ -145,7 +145,7 @@ fn test_home_dir_mocked() {
     assert_eq!(std::env::var("HOME").ok(), real_home);
 }
 
-// @req REQ-BUILD-029
+// rtmx:req REQ-BUILD-029
 #[test]
 fn test_watch_config_exists() {
     let root = workspace_root();

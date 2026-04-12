@@ -171,7 +171,7 @@ mod tests {
         ]
     }
 
-    // @req REQ-AGENT-003
+    // rtmx:req REQ-AGENT-003
     #[test]
     fn prompt_includes_all_tool_names() {
         let tools = sample_tools();
@@ -186,7 +186,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AGENT-003
+    // rtmx:req REQ-AGENT-003
     #[test]
     fn parse_read_file_from_json_block() {
         let text = r#"I'll read that file for you.
@@ -205,7 +205,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AGENT-003
+    // rtmx:req REQ-AGENT-003
     #[test]
     fn parse_write_file_from_json_block() {
         let text = r#"Sure, I'll create that file.
@@ -225,7 +225,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AGENT-003
+    // rtmx:req REQ-AGENT-003
     #[test]
     fn parse_run_command_from_json_block() {
         let text = r#"Let me run that command.
@@ -248,7 +248,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AGENT-003
+    // rtmx:req REQ-AGENT-003
     #[test]
     fn parse_list_dir_from_bare_json() {
         let text = r#"Here are the files: {"tool": "list_dir", "arguments": {"path": "src"}}"#;
@@ -263,7 +263,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AGENT-003
+    // rtmx:req REQ-AGENT-003
     #[test]
     fn parse_grep_from_json_block() {
         let text = r#"```json
@@ -281,7 +281,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AGENT-003
+    // rtmx:req REQ-AGENT-003
     #[test]
     fn plain_text_returns_none() {
         let text = "The answer to your question is 42. No tools needed here.";
@@ -291,7 +291,7 @@ mod tests {
         );
     }
 
-    // @req REQ-AGENT-003
+    // rtmx:req REQ-AGENT-003
     #[test]
     fn malformed_json_returns_none() {
         let text = r#"```json
@@ -304,7 +304,7 @@ mod tests {
         );
     }
 
-    // @req REQ-AGENT-003
+    // rtmx:req REQ-AGENT-003
     #[test]
     fn json_without_tool_field_returns_none() {
         let text = r#"```json
@@ -317,7 +317,7 @@ mod tests {
         );
     }
 
-    // @req REQ-AGENT-003
+    // rtmx:req REQ-AGENT-003
     #[test]
     fn unknown_tool_name_returns_none() {
         let text = r#"```json
@@ -330,7 +330,7 @@ mod tests {
         );
     }
 
-    // @req REQ-AGENT-003
+    // rtmx:req REQ-AGENT-003
     #[test]
     fn run_command_defaults_timeout_when_omitted() {
         let text = r#"{"tool": "run_command", "arguments": {"command": "ls"}}"#;

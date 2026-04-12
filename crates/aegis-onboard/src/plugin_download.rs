@@ -132,7 +132,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    // @req REQ-ONBOARD-024
+    // rtmx:req REQ-ONBOARD-024
     #[test]
     fn test_plugin_installed_returns_false_when_missing() {
         let tmp = TempDir::new().unwrap();
@@ -147,7 +147,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-024
+    // rtmx:req REQ-ONBOARD-024
     #[test]
     fn test_plugin_installed_returns_true_when_present() {
         let tmp = TempDir::new().unwrap();
@@ -167,7 +167,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-024
+    // rtmx:req REQ-ONBOARD-024
     #[test]
     fn test_default_plugin_config_paths() {
         let home = std::path::Path::new("/home/testuser");
@@ -180,7 +180,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-024
+    // rtmx:req REQ-ONBOARD-024
     #[test]
     fn test_plugin_binary_path() {
         let config = PluginDownloadConfig {
@@ -194,7 +194,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-024
+    // rtmx:req REQ-ONBOARD-024
     #[test]
     fn test_latest_release_url() {
         let config = PluginDownloadConfig {
@@ -208,7 +208,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-024
+    // rtmx:req REQ-ONBOARD-024
     #[test]
     fn test_platform_asset_suffix_is_nonempty() {
         let suffix = platform_asset_suffix();
@@ -225,7 +225,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-024
+    // rtmx:req REQ-ONBOARD-024
     #[tokio::test]
     async fn test_download_plugin_creates_install_dir() {
         let tmp = TempDir::new().unwrap();
@@ -249,7 +249,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-024
+    // rtmx:req REQ-ONBOARD-024
     #[test]
     fn test_ensure_plugin_dir_creates_directory() {
         let tmp = TempDir::new().unwrap();
@@ -264,7 +264,7 @@ mod tests {
         assert!(plugins_dir.is_dir());
     }
 
-    // @req REQ-ONBOARD-024
+    // rtmx:req REQ-ONBOARD-024
     #[test]
     fn test_download_error_display() {
         let err = DownloadError::Network("timeout".into());

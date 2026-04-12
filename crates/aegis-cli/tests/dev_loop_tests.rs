@@ -19,7 +19,7 @@ fn read_file(rel: &str) -> String {
     fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
-// @req REQ-BUILD-033
+// rtmx:req REQ-BUILD-033
 #[test]
 fn test_bacon_watch_job_defined() {
     let bacon = read_file("bacon.toml");
@@ -33,7 +33,7 @@ fn test_bacon_watch_job_defined() {
     );
 }
 
-// @req REQ-BUILD-034
+// rtmx:req REQ-BUILD-034
 #[test]
 fn test_dev_sh_creates_two_panes() {
     let dev_sh = read_file("scripts/dev.sh");
@@ -58,7 +58,7 @@ fn test_dev_sh_creates_two_panes() {
     );
 }
 
-// @req REQ-BUILD-037
+// rtmx:req REQ-BUILD-037
 #[test]
 fn test_dev_sh_accepts_agent_flag() {
     let dev_sh = read_file("scripts/dev.sh");
@@ -73,7 +73,7 @@ fn test_dev_sh_accepts_agent_flag() {
     );
 }
 
-// @req REQ-BUILD-038
+// rtmx:req REQ-BUILD-038
 #[test]
 fn test_pre_push_validates_dev_loop_gif() {
     let pre_push = read_file("scripts/hooks/pre-push");
@@ -87,7 +87,7 @@ fn test_pre_push_validates_dev_loop_gif() {
     );
 }
 
-// @req REQ-BUILD-032
+// rtmx:req REQ-BUILD-032
 #[test]
 fn test_auto_rebuild_pipeline_configured() {
     let root = workspace_root();
@@ -112,7 +112,7 @@ fn test_auto_rebuild_pipeline_configured() {
     assert!(dev_sh.exists(), "scripts/dev.sh must exist");
 }
 
-// @req REQ-BUILD-032
+// rtmx:req REQ-BUILD-032
 #[test]
 fn test_dev_run_handles_signals() {
     let content = read_file("scripts/dev-run.sh");
@@ -125,7 +125,7 @@ fn test_dev_run_handles_signals() {
     );
 }
 
-// @req REQ-BUILD-039
+// rtmx:req REQ-BUILD-039
 #[test]
 fn test_ci_has_sbom_job() {
     let ci = read_file(".github/workflows/ci.yml");
@@ -140,7 +140,7 @@ fn test_ci_has_sbom_job() {
     );
 }
 
-// @req REQ-BUILD-042
+// rtmx:req REQ-BUILD-042
 #[test]
 fn test_cargo_toml_has_deb_metadata() {
     let toml = read_file("crates/aegis-cli/Cargo.toml");
@@ -154,7 +154,7 @@ fn test_cargo_toml_has_deb_metadata() {
     );
 }
 
-// @req REQ-BUILD-045
+// rtmx:req REQ-BUILD-045
 #[test]
 fn test_ci_has_deb_smoke_test() {
     let ci = read_file(".github/workflows/ci.yml");
@@ -172,7 +172,7 @@ fn test_ci_has_deb_smoke_test() {
     );
 }
 
-// @req REQ-BUILD-043
+// rtmx:req REQ-BUILD-043
 #[test]
 fn test_cargo_toml_has_rpm_metadata() {
     let toml = read_file("crates/aegis-cli/Cargo.toml");
@@ -186,7 +186,7 @@ fn test_cargo_toml_has_rpm_metadata() {
     );
 }
 
-// @req REQ-BUILD-044
+// rtmx:req REQ-BUILD-044
 #[test]
 fn test_rpm_has_selinux_labels() {
     let toml = read_file("crates/aegis-cli/Cargo.toml");
@@ -196,7 +196,7 @@ fn test_rpm_has_selinux_labels() {
     );
 }
 
-// @req REQ-BUILD-049
+// rtmx:req REQ-BUILD-049
 #[test]
 fn test_ci_has_airgap_bundle_job() {
     let ci = read_file(".github/workflows/ci.yml");
@@ -234,7 +234,7 @@ fn test_ci_has_airgap_bundle_job() {
     );
 }
 
-// @req REQ-BUILD-046
+// rtmx:req REQ-BUILD-046
 #[test]
 fn test_ci_has_rpm_smoke_test() {
     let ci = read_file(".github/workflows/ci.yml");
@@ -252,7 +252,7 @@ fn test_ci_has_rpm_smoke_test() {
     );
 }
 
-// @req REQ-BUILD-035
+// rtmx:req REQ-BUILD-035
 #[test]
 fn test_main_has_sigterm_handler() {
     let main = read_file("crates/aegis-cli/src/main.rs");
@@ -266,7 +266,7 @@ fn test_main_has_sigterm_handler() {
     );
 }
 
-// @req REQ-BUILD-036
+// rtmx:req REQ-BUILD-036
 #[test]
 fn test_main_has_session_restore() {
     let main = read_file("crates/aegis-cli/src/main.rs");
@@ -276,7 +276,7 @@ fn test_main_has_session_restore() {
     );
 }
 
-// @req REQ-BUILD-031
+// rtmx:req REQ-BUILD-031
 #[test]
 fn test_main_routes_tracing_to_log_file_in_tui_mode() {
     let main = read_file("crates/aegis-cli/src/main.rs");
@@ -290,7 +290,7 @@ fn test_main_routes_tracing_to_log_file_in_tui_mode() {
     );
 }
 
-// @req REQ-BUILD-023
+// rtmx:req REQ-BUILD-023
 #[test]
 fn test_homebrew_tap_referenced() {
     let readme = read_file("README.md");
@@ -301,7 +301,7 @@ fn test_homebrew_tap_referenced() {
     );
 }
 
-// @req REQ-BUILD-025
+// rtmx:req REQ-BUILD-025
 #[test]
 fn test_release_notes_exist_for_v0_0_1_alpha() {
     // The Homebrew formula at rtmx-ai/homebrew-tap references the
@@ -314,7 +314,7 @@ fn test_release_notes_exist_for_v0_0_1_alpha() {
     );
 }
 
-// @req REQ-BUILD-028
+// rtmx:req REQ-BUILD-028
 #[test]
 fn test_version_follows_semver() {
     let toml = read_file("Cargo.toml");

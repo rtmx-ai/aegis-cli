@@ -157,7 +157,7 @@ impl SubAgentManager {
 mod tests {
     use super::*;
 
-    // @req REQ-AGENT-004
+    // rtmx:req REQ-AGENT-004
     #[test]
     fn default_config_has_read_only_tools() {
         let config = SubAgentConfig::default();
@@ -176,21 +176,21 @@ mod tests {
         );
     }
 
-    // @req REQ-AGENT-004
+    // rtmx:req REQ-AGENT-004
     #[test]
     fn default_config_max_iterations_is_10() {
         let config = SubAgentConfig::default();
         assert_eq!(config.max_iterations, 10);
     }
 
-    // @req REQ-AGENT-004
+    // rtmx:req REQ-AGENT-004
     #[test]
     fn default_config_disallows_nesting() {
         let config = SubAgentConfig::default();
         assert!(!config.allow_nesting);
     }
 
-    // @req REQ-AGENT-004
+    // rtmx:req REQ-AGENT-004
     #[test]
     fn manager_new_sets_max_concurrent() {
         let mgr = SubAgentManager::new(4);
@@ -198,7 +198,7 @@ mod tests {
         assert_eq!(mgr.active_count(), 0);
     }
 
-    // @req REQ-AGENT-004
+    // rtmx:req REQ-AGENT-004
     #[test]
     fn spawn_creates_agent_in_running_state() {
         let mut mgr = SubAgentManager::new(4);
@@ -211,7 +211,7 @@ mod tests {
         assert_eq!(mgr.active_count(), 1);
     }
 
-    // @req REQ-AGENT-004
+    // rtmx:req REQ-AGENT-004
     #[test]
     fn spawn_returns_unique_ids() {
         let mut mgr = SubAgentManager::new(4);
@@ -224,7 +224,7 @@ mod tests {
         assert_ne!(id1, id2);
     }
 
-    // @req REQ-AGENT-004
+    // rtmx:req REQ-AGENT-004
     #[test]
     fn spawn_respects_max_concurrent_limit() {
         let mut mgr = SubAgentManager::new(2);
@@ -243,7 +243,7 @@ mod tests {
         );
     }
 
-    // @req REQ-AGENT-004
+    // rtmx:req REQ-AGENT-004
     #[test]
     fn spawn_allowed_after_agent_completes() {
         let mut mgr = SubAgentManager::new(1);
@@ -267,14 +267,14 @@ mod tests {
         assert_eq!(mgr.status(&id2), Some(&SubAgentStatus::Running));
     }
 
-    // @req REQ-AGENT-004
+    // rtmx:req REQ-AGENT-004
     #[test]
     fn status_returns_none_for_unknown_id() {
         let mgr = SubAgentManager::new(4);
         assert_eq!(mgr.status("nonexistent"), None);
     }
 
-    // @req REQ-AGENT-004
+    // rtmx:req REQ-AGENT-004
     #[test]
     fn status_returns_correct_state_after_completion() {
         let mut mgr = SubAgentManager::new(4);
@@ -289,7 +289,7 @@ mod tests {
         );
     }
 
-    // @req REQ-AGENT-004
+    // rtmx:req REQ-AGENT-004
     #[test]
     fn status_returns_correct_state_after_failure() {
         let mut mgr = SubAgentManager::new(4);
@@ -304,7 +304,7 @@ mod tests {
         );
     }
 
-    // @req REQ-AGENT-004
+    // rtmx:req REQ-AGENT-004
     #[test]
     fn collect_completed_drains_finished_agents() {
         let mut mgr = SubAgentManager::new(4);
@@ -331,7 +331,7 @@ mod tests {
         assert_eq!(mgr.active_count(), 1);
     }
 
-    // @req REQ-AGENT-004
+    // rtmx:req REQ-AGENT-004
     #[test]
     fn collect_completed_returns_empty_when_all_running() {
         let mut mgr = SubAgentManager::new(4);
@@ -345,7 +345,7 @@ mod tests {
         assert_eq!(mgr.active_count(), 2);
     }
 
-    // @req REQ-AGENT-004
+    // rtmx:req REQ-AGENT-004
     #[test]
     fn multiple_agents_tracked_simultaneously() {
         let mut mgr = SubAgentManager::new(5);
@@ -389,21 +389,21 @@ mod tests {
         );
     }
 
-    // @req REQ-AGENT-004
+    // rtmx:req REQ-AGENT-004
     #[test]
     fn complete_returns_false_for_unknown_id() {
         let mut mgr = SubAgentManager::new(4);
         assert!(!mgr.complete("nonexistent", "result".to_string()));
     }
 
-    // @req REQ-AGENT-004
+    // rtmx:req REQ-AGENT-004
     #[test]
     fn fail_returns_false_for_unknown_id() {
         let mut mgr = SubAgentManager::new(4);
         assert!(!mgr.fail("nonexistent", "error".to_string()));
     }
 
-    // @req REQ-AGENT-004
+    // rtmx:req REQ-AGENT-004
     #[test]
     fn spawn_error_display() {
         let err = SpawnError {

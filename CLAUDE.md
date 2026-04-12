@@ -97,7 +97,7 @@ Run locally: `cargo deny check licenses advisories`
 
 1. Add or update requirement in `.rtmx/database.csv`
 2. Write BDD scenario in `tests/features/<category>/<name>.feature`
-3. Write failing unit test with `// @req REQ-XXX-NNN` marker
+3. Write failing unit test with `// rtmx:req REQ-XXX-NNN` marker
 4. Implement until tests pass
 5. `cargo fmt --all && cargo clippy --workspace`
 6. Commit (pre-commit hook validates), push (pre-push hook validates)
@@ -159,6 +159,6 @@ Both connected (GovCloud) and air-gapped (Ollama/vLLM) modes supported.
 
 - No emojis
 - Tests before implementation
-- `// @req REQ-XXX-NNN` markers on every test
+- `// rtmx:req REQ-XXX-NNN` markers on every test
 - `max_width = 98` in rustfmt.toml
 - Pipeline is always green

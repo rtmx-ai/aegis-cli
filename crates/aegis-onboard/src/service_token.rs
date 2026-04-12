@@ -117,7 +117,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    // @req REQ-ONBOARD-019
+    // rtmx:req REQ-ONBOARD-019
     //
     // All service token scenarios run in a single test to avoid
     // race conditions from parallel tests mutating process-wide

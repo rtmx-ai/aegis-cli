@@ -1,4 +1,4 @@
-// @req REQ-BUILD-030
+// rtmx:req REQ-BUILD-030
 #[test]
 fn test_tracing_subscriber_dependency_exists() {
     let cargo_toml = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
@@ -9,7 +9,7 @@ fn test_tracing_subscriber_dependency_exists() {
     );
 }
 
-// @req REQ-BUILD-030
+// rtmx:req REQ-BUILD-030
 #[test]
 fn test_tracing_dependency_in_workspace() {
     let root_toml = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

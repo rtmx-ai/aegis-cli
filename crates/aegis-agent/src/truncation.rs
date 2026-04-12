@@ -32,7 +32,7 @@ pub fn truncate_output(output: &str) -> String {
 mod tests {
     use super::*;
 
-    // @req REQ-AGENT-012
+    // rtmx:req REQ-AGENT-012
     #[test]
     fn small_output_passes_through() {
         let input = "hello world";
@@ -40,7 +40,7 @@ mod tests {
         assert_eq!(result, input);
     }
 
-    // @req REQ-AGENT-012
+    // rtmx:req REQ-AGENT-012
     #[test]
     fn exact_limit_passes_through() {
         let input = "x".repeat(MAX_OUTPUT_BYTES);
@@ -49,7 +49,7 @@ mod tests {
         assert!(!result.contains("[output truncated"));
     }
 
-    // @req REQ-AGENT-012
+    // rtmx:req REQ-AGENT-012
     #[test]
     fn over_limit_is_truncated() {
         let input = "a".repeat(MAX_OUTPUT_BYTES + 1000);
@@ -58,7 +58,7 @@ mod tests {
         assert!(result.ends_with("[output truncated at 64KB]"));
     }
 
-    // @req REQ-AGENT-012
+    // rtmx:req REQ-AGENT-012
     #[test]
     fn truncation_preserves_utf8_boundary() {
         // Create a string with multi-byte chars that would split at the boundary.
@@ -72,14 +72,14 @@ mod tests {
         assert!(before_marker.len() <= MAX_OUTPUT_BYTES);
     }
 
-    // @req REQ-AGENT-012
+    // rtmx:req REQ-AGENT-012
     #[test]
     fn empty_string_passes_through() {
         let result = truncate_output("");
         assert_eq!(result, "");
     }
 
-    // @req REQ-AGENT-012
+    // rtmx:req REQ-AGENT-012
     #[test]
     fn truncated_output_starts_with_original_prefix() {
         let input = "abcdef".repeat(MAX_OUTPUT_BYTES);

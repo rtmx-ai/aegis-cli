@@ -301,7 +301,7 @@ mod tests {
             .ok();
     }
 
-    // @req REQ-AGENT-026
+    // rtmx:req REQ-AGENT-026
     #[test]
     fn gather_non_git_dir_returns_none_for_git_fields() {
         let tmp = make_tempdir();
@@ -311,7 +311,7 @@ mod tests {
         assert!(ctx.recent_commits.is_empty());
     }
 
-    // @req REQ-AGENT-026
+    // rtmx:req REQ-AGENT-026
     #[test]
     fn gather_git_dir_returns_branch_name() {
         let tmp = make_tempdir();
@@ -338,7 +338,7 @@ mod tests {
         );
     }
 
-    // @req REQ-AGENT-026
+    // rtmx:req REQ-AGENT-026
     #[test]
     fn project_type_detects_cargo_toml_as_rust() {
         let tmp = make_tempdir();
@@ -347,7 +347,7 @@ mod tests {
         assert_eq!(ctx.project_type.as_deref(), Some("rust"));
     }
 
-    // @req REQ-AGENT-026
+    // rtmx:req REQ-AGENT-026
     #[test]
     fn project_type_detects_package_json_as_node() {
         let tmp = make_tempdir();
@@ -356,7 +356,7 @@ mod tests {
         assert_eq!(ctx.project_type.as_deref(), Some("node"));
     }
 
-    // @req REQ-AGENT-026
+    // rtmx:req REQ-AGENT-026
     #[test]
     fn project_type_detects_go_mod_as_go() {
         let tmp = make_tempdir();
@@ -365,7 +365,7 @@ mod tests {
         assert_eq!(ctx.project_type.as_deref(), Some("go"));
     }
 
-    // @req REQ-AGENT-026
+    // rtmx:req REQ-AGENT-026
     #[test]
     fn project_type_detects_pyproject_toml_as_python() {
         let tmp = make_tempdir();
@@ -374,7 +374,7 @@ mod tests {
         assert_eq!(ctx.project_type.as_deref(), Some("python"));
     }
 
-    // @req REQ-AGENT-026
+    // rtmx:req REQ-AGENT-026
     #[test]
     fn project_type_returns_none_for_unknown() {
         let tmp = make_tempdir();
@@ -382,7 +382,7 @@ mod tests {
         assert!(ctx.project_type.is_none());
     }
 
-    // @req REQ-AGENT-026
+    // rtmx:req REQ-AGENT-026
     #[test]
     fn directory_tree_includes_files_but_skips_hidden() {
         let tmp = make_tempdir();
@@ -420,7 +420,7 @@ mod tests {
         );
     }
 
-    // @req REQ-AGENT-026
+    // rtmx:req REQ-AGENT-026
     #[test]
     fn directory_tree_skips_target_and_node_modules() {
         let tmp = make_tempdir();
@@ -434,7 +434,7 @@ mod tests {
         assert!(ctx.directory_tree.contains("src/"));
     }
 
-    // @req REQ-AGENT-026
+    // rtmx:req REQ-AGENT-026
     #[test]
     fn to_prompt_section_produces_nonempty_string_with_headers() {
         let tmp = make_tempdir();
@@ -458,7 +458,7 @@ mod tests {
         assert!(!section.is_empty());
     }
 
-    // @req REQ-AGENT-026
+    // rtmx:req REQ-AGENT-026
     #[test]
     fn system_prompt_file_returns_contents_when_exists() {
         let tmp = make_tempdir();
@@ -477,7 +477,7 @@ mod tests {
         );
     }
 
-    // @req REQ-AGENT-026
+    // rtmx:req REQ-AGENT-026
     #[test]
     fn system_prompt_file_returns_none_when_missing() {
         let tmp = make_tempdir();
@@ -485,7 +485,7 @@ mod tests {
         assert!(ctx.system_prompt_file.is_none());
     }
 
-    // @req REQ-AGENT-026
+    // rtmx:req REQ-AGENT-026
     #[test]
     fn git_status_summary_reports_clean_on_clean_repo() {
         let tmp = make_tempdir();
@@ -506,7 +506,7 @@ mod tests {
         assert_eq!(ctx.git_status_summary.as_deref(), Some("clean"));
     }
 
-    // @req REQ-AGENT-026
+    // rtmx:req REQ-AGENT-026
     #[test]
     fn git_status_summary_counts_modified_and_untracked() {
         let tmp = make_tempdir();
@@ -538,7 +538,7 @@ mod tests {
         );
     }
 
-    // @req REQ-AGENT-026
+    // rtmx:req REQ-AGENT-026
     #[test]
     fn recent_commits_returns_commit_lines() {
         let tmp = make_tempdir();
@@ -567,7 +567,7 @@ mod tests {
         assert!(ctx.recent_commits[2].contains("commit 0"));
     }
 
-    // @req REQ-AGENT-026
+    // rtmx:req REQ-AGENT-026
     #[test]
     fn to_prompt_section_includes_system_prompt_file_content() {
         let tmp = make_tempdir();
@@ -585,7 +585,7 @@ mod tests {
         assert!(section.contains("Custom project instructions."));
     }
 
-    // @req REQ-AGENT-026
+    // rtmx:req REQ-AGENT-026
     #[test]
     fn directory_tree_max_entries_capped() {
         let tmp = make_tempdir();

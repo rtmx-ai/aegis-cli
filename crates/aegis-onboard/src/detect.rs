@@ -217,7 +217,7 @@ impl ProviderDetector for MockDetector {
 mod tests {
     use super::*;
 
-    // @req REQ-ONBOARD-021
+    // rtmx:req REQ-ONBOARD-021
     #[tokio::test]
     async fn detect_returns_empty_when_no_providers_running() {
         let detector = MockDetector::new();
@@ -228,7 +228,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-021
+    // rtmx:req REQ-ONBOARD-021
     #[tokio::test]
     async fn detect_finds_ollama() {
         let detector = MockDetector::new().with_response(
@@ -243,7 +243,7 @@ mod tests {
         assert_eq!(results[0].models.len(), 2);
     }
 
-    // @req REQ-ONBOARD-021
+    // rtmx:req REQ-ONBOARD-021
     #[tokio::test]
     async fn detect_finds_vllm() {
         let detector = MockDetector::new().with_response(
@@ -257,7 +257,7 @@ mod tests {
         assert_eq!(results[0].endpoint, "http://localhost:8000");
     }
 
-    // @req REQ-ONBOARD-021
+    // rtmx:req REQ-ONBOARD-021
     #[tokio::test]
     async fn detect_finds_llama_cpp() {
         let detector = MockDetector::new().with_response(
@@ -270,7 +270,7 @@ mod tests {
         assert_eq!(results[0].name, "llama.cpp");
     }
 
-    // @req REQ-ONBOARD-021
+    // rtmx:req REQ-ONBOARD-021
     #[tokio::test]
     async fn detect_finds_multiple_providers() {
         let detector = MockDetector::new()
@@ -287,7 +287,7 @@ mod tests {
         assert_eq!(results.len(), 2);
     }
 
-    // @req REQ-ONBOARD-021
+    // rtmx:req REQ-ONBOARD-021
     #[test]
     fn parse_ollama_model_names() {
         let body = serde_json::json!({
@@ -300,7 +300,7 @@ mod tests {
         assert_eq!(names, vec!["llama3:latest", "codellama:7b"]);
     }
 
-    // @req REQ-ONBOARD-021
+    // rtmx:req REQ-ONBOARD-021
     #[test]
     fn parse_openai_compatible_model_names() {
         let body = serde_json::json!({
@@ -313,7 +313,7 @@ mod tests {
         assert_eq!(names, vec!["meta-llama/Llama-3-8B", "codellama-13b"]);
     }
 
-    // @req REQ-ONBOARD-021
+    // rtmx:req REQ-ONBOARD-021
     #[test]
     fn parse_empty_model_list() {
         let body = serde_json::json!({"models": []});
@@ -321,7 +321,7 @@ mod tests {
         assert!(names.is_empty());
     }
 
-    // @req REQ-ONBOARD-023
+    // rtmx:req REQ-ONBOARD-023
     #[test]
     fn detect_llama3_exact_match() {
         let models = vec!["llama3:latest".to_string(), "codellama:7b".to_string()];
@@ -329,7 +329,7 @@ mod tests {
         assert_eq!(result, Some("llama3:latest".to_string()));
     }
 
-    // @req REQ-ONBOARD-023
+    // rtmx:req REQ-ONBOARD-023
     #[test]
     fn detect_llama3_variant() {
         let models = vec!["codellama:7b".to_string(), "llama3.2:latest".to_string()];
@@ -337,7 +337,7 @@ mod tests {
         assert_eq!(result, Some("llama3.2:latest".to_string()));
     }
 
-    // @req REQ-ONBOARD-023
+    // rtmx:req REQ-ONBOARD-023
     #[test]
     fn detect_llama3_prefers_exact() {
         let models = vec!["llama3.1:latest".to_string(), "llama3:latest".to_string()];
@@ -349,7 +349,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-023
+    // rtmx:req REQ-ONBOARD-023
     #[test]
     fn detect_llama3_not_found() {
         let models = vec!["codellama:7b".to_string(), "mistral:latest".to_string()];
@@ -357,14 +357,14 @@ mod tests {
         assert!(result.is_none(), "Should return None when no llama3");
     }
 
-    // @req REQ-ONBOARD-023
+    // rtmx:req REQ-ONBOARD-023
     #[test]
     fn detect_llama3_empty_models() {
         let result = detect_ollama_llama3_from_models(&[]);
         assert!(result.is_none());
     }
 
-    // @req REQ-ONBOARD-023
+    // rtmx:req REQ-ONBOARD-023
     #[tokio::test]
     async fn detect_ollama_llama3_via_detector() {
         let detector = MockDetector::new().with_response(
@@ -376,7 +376,7 @@ mod tests {
         assert_eq!(result, Some("llama3:latest".to_string()));
     }
 
-    // @req REQ-ONBOARD-023
+    // rtmx:req REQ-ONBOARD-023
     #[tokio::test]
     async fn detect_ollama_llama3_returns_none_when_unreachable() {
         let detector = MockDetector::new();

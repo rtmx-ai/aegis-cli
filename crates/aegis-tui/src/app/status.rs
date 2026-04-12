@@ -98,13 +98,13 @@ impl App {
 mod tests {
     use super::*;
 
-    // @req REQ-TUI-019
+    // rtmx:req REQ-TUI-019
     #[test]
     fn format_tokens_zero_returns_empty() {
         assert_eq!(format_tokens(0), "");
     }
 
-    // @req REQ-TUI-019
+    // rtmx:req REQ-TUI-019
     #[test]
     fn format_tokens_small_returns_raw() {
         assert_eq!(format_tokens(42), "42");
@@ -112,7 +112,7 @@ mod tests {
         assert_eq!(format_tokens(1), "1");
     }
 
-    // @req REQ-TUI-019
+    // rtmx:req REQ-TUI-019
     #[test]
     fn format_tokens_thousands_returns_k_suffix() {
         assert_eq!(format_tokens(1500), "1.5k");
@@ -121,7 +121,7 @@ mod tests {
         assert_eq!(format_tokens(999999), "1000.0k");
     }
 
-    // @req REQ-TUI-019
+    // rtmx:req REQ-TUI-019
     #[test]
     fn format_tokens_millions_returns_m_suffix() {
         assert_eq!(format_tokens(1234567), "1.2M");
@@ -129,7 +129,7 @@ mod tests {
         assert_eq!(format_tokens(10500000), "10.5M");
     }
 
-    // @req REQ-TUI-016
+    // rtmx:req REQ-TUI-016
     #[test]
     fn format_elapsed_under_3s_returns_none() {
         assert_eq!(format_elapsed(0), None);
@@ -137,7 +137,7 @@ mod tests {
         assert_eq!(format_elapsed(2), None);
     }
 
-    // @req REQ-TUI-016
+    // rtmx:req REQ-TUI-016
     #[test]
     fn format_elapsed_seconds_returns_xs() {
         assert_eq!(format_elapsed(3), Some("3s".to_string()));
@@ -145,7 +145,7 @@ mod tests {
         assert_eq!(format_elapsed(59), Some("59s".to_string()));
     }
 
-    // @req REQ-TUI-016
+    // rtmx:req REQ-TUI-016
     #[test]
     fn format_elapsed_minutes_returns_xm_ys() {
         assert_eq!(format_elapsed(60), Some("1m 0s".to_string()));
@@ -153,14 +153,14 @@ mod tests {
         assert_eq!(format_elapsed(125), Some("2m 5s".to_string()));
     }
 
-    // @req REQ-TUI-016
+    // rtmx:req REQ-TUI-016
     #[test]
     fn format_elapsed_boundary_at_3s() {
         assert_eq!(format_elapsed(2), None);
         assert_eq!(format_elapsed(3), Some("3s".to_string()));
     }
 
-    // @req REQ-TUI-016
+    // rtmx:req REQ-TUI-016
     #[test]
     fn format_elapsed_boundary_at_60s() {
         assert_eq!(format_elapsed(59), Some("59s".to_string()));

@@ -54,13 +54,13 @@ pub fn validate_response(text: &str) -> Result<(), ValidationError> {
 mod tests {
     use super::*;
 
-    // @req REQ-LLM-013
+    // rtmx:req REQ-LLM-013
     #[test]
     fn rejects_empty_response() {
         assert_eq!(validate_response(""), Err(ValidationError::Empty));
     }
 
-    // @req REQ-LLM-013
+    // rtmx:req REQ-LLM-013
     #[test]
     fn rejects_null_bytes() {
         assert_eq!(
@@ -69,7 +69,7 @@ mod tests {
         );
     }
 
-    // @req REQ-LLM-013
+    // rtmx:req REQ-LLM-013
     #[test]
     fn rejects_response_over_1mb() {
         let large = "x".repeat(MAX_RESPONSE_BYTES + 1);
@@ -82,20 +82,20 @@ mod tests {
         }
     }
 
-    // @req REQ-LLM-013
+    // rtmx:req REQ-LLM-013
     #[test]
     fn accepts_valid_response() {
         assert!(validate_response("Hello, world!").is_ok());
     }
 
-    // @req REQ-LLM-013
+    // rtmx:req REQ-LLM-013
     #[test]
     fn accepts_response_exactly_at_limit() {
         let at_limit = "x".repeat(MAX_RESPONSE_BYTES);
         assert!(validate_response(&at_limit).is_ok());
     }
 
-    // @req REQ-LLM-013
+    // rtmx:req REQ-LLM-013
     #[test]
     fn rejects_null_byte_at_start() {
         assert_eq!(
@@ -104,7 +104,7 @@ mod tests {
         );
     }
 
-    // @req REQ-LLM-013
+    // rtmx:req REQ-LLM-013
     #[test]
     fn rejects_null_byte_at_end() {
         assert_eq!(
@@ -113,7 +113,7 @@ mod tests {
         );
     }
 
-    // @req REQ-LLM-013
+    // rtmx:req REQ-LLM-013
     #[test]
     fn error_display_messages() {
         assert_eq!(ValidationError::Empty.to_string(), "response is empty");

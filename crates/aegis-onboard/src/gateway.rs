@@ -147,7 +147,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    // @req REQ-ONBOARD-013
+    // rtmx:req REQ-ONBOARD-013
     #[test]
     fn create_byoc_config_sets_enterprise_mode() {
         let config =
@@ -158,7 +158,7 @@ mod tests {
         assert_eq!(config.backend.model, "gateway");
     }
 
-    // @req REQ-ONBOARD-013
+    // rtmx:req REQ-ONBOARD-013
     #[test]
     fn create_byoc_config_with_mtls() {
         let config = create_byoc_config(
@@ -169,14 +169,14 @@ mod tests {
         assert_eq!(config.backend.provider, "byoc-mtls");
     }
 
-    // @req REQ-ONBOARD-013
+    // rtmx:req REQ-ONBOARD-013
     #[test]
     fn create_byoc_config_with_no_auth() {
         let config = create_byoc_config("https://gateway.corp.mil", AuthMethod::None, None);
         assert_eq!(config.backend.provider, "byoc");
     }
 
-    // @req REQ-ONBOARD-013
+    // rtmx:req REQ-ONBOARD-013
     #[test]
     fn create_byoc_config_with_custom_model() {
         let config = create_byoc_config(
@@ -187,7 +187,7 @@ mod tests {
         assert_eq!(config.backend.model, "gemini-3.1-pro");
     }
 
-    // @req REQ-ONBOARD-013
+    // rtmx:req REQ-ONBOARD-013
     #[test]
     fn write_and_read_byoc_config_roundtrip() {
         let tmp = TempDir::new().unwrap();
@@ -205,7 +205,7 @@ mod tests {
         assert_eq!(loaded.org_id, Some("org-123".to_string()));
     }
 
-    // @req REQ-ONBOARD-013
+    // rtmx:req REQ-ONBOARD-013
     #[test]
     fn write_and_read_byoc_config_without_org_id() {
         let tmp = TempDir::new().unwrap();
@@ -223,7 +223,7 @@ mod tests {
         assert!(loaded.org_id.is_none());
     }
 
-    // @req REQ-ONBOARD-013
+    // rtmx:req REQ-ONBOARD-013
     #[test]
     fn read_byoc_config_returns_none_when_missing() {
         let tmp = TempDir::new().unwrap();
@@ -233,7 +233,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-013
+    // rtmx:req REQ-ONBOARD-013
     #[test]
     fn write_byoc_config_creates_parent_dirs() {
         let tmp = TempDir::new().unwrap();
@@ -247,7 +247,7 @@ mod tests {
         assert!(read_byoc_config(&nested).is_some());
     }
 
-    // @req REQ-ONBOARD-013
+    // rtmx:req REQ-ONBOARD-013
     #[cfg(unix)]
     #[test]
     fn write_byoc_config_sets_0600_permissions() {
@@ -270,7 +270,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-013
+    // rtmx:req REQ-ONBOARD-013
     #[test]
     fn auth_method_equality() {
         assert_eq!(AuthMethod::ServiceToken, AuthMethod::ServiceToken);
@@ -279,7 +279,7 @@ mod tests {
         assert_ne!(AuthMethod::ServiceToken, AuthMethod::MtlsCertificate);
     }
 
-    // @req REQ-ONBOARD-013
+    // rtmx:req REQ-ONBOARD-013
     #[test]
     fn read_byoc_config_ignores_comments_and_blanks() {
         let tmp = TempDir::new().unwrap();

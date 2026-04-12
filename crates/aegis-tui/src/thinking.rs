@@ -55,14 +55,14 @@ impl Default for ThinkingAnimation {
 mod tests {
     use super::*;
 
-    // @req REQ-TUI-006
+    // rtmx:req REQ-TUI-006
     #[test]
     fn new_animation_starts_at_first_verb_one_dot() {
         let anim = ThinkingAnimation::new();
         assert_eq!(anim.current_text(), "Thinking.");
     }
 
-    // @req REQ-TUI-006
+    // rtmx:req REQ-TUI-006
     #[test]
     fn tick_advances_dot_count() {
         let mut anim = ThinkingAnimation::new();
@@ -73,7 +73,7 @@ mod tests {
         assert_eq!(anim.current_text(), "Thinking...");
     }
 
-    // @req REQ-TUI-006
+    // rtmx:req REQ-TUI-006
     #[test]
     fn verb_changes_after_three_ticks() {
         let mut anim = ThinkingAnimation::new();
@@ -84,7 +84,7 @@ mod tests {
         assert_eq!(anim.current_text(), "Reasoning.");
     }
 
-    // @req REQ-TUI-006
+    // rtmx:req REQ-TUI-006
     #[test]
     fn cycles_through_all_verbs() {
         let mut anim = ThinkingAnimation::new();
@@ -107,7 +107,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-006
+    // rtmx:req REQ-TUI-006
     #[test]
     fn wraps_back_to_first_verb_after_full_cycle() {
         let mut anim = ThinkingAnimation::new();
@@ -118,7 +118,7 @@ mod tests {
         assert_eq!(anim.current_text(), "Thinking.");
     }
 
-    // @req REQ-TUI-006
+    // rtmx:req REQ-TUI-006
     #[test]
     fn reset_returns_to_initial_state() {
         let mut anim = ThinkingAnimation::new();
@@ -131,20 +131,20 @@ mod tests {
         assert_eq!(anim.current_text(), "Thinking.");
     }
 
-    // @req REQ-TUI-006
+    // rtmx:req REQ-TUI-006
     #[test]
     fn default_is_same_as_new() {
         let anim = ThinkingAnimation::default();
         assert_eq!(anim.current_text(), "Thinking.");
     }
 
-    // @req REQ-TUI-006
+    // rtmx:req REQ-TUI-006
     #[test]
     fn thinking_verbs_has_five_entries() {
         assert_eq!(THINKING_VERBS.len(), 5);
     }
 
-    // @req REQ-TUI-006
+    // rtmx:req REQ-TUI-006
     #[test]
     fn dot_progression_within_single_verb() {
         let mut anim = ThinkingAnimation::new();

@@ -161,7 +161,7 @@ mod tests {
         })
     }
 
-    // @req REQ-AUDIT-002
+    // rtmx:req REQ-AUDIT-002
     #[tokio::test]
     async fn gcp_sink_accepts_valid_entry() {
         let sink = GcpCloudLogging {
@@ -173,7 +173,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // @req REQ-AUDIT-002
+    // rtmx:req REQ-AUDIT-002
     #[tokio::test]
     async fn aws_sink_accepts_valid_entry() {
         let sink = AwsCloudWatch {
@@ -185,7 +185,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // @req REQ-AUDIT-002
+    // rtmx:req REQ-AUDIT-002
     #[tokio::test]
     async fn azure_sink_accepts_valid_entry() {
         let sink = AzureMonitor {
@@ -196,7 +196,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // @req REQ-AUDIT-002
+    // rtmx:req REQ-AUDIT-002
     #[tokio::test]
     async fn sink_rejects_entry_missing_timestamp() {
         let sink = GcpCloudLogging {
@@ -212,7 +212,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // @req REQ-AUDIT-002
+    // rtmx:req REQ-AUDIT-002
     #[tokio::test]
     async fn sink_rejects_entry_missing_event() {
         let sink = AwsCloudWatch {
@@ -228,7 +228,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // @req REQ-AUDIT-002
+    // rtmx:req REQ-AUDIT-002
     #[tokio::test]
     async fn sink_rejects_entry_missing_os_user() {
         let sink = AzureMonitor {
@@ -243,7 +243,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // @req REQ-AUDIT-002
+    // rtmx:req REQ-AUDIT-002
     #[tokio::test]
     async fn format_for_gcp_wraps_in_json_payload() {
         let entry = valid_entry();
@@ -253,7 +253,7 @@ mod tests {
         assert_eq!(parsed["severity"], "INFO");
     }
 
-    // @req REQ-AUDIT-002
+    // rtmx:req REQ-AUDIT-002
     #[tokio::test]
     async fn format_for_aws_includes_message_and_timestamp() {
         let entry = valid_entry();
@@ -263,7 +263,7 @@ mod tests {
         assert_eq!(parsed["timestamp"], "2026-03-28T12:00:00Z");
     }
 
-    // @req REQ-AUDIT-002
+    // rtmx:req REQ-AUDIT-002
     #[tokio::test]
     async fn format_for_azure_wraps_in_records_array() {
         let entry = valid_entry();
@@ -274,7 +274,7 @@ mod tests {
         assert_eq!(parsed["records"].as_array().unwrap().len(), 1);
     }
 
-    // @req REQ-AUDIT-002
+    // rtmx:req REQ-AUDIT-002
     #[tokio::test]
     async fn provider_method_returns_correct_variant() {
         let gcp = GcpCloudLogging {
@@ -295,7 +295,7 @@ mod tests {
         assert_eq!(azure.provider(), CloudProvider::Azure);
     }
 
-    // @req REQ-AUDIT-002
+    // rtmx:req REQ-AUDIT-002
     #[tokio::test]
     async fn all_sinks_reject_empty_object() {
         let empty = serde_json::json!({});

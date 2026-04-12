@@ -38,7 +38,7 @@ pub fn calculate_delay(attempt: u32, config: &RetryConfig) -> u64 {
 mod tests {
     use super::*;
 
-    // @req REQ-LLM-011
+    // rtmx:req REQ-LLM-011
     #[test]
     fn default_config_values() {
         let cfg = RetryConfig::default();
@@ -47,67 +47,67 @@ mod tests {
         assert!((cfg.multiplier - 2.0).abs() < f64::EPSILON);
     }
 
-    // @req REQ-LLM-011
+    // rtmx:req REQ-LLM-011
     #[test]
     fn retryable_429_rate_limit() {
         assert!(is_retryable(429));
     }
 
-    // @req REQ-LLM-011
+    // rtmx:req REQ-LLM-011
     #[test]
     fn retryable_503_service_unavailable() {
         assert!(is_retryable(503));
     }
 
-    // @req REQ-LLM-011
+    // rtmx:req REQ-LLM-011
     #[test]
     fn retryable_504_gateway_timeout() {
         assert!(is_retryable(504));
     }
 
-    // @req REQ-LLM-011
+    // rtmx:req REQ-LLM-011
     #[test]
     fn not_retryable_400_bad_request() {
         assert!(!is_retryable(400));
     }
 
-    // @req REQ-LLM-011
+    // rtmx:req REQ-LLM-011
     #[test]
     fn not_retryable_401_unauthorized() {
         assert!(!is_retryable(401));
     }
 
-    // @req REQ-LLM-011
+    // rtmx:req REQ-LLM-011
     #[test]
     fn not_retryable_403_forbidden() {
         assert!(!is_retryable(403));
     }
 
-    // @req REQ-LLM-011
+    // rtmx:req REQ-LLM-011
     #[test]
     fn not_retryable_404_not_found() {
         assert!(!is_retryable(404));
     }
 
-    // @req REQ-LLM-011
+    // rtmx:req REQ-LLM-011
     #[test]
     fn not_retryable_422_unprocessable() {
         assert!(!is_retryable(422));
     }
 
-    // @req REQ-LLM-011
+    // rtmx:req REQ-LLM-011
     #[test]
     fn not_retryable_200_success() {
         assert!(!is_retryable(200));
     }
 
-    // @req REQ-LLM-011
+    // rtmx:req REQ-LLM-011
     #[test]
     fn not_retryable_500_internal_error() {
         assert!(!is_retryable(500));
     }
 
-    // @req REQ-LLM-011
+    // rtmx:req REQ-LLM-011
     #[test]
     fn delay_attempt_zero() {
         let cfg = RetryConfig::default();
@@ -115,7 +115,7 @@ mod tests {
         assert_eq!(calculate_delay(0, &cfg), 500);
     }
 
-    // @req REQ-LLM-011
+    // rtmx:req REQ-LLM-011
     #[test]
     fn delay_attempt_one() {
         let cfg = RetryConfig::default();
@@ -123,7 +123,7 @@ mod tests {
         assert_eq!(calculate_delay(1, &cfg), 1000);
     }
 
-    // @req REQ-LLM-011
+    // rtmx:req REQ-LLM-011
     #[test]
     fn delay_attempt_two() {
         let cfg = RetryConfig::default();
@@ -131,7 +131,7 @@ mod tests {
         assert_eq!(calculate_delay(2, &cfg), 2000);
     }
 
-    // @req REQ-LLM-011
+    // rtmx:req REQ-LLM-011
     #[test]
     fn delay_with_custom_config() {
         let cfg = RetryConfig {

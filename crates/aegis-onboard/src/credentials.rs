@@ -108,7 +108,7 @@ mod tests {
     use crate::config::AegisConfig;
     use tempfile::TempDir;
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn has_changes_false_when_all_none() {
         let update = CredentialUpdate::default();
@@ -118,7 +118,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn has_changes_true_with_api_key() {
         let update = CredentialUpdate {
@@ -128,7 +128,7 @@ mod tests {
         assert!(has_changes(&update));
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn has_changes_true_with_credentials_path() {
         let update = CredentialUpdate {
@@ -138,7 +138,7 @@ mod tests {
         assert!(has_changes(&update));
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn has_changes_true_with_endpoint() {
         let update = CredentialUpdate {
@@ -148,7 +148,7 @@ mod tests {
         assert!(has_changes(&update));
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn validate_rejects_empty_api_key() {
         let update = CredentialUpdate {
@@ -163,7 +163,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn validate_rejects_whitespace_only_api_key() {
         let update = CredentialUpdate {
@@ -173,7 +173,7 @@ mod tests {
         assert!(validate_credential_format(&update).is_err());
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn validate_rejects_empty_endpoint() {
         let update = CredentialUpdate {
@@ -188,7 +188,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn validate_rejects_whitespace_only_endpoint() {
         let update = CredentialUpdate {
@@ -198,7 +198,7 @@ mod tests {
         assert!(validate_credential_format(&update).is_err());
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn validate_rejects_nonexistent_credentials_path() {
         let update = CredentialUpdate {
@@ -213,7 +213,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn validate_accepts_existing_credentials_path() {
         let tmp = TempDir::new().unwrap();
@@ -227,7 +227,7 @@ mod tests {
         assert!(validate_credential_format(&update).is_ok());
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn validate_accepts_valid_api_key() {
         let update = CredentialUpdate {
@@ -237,7 +237,7 @@ mod tests {
         assert!(validate_credential_format(&update).is_ok());
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn validate_accepts_none_fields() {
         // All None -- nothing to validate, passes trivially.
@@ -246,7 +246,7 @@ mod tests {
         assert!(validate_credential_format(&update).is_ok());
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn rotate_rejects_empty_update() {
         let mut config = AegisConfig::local("http://localhost:11434/v1", "llama3");
@@ -259,7 +259,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn rotate_updates_endpoint_only() {
         let mut config = AegisConfig::local("http://localhost:11434/v1", "llama3");
@@ -272,7 +272,7 @@ mod tests {
         assert_eq!(config.backend.endpoint, "http://localhost:8080/v1");
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn rotate_preserves_model_and_mode() {
         let mut config = AegisConfig::local("http://localhost:11434/v1", "llama3");
@@ -295,7 +295,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn rotate_preserves_infra_outputs() {
         use crate::config::toml_map::{InfraSection, PluginOutputs};
@@ -327,7 +327,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn rotate_preserves_version_and_max_tokens() {
         let mut config = AegisConfig::local("http://localhost:11434/v1", "llama3");
@@ -347,7 +347,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn rotate_rejects_invalid_credentials() {
         let mut config = AegisConfig::local("http://localhost:11434/v1", "llama3");
@@ -367,7 +367,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn rotate_with_api_key_only_preserves_endpoint() {
         let mut config = AegisConfig::local("http://localhost:11434/v1", "llama3");
@@ -383,7 +383,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-006
+    // rtmx:req REQ-ONBOARD-006
     #[test]
     fn rotate_with_all_fields() {
         let tmp = TempDir::new().unwrap();

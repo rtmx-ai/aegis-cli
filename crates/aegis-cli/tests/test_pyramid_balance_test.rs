@@ -1,6 +1,6 @@
 //! Validates test pyramid balance metric script (REQ-TEST-038).
 
-// @req REQ-TEST-038
+// rtmx:req REQ-TEST-038
 #[test]
 fn test_pyramid_balance_script_exists() {
     let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -12,7 +12,7 @@ fn test_pyramid_balance_script_exists() {
     assert!(script.exists(), "test-pyramid-balance.py must exist");
 }
 
-// @req REQ-TEST-038
+// rtmx:req REQ-TEST-038
 #[test]
 fn test_pyramid_balance_script_is_executable() {
     #[cfg(unix)]
@@ -32,7 +32,7 @@ fn test_pyramid_balance_script_is_executable() {
     }
 }
 
-// @req REQ-TEST-038
+// rtmx:req REQ-TEST-038
 #[test]
 fn test_pyramid_balance_script_runs_successfully() {
     let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

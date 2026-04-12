@@ -88,21 +88,21 @@ mod tests {
 
     // -- AgentRetryConfig defaults --
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn default_max_retries_is_three() {
         let cfg = AgentRetryConfig::default();
         assert_eq!(cfg.max_retries, 3);
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn default_base_delay_is_one_second() {
         let cfg = AgentRetryConfig::default();
         assert_eq!(cfg.base_delay_ms, 1_000);
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn default_max_delay_is_thirty_seconds() {
         let cfg = AgentRetryConfig::default();
@@ -111,7 +111,7 @@ mod tests {
 
     // -- is_retryable_error classification --
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn provider_error_is_retryable() {
         let err = DomainError::ProviderError {
@@ -120,14 +120,14 @@ mod tests {
         assert!(is_retryable_error(&err));
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn other_error_is_retryable() {
         let err = DomainError::Other("transient I/O failure".into());
         assert!(is_retryable_error(&err));
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn file_blocked_is_not_retryable() {
         let err = DomainError::FileBlocked {
@@ -136,13 +136,13 @@ mod tests {
         assert!(!is_retryable_error(&err));
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn permission_denied_is_not_retryable() {
         assert!(!is_retryable_error(&DomainError::PermissionDenied));
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn requirement_not_found_is_not_retryable() {
         let err = DomainError::RequirementNotFound {
@@ -151,7 +151,7 @@ mod tests {
         assert!(!is_retryable_error(&err));
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn config_error_is_not_retryable() {
         let err = DomainError::ConfigError {
@@ -160,7 +160,7 @@ mod tests {
         assert!(!is_retryable_error(&err));
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn audit_error_is_not_retryable() {
         let err = DomainError::AuditError {
@@ -171,7 +171,7 @@ mod tests {
 
     // -- compute_delay: exponential back-off --
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn delay_attempt_zero_no_jitter() {
         let cfg = AgentRetryConfig::default();
@@ -179,7 +179,7 @@ mod tests {
         assert_eq!(compute_delay(0, &cfg, 0.0), Duration::from_millis(1_000));
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn delay_attempt_one_no_jitter() {
         let cfg = AgentRetryConfig::default();
@@ -187,7 +187,7 @@ mod tests {
         assert_eq!(compute_delay(1, &cfg, 0.0), Duration::from_millis(2_000));
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn delay_attempt_two_no_jitter() {
         let cfg = AgentRetryConfig::default();
@@ -195,7 +195,7 @@ mod tests {
         assert_eq!(compute_delay(2, &cfg, 0.0), Duration::from_millis(4_000));
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn delay_attempt_three_no_jitter() {
         let cfg = AgentRetryConfig::default();
@@ -203,7 +203,7 @@ mod tests {
         assert_eq!(compute_delay(3, &cfg, 0.0), Duration::from_millis(8_000));
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn delay_caps_at_max_delay() {
         let cfg = AgentRetryConfig {
@@ -215,7 +215,7 @@ mod tests {
         assert_eq!(compute_delay(5, &cfg, 0.0), Duration::from_millis(5_000));
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn delay_with_jitter_increases_delay() {
         let cfg = AgentRetryConfig::default();
@@ -224,7 +224,7 @@ mod tests {
         assert!(with_jitter > no_jitter);
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn delay_with_max_jitter_does_not_exceed_cap() {
         let cfg = AgentRetryConfig {
@@ -240,7 +240,7 @@ mod tests {
         assert!(delay <= absolute_cap);
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn delay_with_custom_config_no_jitter() {
         let cfg = AgentRetryConfig {
@@ -256,7 +256,7 @@ mod tests {
         assert_eq!(compute_delay(2, &cfg, 0.0), Duration::from_millis(2_000));
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     #[should_panic(expected = "jitter_fraction must be in 0.0..=1.0")]
     fn delay_panics_on_negative_jitter() {
@@ -264,7 +264,7 @@ mod tests {
         compute_delay(0, &cfg, -0.1);
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     #[should_panic(expected = "jitter_fraction must be in 0.0..=1.0")]
     fn delay_panics_on_jitter_above_one() {
@@ -274,7 +274,7 @@ mod tests {
 
     // -- RetryOutcome --
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn retry_outcome_success_holds_value() {
         let outcome: RetryOutcome<u32> = RetryOutcome::Success(42);
@@ -286,7 +286,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn retry_outcome_exhausted_holds_error_and_attempts() {
         let outcome: RetryOutcome<u32> = RetryOutcome::Exhausted {
@@ -310,7 +310,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn delay_jitter_zero_point_five_adds_exactly_fifty_percent() {
         let cfg = AgentRetryConfig {
@@ -322,7 +322,7 @@ mod tests {
         assert_eq!(compute_delay(0, &cfg, 0.5), Duration::from_millis(1_500));
     }
 
-    // @req REQ-AGENT-017
+    // rtmx:req REQ-AGENT-017
     #[test]
     fn delay_jitter_boundary_one_doubles_base() {
         let cfg = AgentRetryConfig {

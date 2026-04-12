@@ -55,31 +55,31 @@ mod tests {
         }
     }
 
-    // @req REQ-AGENT-007
+    // rtmx:req REQ-AGENT-007
     #[test]
     fn empty_string_is_zero_tokens() {
         assert_eq!(estimate_tokens(""), 0);
     }
 
-    // @req REQ-AGENT-007
+    // rtmx:req REQ-AGENT-007
     #[test]
     fn single_char_is_one_token() {
         assert_eq!(estimate_tokens("a"), 1);
     }
 
-    // @req REQ-AGENT-007
+    // rtmx:req REQ-AGENT-007
     #[test]
     fn four_chars_is_one_token() {
         assert_eq!(estimate_tokens("abcd"), 1);
     }
 
-    // @req REQ-AGENT-007
+    // rtmx:req REQ-AGENT-007
     #[test]
     fn five_chars_is_two_tokens() {
         assert_eq!(estimate_tokens("abcde"), 2);
     }
 
-    // @req REQ-AGENT-007
+    // rtmx:req REQ-AGENT-007
     #[test]
     fn exact_multiple_of_four() {
         // 20 chars -> 5 tokens
@@ -87,14 +87,14 @@ mod tests {
         assert_eq!(estimate_tokens(&"x".repeat(100)), 25);
     }
 
-    // @req REQ-AGENT-007
+    // rtmx:req REQ-AGENT-007
     #[test]
     fn empty_messages_is_zero() {
         let messages: Vec<Message> = vec![];
         assert_eq!(estimate_messages(&messages), 0);
     }
 
-    // @req REQ-AGENT-007
+    // rtmx:req REQ-AGENT-007
     #[test]
     fn single_message_includes_overhead() {
         let messages = vec![msg(Role::User, "abcd")]; // 1 content token
@@ -102,7 +102,7 @@ mod tests {
         assert_eq!(estimate_messages(&messages), 5);
     }
 
-    // @req REQ-AGENT-007
+    // rtmx:req REQ-AGENT-007
     #[test]
     fn multiple_messages_sum_correctly() {
         let messages = vec![
@@ -113,7 +113,7 @@ mod tests {
         assert_eq!(estimate_messages(&messages), 16);
     }
 
-    // @req REQ-AGENT-007
+    // rtmx:req REQ-AGENT-007
     #[test]
     fn fits_context_returns_true_when_within_limit() {
         let messages = vec![msg(Role::User, "abcd")]; // 5 tokens
@@ -121,14 +121,14 @@ mod tests {
         assert!(fits_context(&messages, 100));
     }
 
-    // @req REQ-AGENT-007
+    // rtmx:req REQ-AGENT-007
     #[test]
     fn fits_context_returns_false_when_over_limit() {
         let messages = vec![msg(Role::User, "abcd")]; // 5 tokens
         assert!(!fits_context(&messages, 4));
     }
 
-    // @req REQ-AGENT-007
+    // rtmx:req REQ-AGENT-007
     #[test]
     fn overflow_by_returns_zero_when_fits() {
         let messages = vec![msg(Role::User, "abcd")]; // 5 tokens
@@ -136,14 +136,14 @@ mod tests {
         assert_eq!(overflow_by(&messages, 100), 0);
     }
 
-    // @req REQ-AGENT-007
+    // rtmx:req REQ-AGENT-007
     #[test]
     fn overflow_by_returns_excess_tokens() {
         let messages = vec![msg(Role::User, "abcd")]; // 5 tokens
         assert_eq!(overflow_by(&messages, 3), 2);
     }
 
-    // @req REQ-AGENT-007
+    // rtmx:req REQ-AGENT-007
     #[test]
     fn large_message_estimate_is_reasonable() {
         // 4000 chars -> 1000 content tokens + 4 overhead = 1004
@@ -151,7 +151,7 @@ mod tests {
         assert_eq!(estimate_messages(&messages), 1004);
     }
 
-    // @req REQ-AGENT-007
+    // rtmx:req REQ-AGENT-007
     #[test]
     fn system_message_counted_like_any_other() {
         let messages = vec![msg(Role::System, "You are a helpful assistant.")];

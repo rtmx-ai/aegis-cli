@@ -89,7 +89,7 @@ mod tests {
         terminal.backend().to_string()
     }
 
-    // @req REQ-TUI-030
+    // rtmx:req REQ-TUI-030
     #[test]
     fn splash_renders_logo() {
         let output = render_splash_to_string(80, 24);
@@ -105,7 +105,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-030
+    // rtmx:req REQ-TUI-030
     #[test]
     fn splash_renders_version() {
         let output = render_splash_to_string(80, 24);
@@ -115,7 +115,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-030
+    // rtmx:req REQ-TUI-030
     #[test]
     fn splash_renders_brand_promise() {
         let output = render_splash_to_string(80, 24);
@@ -126,7 +126,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-030
+    // rtmx:req REQ-TUI-030
     #[test]
     fn splash_renders_dismiss_hint() {
         let output = render_splash_to_string(80, 24);
@@ -136,7 +136,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-030
+    // rtmx:req REQ-TUI-030
     #[test]
     fn splash_does_not_panic_on_small_terminal() {
         // Should not panic even at minimal size
@@ -144,7 +144,7 @@ mod tests {
         assert!(!output.is_empty());
     }
 
-    // @req REQ-TUI-030
+    // rtmx:req REQ-TUI-030
     #[test]
     fn splash_timeout_ticks_is_reasonable() {
         // 10 ticks at 150ms = 1.5s

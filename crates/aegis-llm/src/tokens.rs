@@ -56,7 +56,7 @@ impl std::fmt::Display for TokenUsage {
 mod tests {
     use super::*;
 
-    // @req REQ-LLM-007
+    // rtmx:req REQ-LLM-007
     #[test]
     fn new_usage_is_zero() {
         let usage = TokenUsage::new();
@@ -66,7 +66,7 @@ mod tests {
         assert_eq!(usage.total(), 0);
     }
 
-    // @req REQ-LLM-007
+    // rtmx:req REQ-LLM-007
     #[test]
     fn record_accumulates() {
         let mut usage = TokenUsage::new();
@@ -78,7 +78,7 @@ mod tests {
         assert_eq!(usage.total(), 425);
     }
 
-    // @req REQ-LLM-007
+    // rtmx:req REQ-LLM-007
     #[test]
     fn display_format() {
         let mut usage = TokenUsage::new();
@@ -90,7 +90,7 @@ mod tests {
         assert!(s.contains("1 requests"));
     }
 
-    // @req REQ-LLM-008
+    // rtmx:req REQ-LLM-008
     #[test]
     fn cost_estimation() {
         let mut usage = TokenUsage::new();
@@ -104,14 +104,14 @@ mod tests {
         );
     }
 
-    // @req REQ-LLM-008
+    // rtmx:req REQ-LLM-008
     #[test]
     fn zero_usage_zero_cost() {
         let usage = TokenUsage::new();
         assert_eq!(usage.estimated_cost(5.0, 25.0), 0.0);
     }
 
-    // @req REQ-LLM-007
+    // rtmx:req REQ-LLM-007
     #[test]
     fn serializes_to_json() {
         let mut usage = TokenUsage::new();

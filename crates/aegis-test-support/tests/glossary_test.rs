@@ -2,7 +2,7 @@
 
 use aegis_test_support::fixtures::workspace_root;
 
-// @req REQ-TEST-035
+// rtmx:req REQ-TEST-035
 #[test]
 fn test_glossary_exists_with_required_terms() {
     let glossary = workspace_root().join(".aegis/glossary.yaml");
@@ -38,7 +38,7 @@ fn test_glossary_exists_with_required_terms() {
     }
 }
 
-// @req REQ-TEST-035
+// rtmx:req REQ-TEST-035
 #[test]
 fn test_glossary_terms_have_definitions_and_crates() {
     let glossary = workspace_root().join(".aegis/glossary.yaml");

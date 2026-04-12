@@ -4,7 +4,7 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 
-// @req REQ-BUILD-001
+// rtmx:req REQ-BUILD-001
 #[test]
 fn binary_runs_with_help() {
     Command::cargo_bin("aegis")
@@ -15,7 +15,7 @@ fn binary_runs_with_help() {
         .stdout(predicate::str::contains("Agentic AI pair programmer"));
 }
 
-// @req REQ-BUILD-012
+// rtmx:req REQ-BUILD-012
 #[test]
 fn binary_prints_version() {
     Command::cargo_bin("aegis")
@@ -26,7 +26,7 @@ fn binary_prints_version() {
         .stdout(predicate::str::contains("aegis"));
 }
 
-// @req REQ-ONBOARD-003
+// rtmx:req REQ-ONBOARD-003
 #[test]
 fn init_local_creates_config() {
     let tmp = tempfile::TempDir::new().unwrap();
@@ -46,7 +46,7 @@ fn init_local_creates_config() {
     );
 }
 
-// @req REQ-ONBOARD-001
+// rtmx:req REQ-ONBOARD-001
 #[test]
 fn init_without_local_errors() {
     Command::cargo_bin("aegis")
@@ -57,7 +57,7 @@ fn init_without_local_errors() {
         .stderr(predicate::str::contains("Cloud modes not yet implemented"));
 }
 
-// @req REQ-ONBOARD-020
+// rtmx:req REQ-ONBOARD-020
 // With no subcommand, aegis either launches the first-run wizard (init --local)
 // or starts the TUI. In a test environment without a terminal, the TUI path
 // fails with a terminal error; the wizard path runs init. Both are valid
@@ -75,7 +75,7 @@ fn no_args_launches_wizard_or_chat() {
         .stderr(predicate::str::contains("Configuration written to"));
 }
 
-// @req REQ-CLI-001
+// rtmx:req REQ-CLI-001
 #[test]
 fn chat_headless_requires_prompt() {
     Command::cargo_bin("aegis")
@@ -87,7 +87,7 @@ fn chat_headless_requires_prompt() {
         .stderr(predicate::str::contains("Prompt required"));
 }
 
-// @req REQ-CLI-002
+// rtmx:req REQ-CLI-002
 // Interactive mode is now wired. Without a real terminal (CI) it fails
 // with a terminal error; without config it fails with a config error.
 // Either is acceptable -- both prove interactive mode is attempted.
@@ -106,7 +106,7 @@ fn chat_interactive_without_config_errors() {
         );
 }
 
-// @req REQ-CLI-001
+// rtmx:req REQ-CLI-001
 #[test]
 fn chat_headless_with_bad_endpoint_errors_gracefully() {
     Command::cargo_bin("aegis")
@@ -122,7 +122,7 @@ fn chat_headless_with_bad_endpoint_errors_gracefully() {
         .stderr(predicate::str::contains("aegis:"));
 }
 
-// @req REQ-CLI-002
+// rtmx:req REQ-CLI-002
 #[test]
 fn chat_headless_has_help_flag() {
     Command::cargo_bin("aegis")
@@ -134,7 +134,7 @@ fn chat_headless_has_help_flag() {
         .stdout(predicate::str::contains("--headless"));
 }
 
-// @req REQ-TUI-013
+// rtmx:req REQ-TUI-013
 #[test]
 fn chat_no_tui_flag_appears_in_help() {
     Command::cargo_bin("aegis")
@@ -146,7 +146,7 @@ fn chat_no_tui_flag_appears_in_help() {
         .stdout(predicate::str::contains("--no-tui"));
 }
 
-// @req REQ-TUI-013
+// rtmx:req REQ-TUI-013
 #[test]
 fn chat_no_tui_without_config_errors_gracefully() {
     // --no-tui without a config should produce a config error, not a crash.
@@ -161,7 +161,7 @@ fn chat_no_tui_without_config_errors_gracefully() {
         .stderr(predicate::str::contains("No config found"));
 }
 
-// @req REQ-BUILD-007
+// rtmx:req REQ-BUILD-007
 #[test]
 fn release_profile_binary_compiles() {
     // Verify the aegis binary can be located by assert_cmd, confirming the

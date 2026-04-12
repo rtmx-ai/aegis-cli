@@ -296,7 +296,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    // @req REQ-ONBOARD-002
+    // rtmx:req REQ-ONBOARD-002
     #[test]
     fn config_saves_and_loads_roundtrip() {
         let tmp = TempDir::new().unwrap();
@@ -311,7 +311,7 @@ mod tests {
         assert_eq!(loaded.backend.model, "llama3");
     }
 
-    // @req REQ-ONBOARD-002
+    // rtmx:req REQ-ONBOARD-002
     #[cfg(unix)]
     #[test]
     fn config_file_has_0600_permissions() {
@@ -331,7 +331,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-002
+    // rtmx:req REQ-ONBOARD-002
     #[test]
     fn config_contains_no_secrets() {
         let config = AegisConfig::local("http://localhost:11434/v1", "llama3");
@@ -350,7 +350,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-003
+    // rtmx:req REQ-ONBOARD-003
     #[test]
     fn local_config_sets_correct_mode() {
         let config = AegisConfig::local("http://localhost:11434/v1", "llama3");
@@ -359,7 +359,7 @@ mod tests {
         assert!(config.backend.region.is_none());
     }
 
-    // @req REQ-ONBOARD-009
+    // rtmx:req REQ-ONBOARD-009
     #[test]
     fn validate_rejects_empty_endpoint() {
         let mut config = AegisConfig::local("http://localhost:11434/v1", "llama3");
@@ -367,7 +367,7 @@ mod tests {
         assert!(config.validate().is_err());
     }
 
-    // @req REQ-ONBOARD-009
+    // rtmx:req REQ-ONBOARD-009
     #[test]
     fn validate_rejects_empty_model() {
         let mut config = AegisConfig::local("http://localhost:11434/v1", "llama3");
@@ -375,21 +375,21 @@ mod tests {
         assert!(config.validate().is_err());
     }
 
-    // @req REQ-LLM-016
+    // rtmx:req REQ-LLM-016
     #[test]
     fn validate_rejects_non_loopback_http_in_local_mode() {
         let config = AegisConfig::local("http://remote-server:8080/v1", "llama3");
         assert!(config.validate().is_err());
     }
 
-    // @req REQ-LLM-016
+    // rtmx:req REQ-LLM-016
     #[test]
     fn validate_allows_loopback_http_in_local_mode() {
         let config = AegisConfig::local("http://localhost:11434/v1", "llama3");
         assert!(config.validate().is_ok());
     }
 
-    // @req REQ-ONBOARD-001
+    // rtmx:req REQ-ONBOARD-001
     #[test]
     fn config_creates_parent_directory() {
         let tmp = TempDir::new().unwrap();
@@ -400,7 +400,7 @@ mod tests {
         assert!(path.exists());
     }
 
-    // @req REQ-ONBOARD-008
+    // rtmx:req REQ-ONBOARD-008
     //
     // All env-override scenarios run in a single test to avoid
     // race conditions from parallel tests mutating process-wide
@@ -499,7 +499,7 @@ mod tests {
         clear_env();
     }
 
-    // @req REQ-ONBOARD-004
+    // rtmx:req REQ-ONBOARD-004
     #[test]
     fn merge_config_updates_mode_endpoint_model() {
         let existing = AegisConfig::local("http://localhost:11434/v1", "llama3");
@@ -521,7 +521,7 @@ mod tests {
         assert_eq!(merged.backend.endpoint, "http://localhost:8080/v1");
     }
 
-    // @req REQ-ONBOARD-004
+    // rtmx:req REQ-ONBOARD-004
     #[test]
     fn merge_config_preserves_existing_region() {
         let mut existing = AegisConfig::local("http://localhost:11434/v1", "llama3");
@@ -538,7 +538,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-004
+    // rtmx:req REQ-ONBOARD-004
     #[test]
     fn merge_config_preserves_existing_max_tokens() {
         let mut existing = AegisConfig::local("http://localhost:11434/v1", "llama3");
@@ -554,7 +554,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-004
+    // rtmx:req REQ-ONBOARD-004
     #[test]
     fn merge_config_preserves_infra_outputs() {
         use crate::config::toml_map::{InfraSection, PluginOutputs};
@@ -583,7 +583,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-004
+    // rtmx:req REQ-ONBOARD-004
     #[test]
     fn merge_config_preserves_version() {
         let mut existing = AegisConfig::local("http://localhost:11434/v1", "llama3");
@@ -599,7 +599,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-005
+    // rtmx:req REQ-ONBOARD-005
     #[test]
     fn preserves_audit_ledger_returns_true_for_existing_dir() {
         let tmp = TempDir::new().unwrap();
@@ -611,7 +611,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-005
+    // rtmx:req REQ-ONBOARD-005
     #[test]
     fn preserves_audit_ledger_returns_true_when_no_dir() {
         let tmp = TempDir::new().unwrap();
@@ -623,7 +623,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-005
+    // rtmx:req REQ-ONBOARD-005
     #[test]
     fn preserves_audit_ledger_returns_false_when_file_not_dir() {
         let tmp = TempDir::new().unwrap();
@@ -636,7 +636,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-001
+    // rtmx:req REQ-ONBOARD-001
     #[test]
     fn mode_serializes_kebab_case() {
         assert_eq!(

@@ -131,7 +131,7 @@ mod tests {
     use super::*;
     use futures::StreamExt;
 
-    // @req REQ-TEST-022
+    // rtmx:req REQ-TEST-022
     #[tokio::test]
     async fn test_wiremock_llm_provides_endpoint() {
         let llm = WireMockLlm::new().await;
@@ -143,7 +143,7 @@ mod tests {
         assert!(url.port().is_some());
     }
 
-    // @req REQ-TEST-022
+    // rtmx:req REQ-TEST-022
     #[tokio::test]
     async fn test_wiremock_llm_streams_text() {
         let llm = WireMockLlm::new()
@@ -189,7 +189,7 @@ mod tests {
         assert!(saw_done, "stream must end with [DONE]");
     }
 
-    // @req REQ-TEST-022
+    // rtmx:req REQ-TEST-022
     #[tokio::test]
     async fn test_wiremock_llm_responds_with_tool_call() {
         let llm = WireMockLlm::new()

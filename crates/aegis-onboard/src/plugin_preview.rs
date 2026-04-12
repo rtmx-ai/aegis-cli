@@ -179,14 +179,14 @@ pub fn format_preview_for_display(preview: &PluginPreview) -> String {
 mod tests {
     use super::*;
 
-    // @req REQ-ONBOARD-026
+    // rtmx:req REQ-ONBOARD-026
     #[test]
     fn parse_empty_output() {
         let resources = parse_preview_output("");
         assert!(resources.is_empty());
     }
 
-    // @req REQ-ONBOARD-026
+    // rtmx:req REQ-ONBOARD-026
     #[test]
     fn parse_progress_events() {
         let ndjson = r#"{"type":"progress","resource":"gcp:kms:KeyRing","name":"aegis-keyring","operation":"create","status":"pending"}
@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(resources[1], "create gcp:compute:Network (aegis-vpc)");
     }
 
-    // @req REQ-ONBOARD-026
+    // rtmx:req REQ-ONBOARD-026
     #[test]
     fn parse_progress_without_name() {
         let ndjson = r#"{"type":"progress","resource":"gcp:kms:KeyRing","operation":"create","status":"pending"}"#;
@@ -206,7 +206,7 @@ mod tests {
         assert_eq!(resources[0], "create gcp:kms:KeyRing");
     }
 
-    // @req REQ-ONBOARD-026
+    // rtmx:req REQ-ONBOARD-026
     #[test]
     fn parse_diagnostic_events() {
         let ndjson =
@@ -216,7 +216,7 @@ mod tests {
         assert_eq!(resources[0], "[info] Entering state: PREFLIGHT");
     }
 
-    // @req REQ-ONBOARD-026
+    // rtmx:req REQ-ONBOARD-026
     #[test]
     fn parse_mixed_events() {
         let ndjson = r#"{"type":"diagnostic","severity":"info","message":"Starting preview"}
@@ -229,7 +229,7 @@ not json
         assert_eq!(resources.len(), 3);
     }
 
-    // @req REQ-ONBOARD-026
+    // rtmx:req REQ-ONBOARD-026
     #[test]
     fn parse_skips_malformed_json() {
         let ndjson = "not json\n{invalid}\n";
@@ -237,7 +237,7 @@ not json
         assert!(resources.is_empty());
     }
 
-    // @req REQ-ONBOARD-026
+    // rtmx:req REQ-ONBOARD-026
     #[test]
     fn build_preview_from_ndjson() {
         let ndjson = r#"{"type":"progress","resource":"gcp:kms:KeyRing","name":"aegis-keyring","operation":"create","status":"pending"}"#;
@@ -247,7 +247,7 @@ not json
         assert!(preview.requires_confirmation);
     }
 
-    // @req REQ-ONBOARD-026
+    // rtmx:req REQ-ONBOARD-026
     #[test]
     fn format_preview_with_resources() {
         let preview = PluginPreview {
@@ -265,7 +265,7 @@ not json
         assert!(output.contains("Confirmation required"));
     }
 
-    // @req REQ-ONBOARD-026
+    // rtmx:req REQ-ONBOARD-026
     #[test]
     fn format_preview_empty_resources() {
         let preview = PluginPreview {
@@ -277,7 +277,7 @@ not json
         assert!(output.contains("no resources detected"));
     }
 
-    // @req REQ-ONBOARD-026
+    // rtmx:req REQ-ONBOARD-026
     #[test]
     fn format_preview_no_confirmation() {
         let preview = PluginPreview {
@@ -292,7 +292,7 @@ not json
         );
     }
 
-    // @req REQ-ONBOARD-026
+    // rtmx:req REQ-ONBOARD-026
     #[test]
     fn preview_error_display() {
         let err = PreviewError::PluginNotFound("missing.bin".into());
@@ -305,7 +305,7 @@ not json
         assert_eq!(format!("{err}"), "preview parse error: bad json");
     }
 
-    // @req REQ-ONBOARD-026
+    // rtmx:req REQ-ONBOARD-026
     #[tokio::test]
     async fn get_plugin_preview_rejects_missing_binary() {
         let result = get_plugin_preview(Path::new("/nonexistent/plugin")).await;

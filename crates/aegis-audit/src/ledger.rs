@@ -326,7 +326,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AUDIT-001
+    // rtmx:req REQ-AUDIT-001
     #[tokio::test]
     async fn ledger_creates_log_directory() {
         let tmp = TempDir::new().unwrap();
@@ -337,7 +337,7 @@ mod tests {
         assert!(log_dir.exists());
     }
 
-    // @req REQ-AUDIT-001
+    // rtmx:req REQ-AUDIT-001
     #[tokio::test]
     async fn ledger_appends_jsonl_entries() {
         let tmp = TempDir::new().unwrap();
@@ -352,7 +352,7 @@ mod tests {
         assert_eq!(entries.len(), 2);
     }
 
-    // @req REQ-AUDIT-001
+    // rtmx:req REQ-AUDIT-001
     #[tokio::test]
     async fn each_entry_is_valid_json() {
         let tmp = TempDir::new().unwrap();
@@ -373,7 +373,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AUDIT-001
+    // rtmx:req REQ-AUDIT-001
     #[tokio::test]
     async fn ledger_does_not_contain_file_contents() {
         let tmp = TempDir::new().unwrap();
@@ -396,7 +396,7 @@ mod tests {
         );
     }
 
-    // @req REQ-AUDIT-006
+    // rtmx:req REQ-AUDIT-006
     #[tokio::test]
     async fn ledger_entries_contain_user_identity() {
         let tmp = TempDir::new().unwrap();
@@ -415,7 +415,7 @@ mod tests {
         assert!(!hostname.is_empty(), "hostname should not be empty");
     }
 
-    // @req REQ-AUDIT-001
+    // rtmx:req REQ-AUDIT-001
     #[tokio::test]
     async fn ledger_file_named_by_date() {
         let tmp = TempDir::new().unwrap();
@@ -432,7 +432,7 @@ mod tests {
         );
     }
 
-    // @req REQ-AUDIT-001
+    // rtmx:req REQ-AUDIT-001
     #[tokio::test]
     async fn ledger_is_append_only() {
         let tmp = TempDir::new().unwrap();
@@ -455,14 +455,14 @@ mod tests {
         assert_eq!(entries.len(), 2, "Ledger should append, not overwrite");
     }
 
-    // @req REQ-AUDIT-004
+    // rtmx:req REQ-AUDIT-004
     #[tokio::test]
     async fn ledger_has_max_file_size_constant() {
         // Verify the rotation threshold is 10 MB
         assert_eq!(super::MAX_FILE_SIZE, 10 * 1024 * 1024);
     }
 
-    // @req REQ-AUDIT-004
+    // rtmx:req REQ-AUDIT-004
     #[tokio::test]
     async fn new_ledger_creates_dated_file() {
         let tmp = TempDir::new().unwrap();
@@ -479,7 +479,7 @@ mod tests {
         assert_eq!(files.len(), 1, "Should have exactly one log file");
     }
 
-    // @req REQ-AUDIT-007
+    // rtmx:req REQ-AUDIT-007
     #[tokio::test]
     async fn concurrent_threads_produce_valid_jsonl() {
         let tmp = TempDir::new().unwrap();
@@ -517,7 +517,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AUDIT-007
+    // rtmx:req REQ-AUDIT-007
     #[tokio::test]
     async fn concurrent_writes_no_partial_lines() {
         let tmp = TempDir::new().unwrap();
@@ -550,7 +550,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AUDIT-007
+    // rtmx:req REQ-AUDIT-007
     #[tokio::test]
     async fn file_lock_does_not_deadlock() {
         let tmp = TempDir::new().unwrap();
@@ -577,7 +577,7 @@ mod tests {
         assert!(result.is_ok(), "Concurrent locking should not deadlock");
     }
 
-    // @req REQ-AUDIT-007
+    // rtmx:req REQ-AUDIT-007
     #[tokio::test]
     async fn single_thread_writes_still_work() {
         let tmp = TempDir::new().unwrap();
@@ -619,7 +619,7 @@ mod tests {
         .unwrap()
     }
 
-    // @req REQ-AUDIT-008
+    // rtmx:req REQ-AUDIT-008
     #[test]
     fn recover_clean_file_returns_zero_quarantined() {
         let tmp = TempDir::new().unwrap();
@@ -634,7 +634,7 @@ mod tests {
         assert!(report.quarantine_path.is_none());
     }
 
-    // @req REQ-AUDIT-008
+    // rtmx:req REQ-AUDIT-008
     #[test]
     fn recover_truncated_last_line_quarantines_it() {
         let tmp = TempDir::new().unwrap();
@@ -650,7 +650,7 @@ mod tests {
         assert!(report.quarantine_path.is_some());
     }
 
-    // @req REQ-AUDIT-008
+    // rtmx:req REQ-AUDIT-008
     #[test]
     fn recover_preserves_all_valid_entries() {
         let tmp = TempDir::new().unwrap();
@@ -669,7 +669,7 @@ mod tests {
         assert_eq!(lines.len(), 3);
     }
 
-    // @req REQ-AUDIT-008
+    // rtmx:req REQ-AUDIT-008
     #[test]
     fn quarantine_file_contains_corrupt_entries() {
         let tmp = TempDir::new().unwrap();
@@ -692,7 +692,7 @@ mod tests {
         );
     }
 
-    // @req REQ-AUDIT-008
+    // rtmx:req REQ-AUDIT-008
     #[test]
     fn ledger_repaired_entry_appended_after_recovery() {
         let tmp = TempDir::new().unwrap();
@@ -711,7 +711,7 @@ mod tests {
         assert_eq!(last["quarantined_entries"], 1);
     }
 
-    // @req REQ-AUDIT-008
+    // rtmx:req REQ-AUDIT-008
     #[test]
     fn recover_empty_file_returns_zero_quarantined() {
         let tmp = TempDir::new().unwrap();
@@ -725,7 +725,7 @@ mod tests {
         assert!(report.quarantine_path.is_none());
     }
 
-    // @req REQ-AUDIT-008
+    // rtmx:req REQ-AUDIT-008
     #[test]
     fn recover_multiple_corrupt_lines_all_quarantined() {
         let tmp = TempDir::new().unwrap();

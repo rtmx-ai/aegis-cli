@@ -111,7 +111,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    // @req REQ-ONBOARD-025
+    // rtmx:req REQ-ONBOARD-025
     #[test]
     fn adc_not_found_when_nothing_exists() {
         let tmp = TempDir::new().unwrap();
@@ -125,7 +125,7 @@ mod tests {
         assert!(!well_known.exists());
     }
 
-    // @req REQ-ONBOARD-025
+    // rtmx:req REQ-ONBOARD-025
     #[test]
     fn adc_found_at_well_known_path() {
         let tmp = TempDir::new().unwrap();
@@ -143,7 +143,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-025
+    // rtmx:req REQ-ONBOARD-025
     #[test]
     fn adc_status_is_available() {
         assert!(AdcStatus::Valid(PathBuf::from("/tmp/creds.json")).is_available());
@@ -151,7 +151,7 @@ mod tests {
         assert!(!AdcStatus::NotFound.is_available());
     }
 
-    // @req REQ-ONBOARD-025
+    // rtmx:req REQ-ONBOARD-025
     #[test]
     fn adc_not_found_message_is_helpful() {
         let msg = adc_not_found_message();
@@ -163,7 +163,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-025
+    // rtmx:req REQ-ONBOARD-025
     #[test]
     fn adc_env_var_scenarios() {
         // This test manipulates process env vars so must run serially.
@@ -219,7 +219,7 @@ mod tests {
         clear();
     }
 
-    // @req REQ-ONBOARD-025
+    // rtmx:req REQ-ONBOARD-025
     #[test]
     fn validate_with_home_prefers_env_var_over_well_known() {
         // If both env var and well-known exist, env var should win.

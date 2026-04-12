@@ -18,7 +18,7 @@ mod tests {
     use aegis_domain::types::FilePath;
     use rstest::*;
 
-    // @req REQ-HITL-001
+    // rtmx:req REQ-HITL-001
     #[rstest]
     #[case(ToolCall::WriteFile { path: FilePath::new_unchecked("src/main.rs"), content: String::new() }, true)]
     #[case(ToolCall::ReadFile { path: FilePath::new_unchecked("src/main.rs") }, false)]
@@ -30,7 +30,7 @@ mod tests {
         assert_eq!(gate.requires_approval(&call), requires);
     }
 
-    // @req REQ-HITL-001
+    // rtmx:req REQ-HITL-001
     #[test]
     fn all_mutating_tools_require_approval() {
         let gate = HitlGate;

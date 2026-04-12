@@ -85,7 +85,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    // @req REQ-ONBOARD-017
+    // rtmx:req REQ-ONBOARD-017
     #[test]
     fn read_gateway_conf_ignores_comments_and_blanks() {
         let tmp = TempDir::new().unwrap();
@@ -100,14 +100,14 @@ mod tests {
         assert_eq!(result, Some("https://gw.example.com".to_string()));
     }
 
-    // @req REQ-ONBOARD-017
+    // rtmx:req REQ-ONBOARD-017
     #[test]
     fn read_gateway_conf_returns_none_for_missing_file() {
         let result = read_gateway_conf(Path::new("/nonexistent/gateway.conf"));
         assert!(result.is_none());
     }
 
-    // @req REQ-ONBOARD-017
+    // rtmx:req REQ-ONBOARD-017
     #[test]
     fn read_gateway_conf_returns_none_for_empty_value() {
         let tmp = TempDir::new().unwrap();
@@ -118,7 +118,7 @@ mod tests {
         assert!(result.is_none(), "Empty gateway_url value should be None");
     }
 
-    // @req REQ-ONBOARD-017
+    // rtmx:req REQ-ONBOARD-017
     //
     // All scenarios that touch AEGIS_GATEWAY_URL run in a single test
     // to avoid race conditions from parallel tests mutating

@@ -127,7 +127,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    // @req REQ-ONBOARD-020
+    // rtmx:req REQ-ONBOARD-020
     #[test]
     fn should_show_wizard_true_when_no_config() {
         let tmp = TempDir::new().unwrap();
@@ -137,7 +137,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-020
+    // rtmx:req REQ-ONBOARD-020
     #[test]
     fn should_show_wizard_false_when_config_exists() {
         let tmp = TempDir::new().unwrap();
@@ -148,7 +148,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-020
+    // rtmx:req REQ-ONBOARD-020
     #[test]
     fn should_show_wizard_delegates_to_is_first_run() {
         let tmp = TempDir::new().unwrap();
@@ -159,7 +159,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-001
+    // rtmx:req REQ-ONBOARD-001
     #[test]
     fn init_state_machine_states_are_ordered() {
         let states = [
@@ -173,7 +173,7 @@ mod tests {
         assert_eq!(states.len(), 6);
     }
 
-    // @req REQ-ONBOARD-003
+    // rtmx:req REQ-ONBOARD-003
     #[test]
     fn init_local_creates_valid_config() {
         let tmp = TempDir::new().unwrap();
@@ -192,7 +192,7 @@ mod tests {
         assert_eq!(config.backend.endpoint, "http://localhost:11434/v1");
     }
 
-    // @req REQ-ONBOARD-003
+    // rtmx:req REQ-ONBOARD-003
     #[test]
     fn init_local_makes_no_network_calls() {
         // Local init should succeed even with no network
@@ -205,7 +205,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // @req REQ-ONBOARD-001
+    // rtmx:req REQ-ONBOARD-001
     #[test]
     fn init_cloud_modes_not_yet_implemented() {
         let tmp = TempDir::new().unwrap();
@@ -224,7 +224,7 @@ mod tests {
         assert!(err.contains("not yet implemented"));
     }
 
-    // @req REQ-ONBOARD-003
+    // rtmx:req REQ-ONBOARD-003
     #[test]
     fn init_local_default_inputs() {
         let inputs = InitInputs::local();
@@ -234,7 +234,7 @@ mod tests {
         assert!(inputs.region.is_none());
     }
 
-    // @req REQ-ONBOARD-001
+    // rtmx:req REQ-ONBOARD-001
     #[test]
     fn init_detects_existing_config() {
         let tmp = TempDir::new().unwrap();
@@ -250,7 +250,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // @req REQ-ONBOARD-004
+    // rtmx:req REQ-ONBOARD-004
     #[test]
     fn reinit_preserves_infra_outputs() {
         use crate::config::toml_map::{InfraSection, PluginOutputs};
@@ -298,7 +298,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-004
+    // rtmx:req REQ-ONBOARD-004
     #[test]
     fn reinit_updates_changed_fields() {
         let tmp = TempDir::new().unwrap();
@@ -325,7 +325,7 @@ mod tests {
         assert_eq!(updated.backend.endpoint, "http://localhost:8080/v1");
     }
 
-    // @req REQ-ONBOARD-005
+    // rtmx:req REQ-ONBOARD-005
     #[test]
     fn reinit_preserves_audit_ledger_directory() {
         let tmp = TempDir::new().unwrap();
@@ -356,7 +356,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-005
+    // rtmx:req REQ-ONBOARD-005
     #[test]
     fn reinit_aborts_if_audit_ledger_corrupted() {
         let tmp = TempDir::new().unwrap();

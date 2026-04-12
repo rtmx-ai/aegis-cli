@@ -159,7 +159,7 @@ mod tests {
         )
     }
 
-    /// @req REQ-AGENT-030
+    /// rtmx:req REQ-AGENT-030
     #[test]
     fn test_session_snapshot_roundtrip() {
         let snap = sample_snapshot();
@@ -173,7 +173,7 @@ mod tests {
         assert_eq!(back.model_name, "claude-opus-4-6");
     }
 
-    /// @req REQ-AGENT-031
+    /// rtmx:req REQ-AGENT-031
     #[test]
     fn test_session_save_creates_file() {
         let dir = tempdir().expect("tempdir");
@@ -187,7 +187,7 @@ mod tests {
         assert!(!tmp.exists(), "tmp file should be renamed away");
     }
 
-    /// @req REQ-AGENT-031
+    /// rtmx:req REQ-AGENT-031
     #[cfg(unix)]
     #[test]
     fn test_session_save_sets_dir_permissions() {
@@ -200,7 +200,7 @@ mod tests {
         assert_eq!(mode, 0o700, "session dir must be 0700");
     }
 
-    /// @req REQ-AGENT-031
+    /// rtmx:req REQ-AGENT-031
     #[cfg(unix)]
     #[test]
     fn test_session_save_updates_current_symlink() {
@@ -213,7 +213,7 @@ mod tests {
         assert_eq!(target, PathBuf::from("sess-abc.json"));
     }
 
-    /// @req REQ-AGENT-032
+    /// rtmx:req REQ-AGENT-032
     #[test]
     fn test_session_load_restores_state() {
         let dir = tempdir().expect("tempdir");
@@ -223,7 +223,7 @@ mod tests {
         assert_eq!(loaded, snap);
     }
 
-    /// @req REQ-AGENT-032
+    /// rtmx:req REQ-AGENT-032
     #[test]
     fn test_session_load_returns_none_for_missing_file() {
         let dir = tempdir().expect("tempdir");
@@ -231,7 +231,7 @@ mod tests {
         assert!(load_session(&missing).is_none());
     }
 
-    /// @req REQ-AGENT-032
+    /// rtmx:req REQ-AGENT-032
     #[test]
     fn test_session_load_returns_none_for_corrupt_file() {
         let dir = tempdir().expect("tempdir");
@@ -240,7 +240,7 @@ mod tests {
         assert!(load_session(&path).is_none());
     }
 
-    /// @req REQ-AGENT-032
+    /// rtmx:req REQ-AGENT-032
     #[test]
     fn test_session_load_rejects_unknown_schema_version() {
         let dir = tempdir().expect("tempdir");
@@ -250,7 +250,7 @@ mod tests {
         assert!(load_session(&path).is_none());
     }
 
-    /// @req REQ-AGENT-028
+    /// rtmx:req REQ-AGENT-028
     /// Parent requirement: end-to-end save then load roundtrip on disk.
     #[test]
     fn test_session_save_and_load() {

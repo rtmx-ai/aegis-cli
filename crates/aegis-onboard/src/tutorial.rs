@@ -146,7 +146,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    // @req REQ-ONBOARD-011
+    // rtmx:req REQ-ONBOARD-011
     #[test]
     fn is_first_run_returns_true_when_no_config() {
         let tmp = TempDir::new().unwrap();
@@ -156,7 +156,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-011
+    // rtmx:req REQ-ONBOARD-011
     #[test]
     fn is_first_run_returns_false_when_config_exists() {
         let tmp = TempDir::new().unwrap();
@@ -167,14 +167,14 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-011
+    // rtmx:req REQ-ONBOARD-011
     #[test]
     fn tutorial_steps_returns_three_steps() {
         let steps = run_tutorial_steps();
         assert_eq!(steps.len(), 3, "Tutorial should have exactly 3 steps");
     }
 
-    // @req REQ-ONBOARD-011
+    // rtmx:req REQ-ONBOARD-011
     #[test]
     fn tutorial_steps_have_correct_ids() {
         let steps = run_tutorial_steps();
@@ -183,7 +183,7 @@ mod tests {
         assert_eq!(steps[2].id, "connectivity_test");
     }
 
-    // @req REQ-ONBOARD-011
+    // rtmx:req REQ-ONBOARD-011
     #[test]
     fn tutorial_state_advances_through_steps() {
         let mut state = TutorialState::new();
@@ -200,7 +200,7 @@ mod tests {
         assert_eq!(state.current_step, 2);
     }
 
-    // @req REQ-ONBOARD-011
+    // rtmx:req REQ-ONBOARD-011
     #[test]
     fn tutorial_state_current_returns_correct_step() {
         let mut state = TutorialState::new();
@@ -211,7 +211,7 @@ mod tests {
         assert_eq!(state.current().unwrap().id, "connectivity_test");
     }
 
-    // @req REQ-ONBOARD-011
+    // rtmx:req REQ-ONBOARD-011
     #[test]
     fn mark_tutorial_complete_writes_marker() {
         let tmp = TempDir::new().unwrap();
@@ -227,7 +227,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-011
+    // rtmx:req REQ-ONBOARD-011
     #[test]
     fn mark_tutorial_complete_creates_parent_dirs() {
         let tmp = TempDir::new().unwrap();
@@ -236,7 +236,7 @@ mod tests {
         assert!(is_tutorial_complete(&nested));
     }
 
-    // @req REQ-ONBOARD-011
+    // rtmx:req REQ-ONBOARD-011
     #[test]
     fn mark_tutorial_complete_is_idempotent() {
         let tmp = TempDir::new().unwrap();
@@ -245,7 +245,7 @@ mod tests {
         assert!(is_tutorial_complete(tmp.path()));
     }
 
-    // @req REQ-ONBOARD-011
+    // rtmx:req REQ-ONBOARD-011
     #[test]
     fn welcome_message_is_non_empty() {
         let msg = welcome_message();
@@ -256,7 +256,7 @@ mod tests {
         );
     }
 
-    // @req REQ-ONBOARD-011
+    // rtmx:req REQ-ONBOARD-011
     #[test]
     fn tutorial_state_default_matches_new() {
         let from_new = TutorialState::new();

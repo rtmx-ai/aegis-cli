@@ -288,7 +288,7 @@ fn parse_inline(text: &str) -> Vec<Span<'static>> {
 mod tests {
     use super::*;
 
-    // @req REQ-TUI-002
+    // rtmx:req REQ-TUI-002
     #[test]
     fn plain_text_passes_through() {
         let lines = render_markdown("Hello world");
@@ -298,7 +298,7 @@ mod tests {
         assert_eq!(lines[0].spans[0].style, Style::default());
     }
 
-    // @req REQ-TUI-002
+    // rtmx:req REQ-TUI-002
     #[test]
     fn bold_text_rendered_bold() {
         let lines = render_markdown("This is **bold** text");
@@ -315,7 +315,7 @@ mod tests {
         assert_eq!(lines[0].spans[2].content, " text");
     }
 
-    // @req REQ-TUI-002
+    // rtmx:req REQ-TUI-002
     #[test]
     fn code_span_rendered_with_gray_background() {
         let lines = render_markdown("Run `cargo test` now");
@@ -330,7 +330,7 @@ mod tests {
         assert_eq!(lines[0].spans[2].content, " now");
     }
 
-    // @req REQ-TUI-002
+    // rtmx:req REQ-TUI-002
     #[test]
     fn heading_rendered_bold_underline() {
         let lines = render_markdown("# My Heading");
@@ -342,7 +342,7 @@ mod tests {
         assert!(style.add_modifier.contains(Modifier::UNDERLINED));
     }
 
-    // @req REQ-TUI-002
+    // rtmx:req REQ-TUI-002
     #[test]
     fn multiline_text_produces_multiple_lines() {
         let lines = render_markdown("Line one\nLine two\nLine three");
@@ -352,7 +352,7 @@ mod tests {
         assert_eq!(lines[2].spans[0].content, "Line three");
     }
 
-    // @req REQ-TUI-002
+    // rtmx:req REQ-TUI-002
     #[test]
     fn mixed_bold_and_code() {
         let lines = render_markdown("Use **bold** and `code` together");
@@ -375,7 +375,7 @@ mod tests {
         assert_eq!(lines[0].spans[4].content, " together");
     }
 
-    // @req REQ-TUI-002
+    // rtmx:req REQ-TUI-002
     #[test]
     fn unclosed_bold_treated_as_plain() {
         let lines = render_markdown("This is **unclosed");
@@ -385,7 +385,7 @@ mod tests {
         assert_eq!(full_text, "This is **unclosed");
     }
 
-    // @req REQ-TUI-002
+    // rtmx:req REQ-TUI-002
     #[test]
     fn unclosed_code_treated_as_plain() {
         let lines = render_markdown("Run `unclosed");
@@ -394,7 +394,7 @@ mod tests {
         assert_eq!(full_text, "Run `unclosed");
     }
 
-    // @req REQ-TUI-002
+    // rtmx:req REQ-TUI-002
     #[test]
     fn empty_input_produces_single_empty_line() {
         let lines = render_markdown("");
@@ -402,7 +402,7 @@ mod tests {
         assert_eq!(lines[0].spans[0].content, "");
     }
 
-    // @req REQ-TUI-002
+    // rtmx:req REQ-TUI-002
     #[test]
     fn heading_among_other_lines() {
         let lines = render_markdown("# Title\nSome body text");
@@ -418,7 +418,7 @@ mod tests {
 
     // ---- REQ-TUI-041: Fenced code block detection ----
 
-    // @req REQ-TUI-041
+    // rtmx:req REQ-TUI-041
     #[test]
     fn fenced_code_block_no_lang_renders_with_dark_bg() {
         let input = "before\n```\nhello world\n```\nafter";
@@ -433,7 +433,7 @@ mod tests {
         assert_eq!(lines[2].spans[0].content, "after");
     }
 
-    // @req REQ-TUI-041
+    // rtmx:req REQ-TUI-041
     #[test]
     fn fenced_code_block_preserves_whitespace() {
         let input = "```\n  indented\n    more indented\n```";
@@ -443,7 +443,7 @@ mod tests {
         assert_eq!(lines[1].spans[0].content, "    more indented");
     }
 
-    // @req REQ-TUI-041
+    // rtmx:req REQ-TUI-041
     #[test]
     fn fenced_code_block_with_lang_tag() {
         let input = "```python\nprint('hi')\n```";
@@ -454,7 +454,7 @@ mod tests {
         assert_eq!(lines[0].spans[0].content, "python");
     }
 
-    // @req REQ-TUI-041
+    // rtmx:req REQ-TUI-041
     #[test]
     fn unclosed_fenced_block_rendered_as_plain_text() {
         let input = "before\n```rust\nfn main() {}\nno closing fence";
@@ -467,7 +467,7 @@ mod tests {
         assert!(fence_text.contains("```rust") || fence_text.contains("rust"));
     }
 
-    // @req REQ-TUI-041
+    // rtmx:req REQ-TUI-041
     #[test]
     fn multiple_fenced_blocks() {
         let input = "```\nblock one\n```\ntext between\n```\nblock two\n```";
@@ -479,7 +479,7 @@ mod tests {
         assert_eq!(lines[2].spans[0].style.bg, Some(CODE_BLOCK_BG));
     }
 
-    // @req REQ-TUI-041
+    // rtmx:req REQ-TUI-041
     #[test]
     fn inline_backticks_inside_fenced_block_preserved() {
         let input = "```\nlet x = `backtick`;\n```";
@@ -490,7 +490,7 @@ mod tests {
         assert!(full_text.contains("`backtick`"));
     }
 
-    // @req REQ-TUI-041
+    // rtmx:req REQ-TUI-041
     #[test]
     fn empty_fenced_block() {
         let input = "```\n```";
@@ -499,7 +499,7 @@ mod tests {
         assert_eq!(lines.len(), 0);
     }
 
-    // @req REQ-TUI-041
+    // rtmx:req REQ-TUI-041
     #[test]
     fn fenced_block_all_lines_have_dark_bg() {
         let input = "```\nline1\nline2\nline3\n```";
@@ -516,7 +516,7 @@ mod tests {
 
     // ---- REQ-TUI-042: Syntax highlighting ----
 
-    // @req REQ-TUI-042
+    // rtmx:req REQ-TUI-042
     #[test]
     fn rust_code_block_has_colored_spans() {
         let input = "```rust\nfn main() {\n    println!(\"hello\");\n}\n```";
@@ -535,7 +535,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-042
+    // rtmx:req REQ-TUI-042
     #[test]
     fn python_code_block_has_colored_spans() {
         let input = "```python\ndef hello():\n    print('world')\n```";
@@ -552,7 +552,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-042
+    // rtmx:req REQ-TUI-042
     #[test]
     fn unknown_language_falls_back_to_plain_with_bg() {
         let input = "```unknownlang\nsome code here\n```";
@@ -565,7 +565,7 @@ mod tests {
         assert_eq!(code_line.spans[0].style.bg, Some(CODE_BLOCK_BG));
     }
 
-    // @req REQ-TUI-042
+    // rtmx:req REQ-TUI-042
     #[test]
     fn all_highlighted_spans_have_code_block_bg() {
         let input = "```rust\nlet x = 42;\n```";
@@ -581,7 +581,7 @@ mod tests {
         }
     }
 
-    // @req REQ-TUI-042
+    // rtmx:req REQ-TUI-042
     #[test]
     fn javascript_syntax_highlighting() {
         let input = "```javascript\nconst x = 'hello';\n```";
@@ -595,7 +595,7 @@ mod tests {
         assert!(has_colored, "JavaScript code should be syntax highlighted");
     }
 
-    // @req REQ-TUI-042
+    // rtmx:req REQ-TUI-042
     #[test]
     fn bash_syntax_highlighting() {
         let input = "```bash\necho \"hello world\"\n```";
@@ -609,7 +609,7 @@ mod tests {
         assert!(has_colored, "Bash code should be syntax highlighted");
     }
 
-    // @req REQ-TUI-042
+    // rtmx:req REQ-TUI-042
     #[test]
     fn go_syntax_highlighting() {
         let input = "```go\nfunc main() {\n    fmt.Println(\"hello\")\n}\n```";
@@ -625,7 +625,7 @@ mod tests {
 
     // ---- REQ-TUI-043: Language label ----
 
-    // @req REQ-TUI-043
+    // rtmx:req REQ-TUI-043
     #[test]
     fn language_label_displayed_for_tagged_blocks() {
         let input = "```rust\nlet x = 1;\n```";
@@ -636,7 +636,7 @@ mod tests {
         assert_eq!(lines[0].spans[0].style, LANG_LABEL_STYLE);
     }
 
-    // @req REQ-TUI-043
+    // rtmx:req REQ-TUI-043
     #[test]
     fn no_language_label_for_untagged_blocks() {
         let input = "```\nsome code\n```";
@@ -648,7 +648,7 @@ mod tests {
         assert_eq!(full, "some code");
     }
 
-    // @req REQ-TUI-043
+    // rtmx:req REQ-TUI-043
     #[test]
     fn language_label_is_lowercased() {
         let input = "```Python\npass\n```";
@@ -659,19 +659,19 @@ mod tests {
 
     // ---- parse_fence_open unit tests ----
 
-    // @req REQ-TUI-041
+    // rtmx:req REQ-TUI-041
     #[test]
     fn parse_fence_open_bare() {
         assert_eq!(parse_fence_open("```"), Some(None));
     }
 
-    // @req REQ-TUI-041
+    // rtmx:req REQ-TUI-041
     #[test]
     fn parse_fence_open_with_lang() {
         assert_eq!(parse_fence_open("```rust"), Some(Some("rust".to_string())));
     }
 
-    // @req REQ-TUI-041
+    // rtmx:req REQ-TUI-041
     #[test]
     fn parse_fence_open_with_lang_trailing_space() {
         assert_eq!(
@@ -680,25 +680,25 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-041
+    // rtmx:req REQ-TUI-041
     #[test]
     fn parse_fence_open_not_a_fence() {
         assert_eq!(parse_fence_open("hello"), None);
     }
 
-    // @req REQ-TUI-041
+    // rtmx:req REQ-TUI-041
     #[test]
     fn parse_fence_open_cpp_language() {
         assert_eq!(parse_fence_open("```c++"), Some(Some("c++".to_string())));
     }
 
-    // @req REQ-TUI-041
+    // rtmx:req REQ-TUI-041
     #[test]
     fn parse_fence_open_csharp_language() {
         assert_eq!(parse_fence_open("```c#"), Some(Some("c#".to_string())));
     }
 
-    // @req REQ-TUI-042
+    // rtmx:req REQ-TUI-042
     #[test]
     fn resolve_syntax_returns_some_for_rust() {
         let ss = SyntaxSet::load_defaults_newlines();
@@ -708,7 +708,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-042
+    // rtmx:req REQ-TUI-042
     #[test]
     fn resolve_syntax_returns_some_for_python() {
         let ss = SyntaxSet::load_defaults_newlines();
@@ -718,7 +718,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-042
+    // rtmx:req REQ-TUI-042
     #[test]
     fn resolve_syntax_returns_none_for_unknown() {
         let ss = SyntaxSet::load_defaults_newlines();

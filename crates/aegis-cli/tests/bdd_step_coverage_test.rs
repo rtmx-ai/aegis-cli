@@ -1,6 +1,6 @@
 //! Validates BDD step definition coverage infrastructure (REQ-TEST-008).
 
-// @req REQ-TEST-008
+// rtmx:req REQ-TEST-008
 #[test]
 fn test_bdd_step_coverage_script_exists() {
     let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -12,7 +12,7 @@ fn test_bdd_step_coverage_script_exists() {
     assert!(script.exists(), "bdd-step-coverage.py must exist");
 }
 
-// @req REQ-TEST-008
+// rtmx:req REQ-TEST-008
 #[test]
 fn test_bdd_step_coverage_script_is_executable() {
     #[cfg(unix)]
@@ -32,7 +32,7 @@ fn test_bdd_step_coverage_script_is_executable() {
     }
 }
 
-// @req REQ-TEST-008
+// rtmx:req REQ-TEST-008
 #[test]
 fn test_cucumber_step_definitions_directory_exists() {
     let steps_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/steps");

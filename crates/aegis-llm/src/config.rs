@@ -90,7 +90,7 @@ impl ProviderConfig {
 mod tests {
     use super::*;
 
-    // @req REQ-LLM-001
+    // rtmx:req REQ-LLM-001
     #[test]
     fn provider_config_local_constructor() {
         let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
@@ -100,7 +100,7 @@ mod tests {
         assert_eq!(cfg.max_tokens, 4096);
     }
 
-    // @req REQ-LLM-001
+    // rtmx:req REQ-LLM-001
     #[test]
     fn provider_config_deserializes_from_yaml_style_json() {
         let json = r#"{
@@ -114,7 +114,7 @@ mod tests {
         assert_eq!(cfg.temperature, 0.0);
     }
 
-    // @req REQ-LLM-006
+    // rtmx:req REQ-LLM-006
     #[test]
     fn model_version_valid_vertex_with_version() {
         let cfg = ProviderConfig {
@@ -129,7 +129,7 @@ mod tests {
         assert!(cfg.validate_model_version().is_ok());
     }
 
-    // @req REQ-LLM-006
+    // rtmx:req REQ-LLM-006
     #[test]
     fn model_version_valid_bedrock_with_version() {
         let cfg = ProviderConfig {
@@ -144,7 +144,7 @@ mod tests {
         assert!(cfg.validate_model_version().is_ok());
     }
 
-    // @req REQ-LLM-006
+    // rtmx:req REQ-LLM-006
     #[test]
     fn model_version_valid_azure_with_version() {
         let cfg = ProviderConfig {
@@ -159,7 +159,7 @@ mod tests {
         assert!(cfg.validate_model_version().is_ok());
     }
 
-    // @req REQ-LLM-006
+    // rtmx:req REQ-LLM-006
     #[test]
     fn model_version_invalid_vertex_no_version() {
         let cfg = ProviderConfig {
@@ -174,7 +174,7 @@ mod tests {
         assert!(cfg.validate_model_version().is_err());
     }
 
-    // @req REQ-LLM-006
+    // rtmx:req REQ-LLM-006
     #[test]
     fn model_version_invalid_bedrock_no_version() {
         let cfg = ProviderConfig {
@@ -189,21 +189,21 @@ mod tests {
         assert!(cfg.validate_model_version().is_err());
     }
 
-    // @req REQ-LLM-006
+    // rtmx:req REQ-LLM-006
     #[test]
     fn model_version_local_allows_any_string() {
         let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
         assert!(cfg.validate_model_version().is_ok());
     }
 
-    // @req REQ-LLM-006
+    // rtmx:req REQ-LLM-006
     #[test]
     fn model_version_local_allows_unversioned() {
         let cfg = ProviderConfig::local("http://localhost:11434/v1", "my-custom-model");
         assert!(cfg.validate_model_version().is_ok());
     }
 
-    // @req REQ-LLM-006
+    // rtmx:req REQ-LLM-006
     #[test]
     fn model_version_invalid_no_hyphen() {
         let cfg = ProviderConfig {
@@ -218,7 +218,7 @@ mod tests {
         assert!(cfg.validate_model_version().is_err());
     }
 
-    // @req REQ-LLM-006
+    // rtmx:req REQ-LLM-006
     #[test]
     fn model_version_error_message_includes_model_name() {
         let cfg = ProviderConfig {
@@ -241,7 +241,7 @@ mod tests {
         );
     }
 
-    // @req REQ-LLM-010
+    // rtmx:req REQ-LLM-010
     #[test]
     fn default_timeouts_are_sensible() {
         let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
@@ -249,7 +249,7 @@ mod tests {
         assert_eq!(cfg.read_timeout_secs, 300);
     }
 
-    // @req REQ-LLM-010
+    // rtmx:req REQ-LLM-010
     #[test]
     fn timeouts_deserialize_from_json() {
         let json = r#"{
@@ -264,7 +264,7 @@ mod tests {
         assert_eq!(cfg.read_timeout_secs, 120);
     }
 
-    // @req REQ-LLM-010
+    // rtmx:req REQ-LLM-010
     #[test]
     fn timeouts_use_defaults_when_omitted() {
         let json = r#"{
@@ -277,7 +277,7 @@ mod tests {
         assert_eq!(cfg.read_timeout_secs, 300);
     }
 
-    // @req REQ-LLM-016
+    // rtmx:req REQ-LLM-016
     #[test]
     fn provider_kind_variants_serialize_lowercase() {
         assert_eq!(

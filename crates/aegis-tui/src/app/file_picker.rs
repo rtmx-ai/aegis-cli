@@ -508,7 +508,7 @@ mod tests {
 
     // --- resolve_path tests ---
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn resolve_path_bare_query_returns_cwd() {
         let cwd = Path::new("/projects/myapp");
@@ -517,7 +517,7 @@ mod tests {
         assert_eq!(filter, "");
     }
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn resolve_path_filter_only_no_slash() {
         let cwd = Path::new("/projects/myapp");
@@ -526,7 +526,7 @@ mod tests {
         assert_eq!(filter, "main");
     }
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn resolve_path_relative_dir() {
         let cwd = Path::new("/projects/myapp");
@@ -535,7 +535,7 @@ mod tests {
         assert_eq!(filter, "");
     }
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn resolve_path_relative_dir_with_filter() {
         let cwd = Path::new("/projects/myapp");
@@ -544,7 +544,7 @@ mod tests {
         assert_eq!(filter, "ma");
     }
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn resolve_path_absolute() {
         let cwd = Path::new("/projects/myapp");
@@ -553,7 +553,7 @@ mod tests {
         assert_eq!(filter, "");
     }
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn resolve_path_absolute_with_filter() {
         let cwd = Path::new("/projects/myapp");
@@ -562,7 +562,7 @@ mod tests {
         assert_eq!(filter, "foo");
     }
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn resolve_path_home() {
         let cwd = Path::new("/projects/myapp");
@@ -572,7 +572,7 @@ mod tests {
         assert_eq!(filter, "");
     }
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn resolve_path_home_subdir() {
         let cwd = Path::new("/projects/myapp");
@@ -582,7 +582,7 @@ mod tests {
         assert_eq!(filter, "");
     }
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn resolve_path_home_subdir_with_filter() {
         let cwd = Path::new("/projects/myapp");
@@ -594,7 +594,7 @@ mod tests {
 
     // --- FilePicker::open tests ---
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn open_scans_correct_directory() {
         let tmp = TempDir::new().unwrap();
@@ -609,7 +609,7 @@ mod tests {
         assert!(names.contains(&"sub/"), "entries: {names:?}");
     }
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn open_scans_subdirectory() {
         let tmp = TempDir::new().unwrap();
@@ -624,7 +624,7 @@ mod tests {
         assert!(names.contains(&"lib.rs"), "entries: {names:?}");
     }
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn open_with_filter_filters_entries() {
         let tmp = TempDir::new().unwrap();
@@ -640,7 +640,7 @@ mod tests {
 
     // --- update_query tests ---
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn update_query_rescans_on_dir_change() {
         let tmp = TempDir::new().unwrap();
@@ -657,7 +657,7 @@ mod tests {
         assert!(!picker.entries.iter().any(|e| e.name == "root.rs"));
     }
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn update_query_filters_without_rescan() {
         let tmp = TempDir::new().unwrap();
@@ -678,7 +678,7 @@ mod tests {
 
     // --- Directory display tests ---
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn directories_shown_with_trailing_slash() {
         let tmp = TempDir::new().unwrap();
@@ -697,7 +697,7 @@ mod tests {
 
     // --- Hidden entry tests ---
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn hidden_entries_skipped() {
         let tmp = TempDir::new().unwrap();
@@ -713,7 +713,7 @@ mod tests {
 
     // --- Navigation tests ---
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn select_next_wraps_around() {
         let tmp = TempDir::new().unwrap();
@@ -730,7 +730,7 @@ mod tests {
         assert_eq!(picker.selected, 0); // wrapped
     }
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn select_prev_wraps_around() {
         let tmp = TempDir::new().unwrap();
@@ -742,7 +742,7 @@ mod tests {
         assert_eq!(picker.selected, picker.filtered.len() - 1);
     }
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn selected_path_includes_query_prefix() {
         let tmp = TempDir::new().unwrap();
@@ -755,7 +755,7 @@ mod tests {
         assert_eq!(path, "src/main.rs");
     }
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn selected_path_bare_query() {
         let tmp = TempDir::new().unwrap();
@@ -768,7 +768,7 @@ mod tests {
 
     // --- Sorting tests ---
 
-    // @req REQ-TUI-047
+    // rtmx:req REQ-TUI-047
     #[test]
     fn directories_sorted_before_files() {
         let tmp = TempDir::new().unwrap();
@@ -783,7 +783,7 @@ mod tests {
 
     // --- Tree view tests ---
 
-    // @req REQ-TUI-046
+    // rtmx:req REQ-TUI-046
     #[test]
     fn tree_entries_returns_root_entries_when_nothing_expanded() {
         let tmp = TempDir::new().unwrap();
@@ -803,7 +803,7 @@ mod tests {
         assert!(!dir_entry.expanded);
     }
 
-    // @req REQ-TUI-046
+    // rtmx:req REQ-TUI-046
     #[test]
     fn toggle_expand_on_dir_adds_children() {
         let tmp = TempDir::new().unwrap();
@@ -835,7 +835,7 @@ mod tests {
         assert_eq!(tree_after[3].name, "hello.rs");
     }
 
-    // @req REQ-TUI-046
+    // rtmx:req REQ-TUI-046
     #[test]
     fn toggle_expand_again_collapses_hides_children() {
         let tmp = TempDir::new().unwrap();
@@ -856,7 +856,7 @@ mod tests {
         assert!(!tree[0].expanded);
     }
 
-    // @req REQ-TUI-046
+    // rtmx:req REQ-TUI-046
     #[test]
     fn tree_entries_have_correct_depth_values() {
         let tmp = TempDir::new().unwrap();
@@ -890,7 +890,7 @@ mod tests {
         assert_eq!(root.depth, 0);
     }
 
-    // @req REQ-TUI-046
+    // rtmx:req REQ-TUI-046
     #[test]
     fn toggle_expand_on_file_returns_false() {
         let tmp = TempDir::new().unwrap();
@@ -904,7 +904,7 @@ mod tests {
 
     // --- preview_content tests ---
 
-    // @req REQ-TUI-048
+    // rtmx:req REQ-TUI-048
     #[test]
     fn preview_content_returns_none_for_directory() {
         let tmp = TempDir::new().unwrap();
@@ -921,7 +921,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-048
+    // rtmx:req REQ-TUI-048
     #[test]
     fn preview_content_returns_first_30_lines() {
         let tmp = TempDir::new().unwrap();
@@ -944,7 +944,7 @@ mod tests {
         assert!(!preview.contains("line 31"), "Should not include line 31");
     }
 
-    // @req REQ-TUI-048
+    // rtmx:req REQ-TUI-048
     #[test]
     fn preview_content_returns_none_for_nonexistent_path() {
         let tmp = TempDir::new().unwrap();
@@ -957,7 +957,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-048
+    // rtmx:req REQ-TUI-048
     #[test]
     fn preview_content_returns_short_file_content() {
         let tmp = TempDir::new().unwrap();
@@ -971,7 +971,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-048
+    // rtmx:req REQ-TUI-048
     #[test]
     fn selected_extension_returns_ext_for_file() {
         let tmp = TempDir::new().unwrap();
@@ -982,7 +982,7 @@ mod tests {
         assert_eq!(ext.as_deref(), Some("rs"));
     }
 
-    // @req REQ-TUI-048
+    // rtmx:req REQ-TUI-048
     #[test]
     fn selected_extension_returns_none_for_dir() {
         let tmp = TempDir::new().unwrap();
@@ -1018,7 +1018,7 @@ mod tests {
             .expect("git config name");
     }
 
-    // @req REQ-TUI-050
+    // rtmx:req REQ-TUI-050
     #[test]
     fn open_git_lists_modified_files() {
         let tmp = TempDir::new().unwrap();
@@ -1048,7 +1048,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-050
+    // rtmx:req REQ-TUI-050
     #[test]
     fn open_git_on_non_git_dir_returns_empty() {
         let tmp = TempDir::new().unwrap();
@@ -1062,7 +1062,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-050
+    // rtmx:req REQ-TUI-050
     #[test]
     fn open_git_deduplicates_status_and_log() {
         let tmp = TempDir::new().unwrap();
@@ -1097,7 +1097,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-050
+    // rtmx:req REQ-TUI-050
     #[test]
     fn open_git_filter_works() {
         let tmp = TempDir::new().unwrap();
@@ -1127,7 +1127,7 @@ mod tests {
         assert!(picker.filtered[0].name.contains("alpha.rs"));
     }
 
-    // @req REQ-TUI-050
+    // rtmx:req REQ-TUI-050
     #[test]
     fn open_git_status_prefixes_correct() {
         let tmp = TempDir::new().unwrap();

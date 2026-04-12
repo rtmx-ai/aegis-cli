@@ -284,7 +284,7 @@ impl InputState {
 mod tests {
     use super::*;
 
-    // @req REQ-TUI-004
+    // rtmx:req REQ-TUI-004
     #[test]
     fn insert_and_read_text() {
         let mut input = InputState::default();
@@ -294,7 +294,7 @@ mod tests {
         assert_eq!(input.cursor, 2);
     }
 
-    // @req REQ-TUI-004
+    // rtmx:req REQ-TUI-004
     #[test]
     fn backspace_removes_character() {
         let mut input = InputState::default();
@@ -306,7 +306,7 @@ mod tests {
         assert_eq!(input.cursor, 2);
     }
 
-    // @req REQ-TUI-004
+    // rtmx:req REQ-TUI-004
     #[test]
     fn backspace_at_start_does_nothing() {
         let mut input = InputState::default();
@@ -315,7 +315,7 @@ mod tests {
         assert_eq!(input.cursor, 0);
     }
 
-    // @req REQ-TUI-004
+    // rtmx:req REQ-TUI-004
     #[test]
     fn cursor_movement() {
         let mut input = InputState::default();
@@ -340,7 +340,7 @@ mod tests {
         assert_eq!(input.cursor, 3);
     }
 
-    // @req REQ-TUI-004
+    // rtmx:req REQ-TUI-004
     #[test]
     fn insert_at_cursor_position() {
         let mut input = InputState::default();
@@ -351,7 +351,7 @@ mod tests {
         assert_eq!(input.text, "abc");
     }
 
-    // @req REQ-TUI-004
+    // rtmx:req REQ-TUI-004
     #[test]
     fn vim_mode_toggle() {
         let mut input = InputState::default();
@@ -370,7 +370,7 @@ mod tests {
         assert_eq!(input.text, "x");
     }
 
-    // @req REQ-TUI-004
+    // rtmx:req REQ-TUI-004
     #[test]
     fn multi_line_input() {
         let mut input = InputState::default();
@@ -380,7 +380,7 @@ mod tests {
         assert_eq!(input.text, "a\nb");
     }
 
-    // @req REQ-TUI-004
+    // rtmx:req REQ-TUI-004
     #[test]
     fn submit_returns_text_and_clears() {
         let mut input = InputState::default();
@@ -393,7 +393,7 @@ mod tests {
         assert_eq!(input.cursor, 0);
     }
 
-    // @req REQ-TUI-004
+    // rtmx:req REQ-TUI-004
     #[test]
     fn submit_adds_to_history() {
         let mut input = InputState::default();
@@ -405,7 +405,7 @@ mod tests {
         assert_eq!(input.history(), &["a", "b"]);
     }
 
-    // @req REQ-TUI-004
+    // rtmx:req REQ-TUI-004
     #[test]
     fn empty_submit_not_added_to_history() {
         let mut input = InputState::default();
@@ -413,7 +413,7 @@ mod tests {
         assert!(input.history().is_empty());
     }
 
-    // @req REQ-TUI-004
+    // rtmx:req REQ-TUI-004
     #[test]
     fn history_navigation_up_down() {
         let mut input = InputState::default();
@@ -448,7 +448,7 @@ mod tests {
         assert_eq!(input.text, "d");
     }
 
-    // @req REQ-TUI-004
+    // rtmx:req REQ-TUI-004
     #[test]
     fn history_up_on_empty_does_nothing() {
         let mut input = InputState::default();
@@ -456,7 +456,7 @@ mod tests {
         assert_eq!(input.text, "");
     }
 
-    // @req REQ-TUI-004
+    // rtmx:req REQ-TUI-004
     #[test]
     fn submit_resets_mode_to_insert() {
         let mut input = InputState::default();
@@ -466,7 +466,7 @@ mod tests {
         assert_eq!(input.mode, InputMode::Insert);
     }
 
-    // @req REQ-TUI-034
+    // rtmx:req REQ-TUI-034
     #[test]
     fn sanitize_paste_strips_control_chars() {
         let raw = "hello\x00world\x07test\nkeep\ttabs";
@@ -474,7 +474,7 @@ mod tests {
         assert_eq!(cleaned, "helloworldtest\nkeep\ttabs");
     }
 
-    // @req REQ-TUI-034
+    // rtmx:req REQ-TUI-034
     #[test]
     fn sanitize_paste_preserves_newlines_and_tabs() {
         let raw = "line1\nline2\tindented";
@@ -482,7 +482,7 @@ mod tests {
         assert_eq!(cleaned, raw);
     }
 
-    // @req REQ-TUI-034
+    // rtmx:req REQ-TUI-034
     #[test]
     fn sanitize_paste_truncates_at_64kb() {
         let big = "x".repeat(128 * 1024);
@@ -490,7 +490,7 @@ mod tests {
         assert_eq!(cleaned.len(), 64 * 1024);
     }
 
-    // @req REQ-TUI-034
+    // rtmx:req REQ-TUI-034
     #[test]
     fn insert_paste_sanitizes_and_inserts() {
         let mut input = InputState::default();
@@ -498,7 +498,7 @@ mod tests {
         assert_eq!(input.text, "helloworld");
     }
 
-    // @req REQ-TUI-022
+    // rtmx:req REQ-TUI-022
     #[test]
     fn insert_str_at_cursor() {
         let mut input = InputState::default();
@@ -510,7 +510,7 @@ mod tests {
         assert_eq!(input.cursor, 3); // after "abc"
     }
 
-    // @req REQ-TUI-022
+    // rtmx:req REQ-TUI-022
     #[test]
     fn insert_str_multiline() {
         let mut input = InputState::default();
@@ -518,7 +518,7 @@ mod tests {
         assert_eq!(input.text, "line1\nline2\nline3");
     }
 
-    // @req REQ-TUI-022
+    // rtmx:req REQ-TUI-022
     #[test]
     fn insert_str_truncates_at_64kb() {
         let mut input = InputState::default();
@@ -527,7 +527,7 @@ mod tests {
         assert_eq!(input.text.len(), 64 * 1024);
     }
 
-    // @req REQ-TUI-022
+    // rtmx:req REQ-TUI-022
     #[test]
     fn insert_str_ignored_in_normal_mode() {
         let mut input = InputState::default();
@@ -536,7 +536,7 @@ mod tests {
         assert_eq!(input.text, "");
     }
 
-    // @req REQ-TUI-017
+    // rtmx:req REQ-TUI-017
     #[test]
     fn enter_search_mode_sets_empty_query() {
         let mut input = InputState::default();
@@ -546,7 +546,7 @@ mod tests {
         assert_eq!(input.search_query(), Some(""));
     }
 
-    // @req REQ-TUI-017
+    // rtmx:req REQ-TUI-017
     #[test]
     fn exit_search_mode_clears_query() {
         let mut input = InputState::default();
@@ -557,7 +557,7 @@ mod tests {
         assert_eq!(input.search_query(), None);
     }
 
-    // @req REQ-TUI-017
+    // rtmx:req REQ-TUI-017
     #[test]
     fn search_insert_char_appends_to_query() {
         let mut input = InputState::default();
@@ -567,7 +567,7 @@ mod tests {
         assert_eq!(input.search_query(), Some("hi"));
     }
 
-    // @req REQ-TUI-017
+    // rtmx:req REQ-TUI-017
     #[test]
     fn search_backspace_removes_last_char() {
         let mut input = InputState::default();
@@ -578,7 +578,7 @@ mod tests {
         assert_eq!(input.search_query(), Some("a"));
     }
 
-    // @req REQ-TUI-017
+    // rtmx:req REQ-TUI-017
     #[test]
     fn search_backspace_on_empty_query_does_nothing() {
         let mut input = InputState::default();
@@ -587,7 +587,7 @@ mod tests {
         assert_eq!(input.search_query(), Some(""));
     }
 
-    // @req REQ-TUI-017
+    // rtmx:req REQ-TUI-017
     #[test]
     fn search_insert_char_ignored_when_not_in_search_mode() {
         let mut input = InputState::default();
@@ -596,7 +596,7 @@ mod tests {
         assert_eq!(input.search_query(), None);
     }
 
-    // @req REQ-TUI-004
+    // rtmx:req REQ-TUI-004
     #[test]
     fn handles_utf8_characters() {
         let mut input = InputState::default();

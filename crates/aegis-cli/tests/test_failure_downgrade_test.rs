@@ -1,6 +1,6 @@
 //! Validates test failure downgrade automation (REQ-TEST-041).
 
-// @req REQ-TEST-041
+// rtmx:req REQ-TEST-041
 #[test]
 fn test_failure_downgrade_script_exists() {
     let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -12,7 +12,7 @@ fn test_failure_downgrade_script_exists() {
     assert!(script.exists(), "test-failure-downgrade.py must exist");
 }
 
-// @req REQ-TEST-041
+// rtmx:req REQ-TEST-041
 #[test]
 fn test_failure_downgrade_script_is_executable() {
     #[cfg(unix)]
@@ -32,7 +32,7 @@ fn test_failure_downgrade_script_is_executable() {
     }
 }
 
-// @req REQ-TEST-041
+// rtmx:req REQ-TEST-041
 #[test]
 fn test_failure_downgrade_script_has_dry_run() {
     let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

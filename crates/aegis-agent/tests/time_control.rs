@@ -7,7 +7,7 @@
 use std::time::Duration;
 use tokio::time;
 
-// @req REQ-TEST-012
+// rtmx:req REQ-TEST-012
 #[tokio::test(start_paused = true)]
 async fn time_advance_is_deterministic() {
     // With time paused, advance() is instantaneous from wall-clock perspective.
@@ -21,7 +21,7 @@ async fn time_advance_is_deterministic() {
     // This test completes instantly despite a 60-second logical advance.
 }
 
-// @req REQ-TEST-012
+// rtmx:req REQ-TEST-012
 #[tokio::test(start_paused = true)]
 async fn timeout_fires_without_wall_clock_sleep() {
     let result = time::timeout(Duration::from_secs(5), async {
@@ -36,7 +36,7 @@ async fn timeout_fires_without_wall_clock_sleep() {
     );
 }
 
-// @req REQ-TEST-012
+// rtmx:req REQ-TEST-012
 #[tokio::test(start_paused = true)]
 async fn retry_delay_sequence_completes_instantly() {
     // Simulate the exponential back-off delay pattern from aegis-agent::retry.
@@ -59,7 +59,7 @@ async fn retry_delay_sequence_completes_instantly() {
     );
 }
 
-// @req REQ-TEST-012
+// rtmx:req REQ-TEST-012
 #[tokio::test(start_paused = true)]
 async fn sleep_completes_only_after_sufficient_advance() {
     let sleep_fut = time::sleep(Duration::from_secs(10));

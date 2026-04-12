@@ -1,7 +1,7 @@
 //! Validates CI has a cross-platform test matrix covering Linux (RHEL via musl)
 //! and Windows (MSVC) targets (REQ-TEST-011).
 
-// @req REQ-TEST-011
+// rtmx:req REQ-TEST-011
 #[test]
 fn test_ci_has_cross_platform_matrix() {
     let ci = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -29,7 +29,7 @@ fn test_ci_has_cross_platform_matrix() {
     );
 }
 
-// @req REQ-TEST-011
+// rtmx:req REQ-TEST-011
 #[test]
 fn test_ci_has_integration_tests_job() {
     let ci = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -45,7 +45,7 @@ fn test_ci_has_integration_tests_job() {
     );
 }
 
-// @req REQ-TEST-011
+// rtmx:req REQ-TEST-011
 #[test]
 fn test_ci_has_unit_tests_on_both_platforms() {
     let ci = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -66,7 +66,7 @@ fn test_ci_has_unit_tests_on_both_platforms() {
     );
 }
 
-// @req REQ-TEST-011
+// rtmx:req REQ-TEST-011
 #[test]
 fn test_ci_has_rhel_coverage_via_rpm_smoke_test() {
     let ci = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

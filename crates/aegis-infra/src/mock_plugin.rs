@@ -131,7 +131,7 @@ mod tests {
     use super::*;
     use crate::events::{CheckEvent, CheckStatus, DiagnosticEvent, ProgressEvent};
 
-    // @req REQ-TEST-013
+    // rtmx:req REQ-TEST-013
     #[test]
     fn builder_default_output_is_empty_success() {
         let output = MockPluginBuilder::new("empty").build();
@@ -142,7 +142,7 @@ mod tests {
         assert_eq!(output.exit_code, 0);
     }
 
-    // @req REQ-TEST-013
+    // rtmx:req REQ-TEST-013
     #[test]
     fn builder_produces_expected_result() {
         let output = MockPluginBuilder::new("basic")
@@ -155,7 +155,7 @@ mod tests {
         assert_eq!(output.exit_code, 0);
     }
 
-    // @req REQ-TEST-013
+    // rtmx:req REQ-TEST-013
     #[test]
     fn builder_events_collected_in_order() {
         let output = MockPluginBuilder::new("ordered")
@@ -201,7 +201,7 @@ mod tests {
         }
     }
 
-    // @req REQ-TEST-013
+    // rtmx:req REQ-TEST-013
     #[test]
     fn builder_result_with_outputs() {
         let mut outputs = HashMap::new();
@@ -226,7 +226,7 @@ mod tests {
         assert_eq!(map["vpc_name"], "aegis-vpc");
     }
 
-    // @req REQ-TEST-013
+    // rtmx:req REQ-TEST-013
     #[test]
     fn builder_stderr_and_exit_code_configurable() {
         let output = MockPluginBuilder::new("failing")
@@ -240,7 +240,7 @@ mod tests {
         assert!(!output.result.unwrap().success);
     }
 
-    // @req REQ-TEST-013
+    // rtmx:req REQ-TEST-013
     #[test]
     fn mock_manifest_has_correct_contract() {
         let manifest = mock_manifest("test-plugin");
@@ -250,7 +250,7 @@ mod tests {
         assert!(manifest.description.is_some());
     }
 
-    // @req REQ-TEST-013
+    // rtmx:req REQ-TEST-013
     #[test]
     fn mock_plugin_has_dummy_binary() {
         let plugin = mock_plugin("my-plugin");

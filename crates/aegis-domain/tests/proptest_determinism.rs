@@ -28,7 +28,7 @@ fn arb_tool_call() -> impl Strategy<Value = ToolCall> {
     ]
 }
 
-// @req REQ-TEST-015
+// rtmx:req REQ-TEST-015
 proptest! {
     #[test]
     fn tool_risk_classification_never_panics(call in arb_tool_call()) {
@@ -38,7 +38,7 @@ proptest! {
     }
 }
 
-// @req REQ-TEST-015
+// rtmx:req REQ-TEST-015
 proptest! {
     #[test]
     fn tool_call_debug_never_panics(call in arb_tool_call()) {
@@ -47,7 +47,7 @@ proptest! {
     }
 }
 
-// @req REQ-TEST-015
+// rtmx:req REQ-TEST-015
 proptest! {
     #[test]
     fn file_path_display_never_panics(s in "\\PC{0,200}") {
@@ -57,7 +57,7 @@ proptest! {
     }
 }
 
-// @req REQ-TEST-015
+// rtmx:req REQ-TEST-015
 proptest! {
     #[test]
     fn read_only_variants_are_read_only(
@@ -80,7 +80,7 @@ proptest! {
     }
 }
 
-// @req REQ-TEST-015
+// rtmx:req REQ-TEST-015
 proptest! {
     #[test]
     fn mutating_variants_are_state_mutating(
@@ -102,7 +102,7 @@ proptest! {
     }
 }
 
-// @req REQ-TEST-015
+// rtmx:req REQ-TEST-015
 #[test]
 fn proptest_seed_determinism_contract() {
     // When PROPTEST_SEED is set, two runs produce the same sequence.

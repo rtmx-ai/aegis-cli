@@ -37,7 +37,7 @@ fn sample_session(session_id: &str) -> SessionSnapshot {
     )
 }
 
-// @req REQ-TEST-029
+// rtmx:req REQ-TEST-029
 #[test]
 fn test_session_save_and_restore_roundtrip() {
     // 1. Create isolated session directory
@@ -74,7 +74,7 @@ fn test_session_save_and_restore_roundtrip() {
     }
 }
 
-// @req REQ-TEST-029
+// rtmx:req REQ-TEST-029
 #[test]
 fn test_session_ids_are_unique() {
     // Each SessionSnapshot gets a unique session_id from the caller.
@@ -84,7 +84,7 @@ fn test_session_ids_are_unique() {
     assert_ne!(id1, id2, "session IDs must be unique");
 }
 
-// @req REQ-TEST-029
+// rtmx:req REQ-TEST-029
 #[test]
 fn test_session_directory_structure() {
     let tmp = tempfile::tempdir().expect("create tempdir");
@@ -104,7 +104,7 @@ fn test_session_directory_structure() {
     assert_eq!(loaded.messages.len(), 4);
 }
 
-// @req REQ-TEST-029
+// rtmx:req REQ-TEST-029
 #[test]
 fn test_session_survives_multiple_save_restore_cycles() {
     let tmp = tempfile::tempdir().expect("create tempdir");
@@ -139,7 +139,7 @@ fn test_session_survives_multiple_save_restore_cycles() {
     }
 }
 
-// @req REQ-TEST-029
+// rtmx:req REQ-TEST-029
 #[test]
 fn test_default_session_dir_uses_home() {
     // default_session_dir() should return ~/.aegis/sessions
@@ -154,7 +154,7 @@ fn test_default_session_dir_uses_home() {
     // If HOME is not set (unlikely in CI), None is acceptable
 }
 
-// @req REQ-TEST-029
+// rtmx:req REQ-TEST-029
 #[cfg(unix)]
 #[test]
 fn test_current_json_symlink_updated_on_save() {

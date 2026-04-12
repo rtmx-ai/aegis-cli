@@ -251,7 +251,7 @@ mod tests {
         mpsc::unbounded_channel()
     }
 
-    // @req REQ-TUI-030
+    // rtmx:req REQ-TUI-030
     #[test]
     fn app_starts_in_splash_phase() {
         let app = App::new("llama3");
@@ -259,7 +259,7 @@ mod tests {
         assert_eq!(app.splash_ticks, 0);
     }
 
-    // @req REQ-TUI-030
+    // rtmx:req REQ-TUI-030
     #[test]
     fn splash_dismissed_by_keypress() {
         let mut app = App::new("llama3");
@@ -272,7 +272,7 @@ mod tests {
         assert_eq!(app.phase, AppPhase::Idle);
     }
 
-    // @req REQ-TUI-030
+    // rtmx:req REQ-TUI-030
     #[test]
     fn splash_dismissed_by_timeout() {
         let mut app = App::new("llama3");
@@ -283,7 +283,7 @@ mod tests {
         assert_eq!(app.phase, AppPhase::Idle);
     }
 
-    // @req REQ-TUI-008
+    // rtmx:req REQ-TUI-008
     #[test]
     fn mouse_scroll_up_increases_offset() {
         let mut app = make_app();
@@ -299,7 +299,7 @@ mod tests {
         assert!(!app.auto_scroll);
     }
 
-    // @req REQ-TUI-004
+    // rtmx:req REQ-TUI-004
     #[test]
     fn vim_o_opens_new_line_and_enters_insert() {
         let mut app = make_app();
@@ -330,7 +330,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-008
+    // rtmx:req REQ-TUI-008
     #[test]
     fn mouse_scroll_down_decreases_offset() {
         let mut app = make_app();
@@ -347,7 +347,7 @@ mod tests {
         assert_eq!(app.scroll_offset, 9);
     }
 
-    // @req REQ-TUI-008
+    // rtmx:req REQ-TUI-008
     #[test]
     fn mouse_scroll_down_to_zero_enables_auto_scroll() {
         let mut app = make_app();
@@ -365,7 +365,7 @@ mod tests {
         assert!(app.auto_scroll);
     }
 
-    // @req REQ-TUI-034
+    // rtmx:req REQ-TUI-034
     #[test]
     fn bracketed_paste_inserts_text() {
         let mut app = make_app();
@@ -377,7 +377,7 @@ mod tests {
         assert_eq!(app.input.text, "pasted text");
     }
 
-    // @req REQ-TUI-034
+    // rtmx:req REQ-TUI-034
     #[test]
     fn bracketed_paste_ignored_during_streaming() {
         let mut app = make_app();
@@ -390,7 +390,7 @@ mod tests {
         assert_eq!(app.input.text, "");
     }
 
-    // @req REQ-TUI-001
+    // rtmx:req REQ-TUI-001
     #[test]
     fn app_idle_after_splash() {
         let app = make_app();
@@ -399,14 +399,14 @@ mod tests {
         assert_eq!(app.input_tokens, 0);
     }
 
-    // @req REQ-TUI-001
+    // rtmx:req REQ-TUI-001
     #[test]
     fn status_text_shows_model_when_idle() {
         let app = make_app();
         assert_eq!(app.status_text(), "llama3");
     }
 
-    // @req REQ-TUI-002
+    // rtmx:req REQ-TUI-002
     #[test]
     fn agent_token_accumulates_in_stream_buffer() {
         let mut app = make_app();
@@ -417,7 +417,7 @@ mod tests {
         assert_eq!(app.phase, AppPhase::Streaming);
     }
 
-    // @req REQ-TUI-002
+    // rtmx:req REQ-TUI-002
     #[test]
     fn agent_done_flushes_buffer_to_message() {
         let mut app = make_app();
@@ -438,7 +438,7 @@ mod tests {
         assert_eq!(app.output_tokens, 100);
     }
 
-    // @req REQ-HITL-001
+    // rtmx:req REQ-HITL-001
     #[test]
     fn approval_request_enters_awaiting_phase() {
         let mut app = make_app();
@@ -457,7 +457,7 @@ mod tests {
         assert!(app.pending_approval.is_some());
     }
 
-    // @req REQ-HITL-001
+    // rtmx:req REQ-HITL-001
     #[test]
     fn approve_key_sends_approved_decision() {
         let mut app = make_app();
@@ -483,7 +483,7 @@ mod tests {
         assert_eq!(resp_rx.blocking_recv().unwrap(), ApprovalDecision::Approved);
     }
 
-    // @req REQ-HITL-001
+    // rtmx:req REQ-HITL-001
     #[test]
     fn deny_key_sends_denied_decision() {
         let mut app = make_app();
@@ -507,7 +507,7 @@ mod tests {
         assert_eq!(resp_rx.blocking_recv().unwrap(), ApprovalDecision::Denied);
     }
 
-    // @req REQ-TUI-001
+    // rtmx:req REQ-TUI-001
     #[test]
     fn agent_error_returns_to_idle() {
         let mut app = make_app();
@@ -521,7 +521,7 @@ mod tests {
         assert_eq!(app.messages[1].content, "timeout");
     }
 
-    // @req REQ-TUI-001
+    // rtmx:req REQ-TUI-001
     #[test]
     fn slash_clear_empties_messages() {
         let mut app = make_app();
@@ -532,7 +532,7 @@ mod tests {
         assert!(app.messages.is_empty());
     }
 
-    // @req REQ-TUI-001
+    // rtmx:req REQ-TUI-001
     #[test]
     fn slash_quit_returns_quit_action() {
         let mut app = make_app();
@@ -540,7 +540,7 @@ mod tests {
         assert_eq!(action, Action::Quit);
     }
 
-    // @req REQ-TUI-001
+    // rtmx:req REQ-TUI-001
     #[test]
     fn slash_help_adds_system_message() {
         let mut app = make_app();
@@ -549,7 +549,7 @@ mod tests {
         assert!(app.messages[0].content.contains("/clear"));
     }
 
-    // @req REQ-TUI-001
+    // rtmx:req REQ-TUI-001
     #[test]
     fn slash_context_shows_model_and_tokens() {
         let mut app = make_app();
@@ -560,7 +560,7 @@ mod tests {
         assert!(app.messages[0].content.contains("500in"));
     }
 
-    // @req REQ-TUI-005
+    // rtmx:req REQ-TUI-005
     #[test]
     fn tool_use_event_adds_tool_call_message() {
         let mut app = make_app();
@@ -576,7 +576,7 @@ mod tests {
         assert!(app.messages[0].content.contains("Cargo.toml"));
     }
 
-    // @req REQ-TUI-001
+    // rtmx:req REQ-TUI-001
     #[test]
     fn ctrl_c_in_idle_returns_quit() {
         let mut app = make_app();
@@ -586,7 +586,7 @@ mod tests {
         assert_eq!(action, Action::Quit);
     }
 
-    // @req REQ-TUI-002
+    // rtmx:req REQ-TUI-002
     #[test]
     fn status_text_shows_streaming_when_active() {
         let mut app = make_app();
@@ -597,7 +597,7 @@ mod tests {
         assert!(status.contains('|'));
     }
 
-    // @req REQ-HITL-001
+    // rtmx:req REQ-HITL-001
     #[test]
     fn status_text_shows_approval_prompt() {
         let mut app = make_app();
@@ -607,7 +607,7 @@ mod tests {
         assert!(status.contains("[A/D/E/S]"));
     }
 
-    // @req REQ-TUI-024
+    // rtmx:req REQ-TUI-024
     #[test]
     fn add_command_adds_existing_file_to_context() {
         let mut app = make_app();
@@ -627,7 +627,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-024
+    // rtmx:req REQ-TUI-024
     #[test]
     fn add_command_rejects_nonexistent_file() {
         let mut app = make_app();
@@ -644,7 +644,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-024
+    // rtmx:req REQ-TUI-024
     #[test]
     fn add_command_without_path_shows_usage() {
         let mut app = make_app();
@@ -653,7 +653,7 @@ mod tests {
         assert!(app.messages.last().unwrap().content.contains("Usage"));
     }
 
-    // @req REQ-TUI-024
+    // rtmx:req REQ-TUI-024
     #[test]
     fn add_command_rejects_duplicate() {
         let mut app = make_app();
@@ -671,7 +671,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-024
+    // rtmx:req REQ-TUI-024
     #[test]
     fn drop_command_removes_file_from_context() {
         let mut app = make_app();
@@ -691,7 +691,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-024
+    // rtmx:req REQ-TUI-024
     #[test]
     fn drop_command_errors_when_not_in_context() {
         let mut app = make_app();
@@ -706,7 +706,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-024
+    // rtmx:req REQ-TUI-024
     #[test]
     fn drop_command_without_path_shows_usage() {
         let mut app = make_app();
@@ -715,7 +715,7 @@ mod tests {
         assert!(app.messages.last().unwrap().content.contains("Usage"));
     }
 
-    // @req REQ-TUI-024
+    // rtmx:req REQ-TUI-024
     #[test]
     fn context_command_shows_context_files() {
         let mut app = make_app();
@@ -728,7 +728,7 @@ mod tests {
         assert!(last.contains(&path));
     }
 
-    // @req REQ-TUI-024
+    // rtmx:req REQ-TUI-024
     #[test]
     fn help_command_mentions_add_and_drop() {
         let mut app = make_app();
@@ -738,7 +738,7 @@ mod tests {
         assert!(content.contains("/drop"));
     }
 
-    // @req REQ-TUI-026
+    // rtmx:req REQ-TUI-026
     #[test]
     fn infra_status_shows_no_plugins_message() {
         let mut app = make_app();
@@ -748,7 +748,7 @@ mod tests {
         assert!(app.messages[0].content.contains("No plugins discovered"));
     }
 
-    // @req REQ-TUI-026
+    // rtmx:req REQ-TUI-026
     #[test]
     fn infra_list_shows_no_plugins_message() {
         let mut app = make_app();
@@ -762,7 +762,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-026
+    // rtmx:req REQ-TUI-026
     #[test]
     fn infra_preview_without_name_shows_usage() {
         let mut app = make_app();
@@ -771,7 +771,7 @@ mod tests {
         assert!(app.messages[0].content.contains("Usage"));
     }
 
-    // @req REQ-TUI-026
+    // rtmx:req REQ-TUI-026
     #[test]
     fn infra_preview_with_name_shows_not_found() {
         let mut app = make_app();
@@ -783,7 +783,7 @@ mod tests {
         assert!(app.messages[0].content.contains("not found"));
     }
 
-    // @req REQ-TUI-026
+    // rtmx:req REQ-TUI-026
     #[test]
     fn infra_no_subcommand_shows_usage() {
         let mut app = make_app();
@@ -792,7 +792,7 @@ mod tests {
         assert!(app.messages[0].content.contains("Usage"));
     }
 
-    // @req REQ-TUI-026
+    // rtmx:req REQ-TUI-026
     #[test]
     fn infra_unknown_subcommand_shows_error() {
         let mut app = make_app();
@@ -805,7 +805,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-028
+    // rtmx:req REQ-TUI-028
     #[test]
     fn doctor_command_shows_check_results() {
         let mut app = make_app();
@@ -815,7 +815,7 @@ mod tests {
         assert!(content.contains("checks passed"));
     }
 
-    // @req REQ-TUI-028
+    // rtmx:req REQ-TUI-028
     #[test]
     fn doctor_command_checks_llm_configured() {
         let mut app = make_app();
@@ -826,7 +826,7 @@ mod tests {
         assert!(content.contains("llama3"));
     }
 
-    // @req REQ-TUI-028
+    // rtmx:req REQ-TUI-028
     #[test]
     fn doctor_with_empty_model_fails_llm_check() {
         let mut app = App::new("");
@@ -835,7 +835,7 @@ mod tests {
         assert!(content.contains("[FAIL] LLM endpoint"));
     }
 
-    // @req REQ-TUI-028
+    // rtmx:req REQ-TUI-028
     #[test]
     fn doctor_returns_continue_action() {
         let mut app = make_app();
@@ -843,7 +843,7 @@ mod tests {
         assert_eq!(action, Action::Continue);
     }
 
-    // @req REQ-TUI-026
+    // rtmx:req REQ-TUI-026
     #[test]
     fn help_command_mentions_infra_and_doctor() {
         let mut app = make_app();
@@ -853,7 +853,7 @@ mod tests {
         assert!(content.contains("/doctor"));
     }
 
-    // @req REQ-TUI-029
+    // rtmx:req REQ-TUI-029
     #[test]
     fn approval_request_sets_display_info() {
         let mut app = make_app();
@@ -875,7 +875,7 @@ mod tests {
         assert_eq!(info.risk, ToolRisk::StateMutating);
     }
 
-    // @req REQ-TUI-029
+    // rtmx:req REQ-TUI-029
     #[test]
     fn approval_decision_clears_display_info() {
         let mut app = make_app();
@@ -898,7 +898,7 @@ mod tests {
         assert!(app.approval_display.is_none());
     }
 
-    // @req REQ-TUI-029
+    // rtmx:req REQ-TUI-029
     #[test]
     fn approval_modal_blocks_regular_input() {
         let mut app = make_app();
@@ -912,7 +912,7 @@ mod tests {
         assert_eq!(app.phase, AppPhase::AwaitingApproval);
     }
 
-    // @req REQ-TUI-032
+    // rtmx:req REQ-TUI-032
     #[test]
     fn streaming_buffer_accumulates_tokens() {
         let mut app = make_app();
@@ -923,7 +923,7 @@ mod tests {
         assert_eq!(app.phase, AppPhase::Streaming);
     }
 
-    // @req REQ-TUI-032
+    // rtmx:req REQ-TUI-032
     #[test]
     fn streaming_done_flushes_buffer_to_message() {
         let mut app = make_app();
@@ -942,7 +942,7 @@ mod tests {
         assert_eq!(app.phase, AppPhase::Idle);
     }
 
-    // @req REQ-TUI-032
+    // rtmx:req REQ-TUI-032
     #[test]
     fn streaming_buffer_clears_on_new_user_message() {
         let mut app = make_app();
@@ -956,7 +956,7 @@ mod tests {
         assert_eq!(app.phase, AppPhase::Streaming);
     }
 
-    // @req REQ-TUI-032
+    // rtmx:req REQ-TUI-032
     #[test]
     fn error_during_streaming_flushes_partial_buffer() {
         let mut app = make_app();
@@ -970,7 +970,7 @@ mod tests {
         assert_eq!(app.messages[1].content, "connection lost");
     }
 
-    // @req REQ-TUI-016
+    // rtmx:req REQ-TUI-016
     #[test]
     fn tool_use_sets_tool_start() {
         let mut app = make_app();
@@ -985,7 +985,7 @@ mod tests {
         assert!(app.tool_start.is_some());
     }
 
-    // @req REQ-TUI-016
+    // rtmx:req REQ-TUI-016
     #[test]
     fn agent_done_clears_tool_start() {
         let mut app = make_app();
@@ -1007,7 +1007,7 @@ mod tests {
         assert!(app.tool_start.is_none());
     }
 
-    // @req REQ-TUI-016
+    // rtmx:req REQ-TUI-016
     #[test]
     fn agent_error_clears_tool_start() {
         let mut app = make_app();
@@ -1023,7 +1023,7 @@ mod tests {
         assert!(app.tool_start.is_none());
     }
 
-    // @req REQ-TUI-016
+    // rtmx:req REQ-TUI-016
     #[test]
     fn tick_increments_tick_count() {
         let mut app = make_app();
@@ -1035,7 +1035,7 @@ mod tests {
         assert_eq!(app.tick_count, 2);
     }
 
-    // @req REQ-TUI-018
+    // rtmx:req REQ-TUI-018
     #[test]
     fn at_key_triggers_file_picker() {
         let mut app = make_app();
@@ -1049,7 +1049,7 @@ mod tests {
         assert!(app.input.text.contains('@'));
     }
 
-    // @req REQ-TUI-018
+    // rtmx:req REQ-TUI-018
     #[test]
     fn file_picker_esc_closes_and_removes_at() {
         let mut app = make_app();
@@ -1073,7 +1073,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-018
+    // rtmx:req REQ-TUI-018
     #[test]
     fn file_picker_enter_inserts_selected_path() {
         let mut app = make_app();
@@ -1098,7 +1098,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-018
+    // rtmx:req REQ-TUI-018
     #[test]
     fn file_picker_blocks_normal_input() {
         let mut app = make_app();
@@ -1131,7 +1131,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-018
+    // rtmx:req REQ-TUI-018
     #[test]
     fn file_picker_arrow_keys_navigate() {
         let mut app = make_app();

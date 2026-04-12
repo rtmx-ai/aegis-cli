@@ -196,7 +196,7 @@ mod tests {
 
     // --- resolve_auth tests ---
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn resolve_auth_local_returns_no_auth() {
         let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
@@ -204,7 +204,7 @@ mod tests {
         assert_eq!(auth, ProviderAuth::NoAuth);
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn resolve_auth_vertex_returns_gcp() {
         // SAFETY: test-only; env mutation is acceptable in serial test runs.
@@ -229,7 +229,7 @@ mod tests {
         );
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn resolve_auth_bedrock_fails_without_env() {
         // SAFETY: test-only; env mutation is acceptable in serial test runs.
@@ -250,7 +250,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn resolve_auth_azure_fails_without_env() {
         // SAFETY: test-only; env mutation is acceptable in serial test runs.
@@ -273,34 +273,34 @@ mod tests {
 
     // --- validate_auth tests ---
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn validate_no_auth_is_ok() {
         assert!(validate_auth(&ProviderAuth::NoAuth).is_ok());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn validate_api_key_ok_when_non_empty() {
         let auth = ProviderAuth::ApiKey("sk-test-123".to_string());
         assert!(validate_auth(&auth).is_ok());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn validate_api_key_fails_when_empty() {
         let auth = ProviderAuth::ApiKey("".to_string());
         assert!(validate_auth(&auth).is_err());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn validate_api_key_fails_when_whitespace_only() {
         let auth = ProviderAuth::ApiKey("   ".to_string());
         assert!(validate_auth(&auth).is_err());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn validate_gcp_ok_without_path() {
         let auth = ProviderAuth::Gcp {
@@ -309,7 +309,7 @@ mod tests {
         assert!(validate_auth(&auth).is_ok());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn validate_gcp_ok_with_valid_path() {
         let auth = ProviderAuth::Gcp {
@@ -318,7 +318,7 @@ mod tests {
         assert!(validate_auth(&auth).is_ok());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn validate_gcp_fails_with_empty_path() {
         let auth = ProviderAuth::Gcp {
@@ -327,7 +327,7 @@ mod tests {
         assert!(validate_auth(&auth).is_err());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn validate_aws_ok_with_all_fields() {
         let auth = ProviderAuth::Aws {
@@ -339,7 +339,7 @@ mod tests {
         assert!(validate_auth(&auth).is_ok());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn validate_aws_ok_without_session_token() {
         let auth = ProviderAuth::Aws {
@@ -351,7 +351,7 @@ mod tests {
         assert!(validate_auth(&auth).is_ok());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn validate_aws_fails_with_empty_access_key() {
         let auth = ProviderAuth::Aws {
@@ -363,7 +363,7 @@ mod tests {
         assert!(validate_auth(&auth).is_err());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn validate_aws_fails_with_empty_secret_key() {
         let auth = ProviderAuth::Aws {
@@ -375,7 +375,7 @@ mod tests {
         assert!(validate_auth(&auth).is_err());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn validate_aws_fails_with_empty_region() {
         let auth = ProviderAuth::Aws {
@@ -387,7 +387,7 @@ mod tests {
         assert!(validate_auth(&auth).is_err());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn validate_azure_ok_with_all_fields() {
         let auth = ProviderAuth::Azure {
@@ -398,7 +398,7 @@ mod tests {
         assert!(validate_auth(&auth).is_ok());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn validate_azure_ok_without_api_key() {
         let auth = ProviderAuth::Azure {
@@ -409,7 +409,7 @@ mod tests {
         assert!(validate_auth(&auth).is_ok());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn validate_azure_fails_with_empty_tenant() {
         let auth = ProviderAuth::Azure {
@@ -420,7 +420,7 @@ mod tests {
         assert!(validate_auth(&auth).is_err());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn validate_azure_fails_with_empty_client() {
         let auth = ProviderAuth::Azure {
@@ -433,13 +433,13 @@ mod tests {
 
     // --- auth_header tests ---
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn auth_header_no_auth_returns_none() {
         assert!(auth_header(&ProviderAuth::NoAuth).is_none());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn auth_header_api_key_returns_bearer() {
         let auth = ProviderAuth::ApiKey("sk-test".to_string());
@@ -448,7 +448,7 @@ mod tests {
         assert_eq!(header.1, "Bearer sk-test");
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn auth_header_gcp_returns_none() {
         let auth = ProviderAuth::Gcp {
@@ -457,7 +457,7 @@ mod tests {
         assert!(auth_header(&auth).is_none());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn auth_header_aws_returns_none() {
         let auth = ProviderAuth::Aws {
@@ -469,7 +469,7 @@ mod tests {
         assert!(auth_header(&auth).is_none());
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn auth_header_azure_with_api_key() {
         let auth = ProviderAuth::Azure {
@@ -482,7 +482,7 @@ mod tests {
         assert_eq!(header.1, "my-key");
     }
 
-    // @req REQ-LLM-015
+    // rtmx:req REQ-LLM-015
     #[test]
     fn auth_header_azure_without_api_key_returns_none() {
         let auth = ProviderAuth::Azure {

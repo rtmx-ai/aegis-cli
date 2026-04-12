@@ -43,14 +43,14 @@ impl CancellationToken {
 mod tests {
     use super::*;
 
-    // @req REQ-AGENT-009
+    // rtmx:req REQ-AGENT-009
     #[test]
     fn new_token_is_not_cancelled() {
         let token = CancellationToken::new();
         assert!(!token.is_cancelled());
     }
 
-    // @req REQ-AGENT-009
+    // rtmx:req REQ-AGENT-009
     #[test]
     fn cancel_sets_flag() {
         let token = CancellationToken::new();
@@ -58,7 +58,7 @@ mod tests {
         assert!(token.is_cancelled());
     }
 
-    // @req REQ-AGENT-009
+    // rtmx:req REQ-AGENT-009
     #[test]
     fn clones_share_state() {
         let token = CancellationToken::new();
@@ -67,7 +67,7 @@ mod tests {
         assert!(clone.is_cancelled());
     }
 
-    // @req REQ-AGENT-009
+    // rtmx:req REQ-AGENT-009
     #[test]
     fn cancel_is_idempotent() {
         let token = CancellationToken::new();
@@ -76,7 +76,7 @@ mod tests {
         assert!(token.is_cancelled());
     }
 
-    // @req REQ-AGENT-009
+    // rtmx:req REQ-AGENT-009
     #[test]
     fn default_is_not_cancelled() {
         let token = CancellationToken::default();

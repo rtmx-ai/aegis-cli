@@ -1,6 +1,6 @@
 //! Validates BDD scenario execution coverage report (REQ-TEST-031).
 
-// @req REQ-TEST-031
+// rtmx:req REQ-TEST-031
 #[test]
 fn test_bdd_coverage_script_exists() {
     let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -12,7 +12,7 @@ fn test_bdd_coverage_script_exists() {
     assert!(script.exists(), "bdd-coverage-report.sh must exist");
 }
 
-// @req REQ-TEST-031
+// rtmx:req REQ-TEST-031
 #[test]
 fn test_bdd_coverage_script_is_executable() {
     #[cfg(unix)]

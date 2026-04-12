@@ -289,7 +289,7 @@ mod tests {
         final_path
     }
 
-    // @req REQ-INFRA-001
+    // rtmx:req REQ-INFRA-001
     #[cfg(unix)]
     #[tokio::test]
     async fn discover_valid_plugin() {
@@ -303,7 +303,7 @@ echo '{"name":"test-plugin","version":"0.1.0","contract":"aegis-infra/v1","descr
         assert_eq!(plugin.manifest.contract, "aegis-infra/v1");
     }
 
-    // @req REQ-INFRA-002
+    // rtmx:req REQ-INFRA-002
     #[cfg(unix)]
     #[tokio::test]
     async fn discover_rejects_incompatible_protocol() {
@@ -321,7 +321,7 @@ echo '{"name":"old-plugin","version":"0.1.0","contract":"aegis-infra/v99"}'
         );
     }
 
-    // @req REQ-INFRA-006
+    // rtmx:req REQ-INFRA-006
     #[cfg(unix)]
     #[tokio::test]
     async fn discover_handles_failed_plugin() {
@@ -332,7 +332,7 @@ echo '{"name":"old-plugin","version":"0.1.0","contract":"aegis-infra/v99"}'
         assert!(result.is_err());
     }
 
-    // @req REQ-INFRA-001
+    // rtmx:req REQ-INFRA-001
     #[cfg(unix)]
     #[tokio::test]
     async fn run_plugin_collects_ndjson_events() {
@@ -362,7 +362,7 @@ echo '{"type":"result","success":true,"outputs":{"key":"value"}}'
         assert_eq!(output.exit_code, 0);
     }
 
-    // @req REQ-INFRA-006
+    // rtmx:req REQ-INFRA-006
     #[cfg(unix)]
     #[tokio::test]
     async fn run_plugin_captures_stderr_on_failure() {
@@ -388,7 +388,7 @@ echo '{"type":"result","success":true,"outputs":{"key":"value"}}'
         );
     }
 
-    // @req REQ-INFRA-004
+    // rtmx:req REQ-INFRA-004
     #[cfg(unix)]
     #[tokio::test]
     async fn run_plugin_skips_malformed_lines() {
@@ -416,7 +416,7 @@ echo '{"type":"result","success":true}'
         assert_eq!(output.events.len(), 2);
     }
 
-    // @req REQ-INFRA-007
+    // rtmx:req REQ-INFRA-007
     #[cfg(unix)]
     #[tokio::test]
     async fn run_plugin_times_out_and_returns_error() {
@@ -440,7 +440,7 @@ echo '{"type":"result","success":true}'
         assert!(err.contains("timed out"), "Should mention timeout: {err}");
     }
 
-    // @req REQ-INFRA-010
+    // rtmx:req REQ-INFRA-010
     #[test]
     fn aggregate_health_all_pass() {
         let checks = vec![
@@ -460,7 +460,7 @@ echo '{"type":"result","success":true}'
         assert!(summary.contains("2 passed"));
     }
 
-    // @req REQ-INFRA-010
+    // rtmx:req REQ-INFRA-010
     #[test]
     fn aggregate_health_with_failure() {
         let checks = vec![
@@ -480,7 +480,7 @@ echo '{"type":"result","success":true}'
         assert!(summary.contains("1 failed"));
     }
 
-    // @req REQ-INFRA-010
+    // rtmx:req REQ-INFRA-010
     #[test]
     fn aggregate_health_with_warn() {
         let checks = vec![
@@ -502,7 +502,7 @@ echo '{"type":"result","success":true}'
 
     // --- REQ-INFRA-003: Plugin discovery ---
 
-    // @req REQ-INFRA-003
+    // rtmx:req REQ-INFRA-003
     #[cfg(unix)]
     #[tokio::test]
     async fn discover_plugins_finds_executables() {
@@ -525,7 +525,7 @@ echo '{"name":"beta","version":"2.0.0","contract":"aegis-infra/v1","description"
         assert!(names.contains(&"beta"));
     }
 
-    // @req REQ-INFRA-003
+    // rtmx:req REQ-INFRA-003
     #[cfg(unix)]
     #[tokio::test]
     async fn discover_plugins_skips_non_executable() {
@@ -551,7 +551,7 @@ echo '{"name":"nope","version":"1.0.0","contract":"aegis-infra/v1"}'
         assert!(plugins.is_empty(), "Non-executable files should be skipped");
     }
 
-    // @req REQ-INFRA-003
+    // rtmx:req REQ-INFRA-003
     #[tokio::test]
     async fn discover_plugins_empty_directory() {
         let tmp = TempDir::new().unwrap();
@@ -559,7 +559,7 @@ echo '{"name":"nope","version":"1.0.0","contract":"aegis-infra/v1"}'
         assert!(plugins.is_empty());
     }
 
-    // @req REQ-INFRA-003
+    // rtmx:req REQ-INFRA-003
     #[cfg(unix)]
     #[tokio::test]
     async fn discover_plugins_skips_invalid_manifests() {
@@ -588,13 +588,13 @@ echo '{"name":"old","version":"1.0.0","contract":"aegis-infra/v99"}'
 
     // --- REQ-INFRA-009: Teardown safety gate ---
 
-    // @req REQ-INFRA-009
+    // rtmx:req REQ-INFRA-009
     #[test]
     fn destroy_confirmation_exact_match() {
         assert!(validate_destroy_confirmation("my-project", "my-project"));
     }
 
-    // @req REQ-INFRA-009
+    // rtmx:req REQ-INFRA-009
     #[test]
     fn destroy_confirmation_rejects_wrong_string() {
         assert!(!validate_destroy_confirmation(
@@ -603,13 +603,13 @@ echo '{"name":"old","version":"1.0.0","contract":"aegis-infra/v99"}'
         ));
     }
 
-    // @req REQ-INFRA-009
+    // rtmx:req REQ-INFRA-009
     #[test]
     fn destroy_confirmation_rejects_empty_string() {
         assert!(!validate_destroy_confirmation("my-project", ""));
     }
 
-    // @req REQ-INFRA-009
+    // rtmx:req REQ-INFRA-009
     #[test]
     fn destroy_confirmation_is_case_sensitive() {
         assert!(!validate_destroy_confirmation("my-project", "My-Project"));

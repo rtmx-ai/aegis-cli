@@ -296,14 +296,14 @@ REQ-BUILD-001,BUILD,BINARY,Static binary,Runs on RHEL,tests/build.rs,test_binary
 REQ-TUI-001,TUI,LAYOUT,Chat layout,TUI renders,tests/tui.rs,test_layout,Unit Test,TODO,CRITICAL,1,ratatui,
 REQ-AGENT-001,AGENT,LOOP,REA loop,Agent completes,tests/agent.rs,test_loop,Integration Test,COMPLETE,CRITICAL,1,Goose fork,REQ-LLM-001";
 
-    // @req REQ-RTMX-001
+    // rtmx:req REQ-RTMX-001
     #[test]
     fn parse_csv_returns_all_requirements() {
         let db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
         assert_eq!(db.count(), 3);
     }
 
-    // @req REQ-RTMX-001
+    // rtmx:req REQ-RTMX-001
     #[test]
     fn get_requirement_by_id() {
         let db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
@@ -312,14 +312,14 @@ REQ-AGENT-001,AGENT,LOOP,REA loop,Agent completes,tests/agent.rs,test_loop,Integ
         assert_eq!(req.status, "COMPLETE");
     }
 
-    // @req REQ-RTMX-001
+    // rtmx:req REQ-RTMX-001
     #[test]
     fn get_nonexistent_returns_none() {
         let db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
         assert!(db.get("REQ-FAKE-999").is_none());
     }
 
-    // @req REQ-RTMX-001
+    // rtmx:req REQ-RTMX-001
     #[test]
     fn filter_by_category() {
         let db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
@@ -328,7 +328,7 @@ REQ-AGENT-001,AGENT,LOOP,REA loop,Agent completes,tests/agent.rs,test_loop,Integ
         assert_eq!(build[0].req_id, "REQ-BUILD-001");
     }
 
-    // @req REQ-RTMX-001
+    // rtmx:req REQ-RTMX-001
     #[test]
     fn filter_by_status() {
         let db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
@@ -336,7 +336,7 @@ REQ-AGENT-001,AGENT,LOOP,REA loop,Agent completes,tests/agent.rs,test_loop,Integ
         assert_eq!(complete.len(), 2);
     }
 
-    // @req REQ-RTMX-001
+    // rtmx:req REQ-RTMX-001
     #[test]
     fn count_by_status() {
         let db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
@@ -344,7 +344,7 @@ REQ-AGENT-001,AGENT,LOOP,REA loop,Agent completes,tests/agent.rs,test_loop,Integ
         assert_eq!(db.count_by_status("TODO"), 1);
     }
 
-    // @req REQ-RTMX-001
+    // rtmx:req REQ-RTMX-001
     #[test]
     fn parse_dependencies() {
         let db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
@@ -352,7 +352,7 @@ REQ-AGENT-001,AGENT,LOOP,REA loop,Agent completes,tests/agent.rs,test_loop,Integ
         assert_eq!(req.dependencies, "REQ-LLM-001");
     }
 
-    // @req REQ-RTMX-001
+    // rtmx:req REQ-RTMX-001
     #[test]
     fn handles_quoted_fields_with_commas() {
         let csv = "\
@@ -364,14 +364,14 @@ REQ-TEST-001,TEST,X,\"Requirement with, comma\",\"Target with, comma\",t.rs,test
         assert_eq!(req.target_value, "Target with, comma");
     }
 
-    // @req REQ-RTMX-001
+    // rtmx:req REQ-RTMX-001
     #[test]
     fn empty_csv_returns_error() {
         let result = RequirementsDb::from_csv("");
         assert!(result.is_err());
     }
 
-    // @req REQ-RTMX-001
+    // rtmx:req REQ-RTMX-001
     #[test]
     fn loads_real_database() {
         let path = std::path::Path::new(".rtmx/database.csv");
@@ -387,7 +387,7 @@ REQ-TEST-001,TEST,X,\"Requirement with, comma\",\"Target with, comma\",t.rs,test
         }
     }
 
-    // @req REQ-RTMX-002
+    // rtmx:req REQ-RTMX-002
     #[test]
     fn update_status_changes_the_field() {
         let mut db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
@@ -395,7 +395,7 @@ REQ-TEST-001,TEST,X,\"Requirement with, comma\",\"Target with, comma\",t.rs,test
         assert_eq!(db.get("REQ-TUI-001").unwrap().status, "IN_PROGRESS");
     }
 
-    // @req REQ-RTMX-002
+    // rtmx:req REQ-RTMX-002
     #[test]
     fn update_status_nonexistent_req_returns_error() {
         let mut db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
@@ -408,7 +408,7 @@ REQ-TEST-001,TEST,X,\"Requirement with, comma\",\"Target with, comma\",t.rs,test
         );
     }
 
-    // @req REQ-RTMX-002
+    // rtmx:req REQ-RTMX-002
     #[test]
     fn update_test_info_sets_both_fields() {
         let mut db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
@@ -419,7 +419,7 @@ REQ-TEST-001,TEST,X,\"Requirement with, comma\",\"Target with, comma\",t.rs,test
         assert_eq!(req.test_function, "test_new_layout");
     }
 
-    // @req REQ-RTMX-002
+    // rtmx:req REQ-RTMX-002
     #[test]
     fn set_completed_updates_status_and_date() {
         let mut db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
@@ -431,7 +431,7 @@ REQ-TEST-001,TEST,X,\"Requirement with, comma\",\"Target with, comma\",t.rs,test
         assert_eq!(req.completed_date, today);
     }
 
-    // @req REQ-RTMX-002
+    // rtmx:req REQ-RTMX-002
     #[test]
     fn save_csv_roundtrips_correctly() {
         let mut db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
@@ -450,7 +450,7 @@ REQ-TEST-001,TEST,X,\"Requirement with, comma\",\"Target with, comma\",t.rs,test
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // @req REQ-RTMX-002
+    // rtmx:req REQ-RTMX-002
     #[test]
     fn save_preserves_all_columns() {
         let db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
@@ -491,7 +491,7 @@ REQ-TEST-001,TEST,X,\"Requirement with, comma\",\"Target with, comma\",t.rs,test
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // @req REQ-RTMX-002
+    // rtmx:req REQ-RTMX-002
     #[test]
     fn multiple_updates_accumulate() {
         let mut db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
@@ -506,7 +506,7 @@ REQ-TEST-001,TEST,X,\"Requirement with, comma\",\"Target with, comma\",t.rs,test
         assert_eq!(req.test_function, "test_v2");
     }
 
-    // @req REQ-RTMX-002
+    // rtmx:req REQ-RTMX-002
     #[test]
     fn save_creates_parent_directory_if_missing() {
         let dir = std::env::temp_dir()

@@ -78,7 +78,7 @@ pub fn format_result(result: &ConnectivityResult) -> String {
 mod tests {
     use super::*;
 
-    // @req REQ-ONBOARD-012
+    // rtmx:req REQ-ONBOARD-012
     #[test]
     fn format_reachable_with_latency() {
         let result = ConnectivityResult {
@@ -91,7 +91,7 @@ mod tests {
         assert!(msg.contains("42ms"));
     }
 
-    // @req REQ-ONBOARD-012
+    // rtmx:req REQ-ONBOARD-012
     #[test]
     fn format_unreachable_with_error() {
         let result = ConnectivityResult {
@@ -104,7 +104,7 @@ mod tests {
         assert!(msg.contains("connection refused"));
     }
 
-    // @req REQ-ONBOARD-012
+    // rtmx:req REQ-ONBOARD-012
     #[test]
     fn format_reachable_without_latency() {
         let result = ConnectivityResult {
@@ -117,7 +117,7 @@ mod tests {
         assert!(!msg.contains("ms"));
     }
 
-    // @req REQ-ONBOARD-012
+    // rtmx:req REQ-ONBOARD-012
     #[tokio::test]
     async fn unreachable_endpoint_returns_false() {
         let result = check_endpoint("http://127.0.0.1:1", Duration::from_secs(1)).await;
@@ -125,7 +125,7 @@ mod tests {
         assert!(result.error.is_some());
     }
 
-    // @req REQ-ONBOARD-012
+    // rtmx:req REQ-ONBOARD-012
     #[test]
     fn format_unreachable_without_error() {
         let result = ConnectivityResult {

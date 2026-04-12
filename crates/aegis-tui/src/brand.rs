@@ -29,7 +29,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 mod tests {
     use super::*;
 
-    // @req REQ-TUI-031
+    // rtmx:req REQ-TUI-031
     #[test]
     fn logo_full_fits_80_columns() {
         for line in LOGO_FULL.lines() {
@@ -42,7 +42,7 @@ mod tests {
         }
     }
 
-    // @req REQ-TUI-031
+    // rtmx:req REQ-TUI-031
     #[test]
     fn logo_full_is_6_to_8_lines() {
         let count = LOGO_FULL.lines().count();
@@ -52,7 +52,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-031
+    // rtmx:req REQ-TUI-031
     #[test]
     fn logo_compact_fits_80_columns() {
         assert!(
@@ -62,25 +62,25 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-031
+    // rtmx:req REQ-TUI-031
     #[test]
     fn brand_promise_is_not_empty() {
         assert!(!BRAND_PROMISE.is_empty());
     }
 
-    // @req REQ-TUI-031
+    // rtmx:req REQ-TUI-031
     #[test]
     fn version_is_semver() {
         assert!(VERSION.contains('.'), "VERSION should be semver: {VERSION}",);
     }
 
-    // @req REQ-TUI-031
+    // rtmx:req REQ-TUI-031
     #[test]
     fn logo_full_is_pure_ascii() {
         assert!(LOGO_FULL.is_ascii(), "LOGO_FULL must be pure ASCII",);
     }
 
-    // @req REQ-TUI-031
+    // rtmx:req REQ-TUI-031
     #[test]
     fn logo_compact_is_pure_ascii() {
         assert!(LOGO_COMPACT.is_ascii(), "LOGO_COMPACT must be pure ASCII",);

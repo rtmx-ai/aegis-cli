@@ -138,7 +138,7 @@ mod tests {
     use super::*;
     use rstest::*;
 
-    // @req REQ-HITL-001
+    // rtmx:req REQ-HITL-001
     #[rstest]
     #[case(ToolCall::WriteFile { path: FilePath::new_unchecked("src/main.rs"), content: String::new() }, ToolRisk::StateMutating)]
     #[case(ToolCall::ReadFile { path: FilePath::new_unchecked("src/main.rs") }, ToolRisk::ReadOnly)]
@@ -149,7 +149,7 @@ mod tests {
         assert_eq!(call.risk(), expected);
     }
 
-    // @req REQ-BUILD-001
+    // rtmx:req REQ-BUILD-001
     #[test]
     fn session_id_is_unique() {
         let a = SessionId::new();

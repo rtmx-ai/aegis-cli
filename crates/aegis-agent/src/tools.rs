@@ -213,7 +213,7 @@ mod tests {
         BuiltinExecutor::new(Arc::new(MockSecurityFilter), dir)
     }
 
-    // @req REQ-AGENT-002
+    // rtmx:req REQ-AGENT-002
     #[tokio::test]
     async fn read_file_returns_contents() {
         let tmp = TempDir::new().unwrap();
@@ -235,7 +235,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AGENT-002
+    // rtmx:req REQ-AGENT-002
     #[tokio::test]
     async fn read_file_returns_error_for_missing() {
         let tmp = TempDir::new().unwrap();
@@ -251,7 +251,7 @@ mod tests {
         assert!(matches!(result, ToolResult::Error { .. }));
     }
 
-    // @req REQ-SECURITY-001
+    // rtmx:req REQ-SECURITY-001
     #[tokio::test]
     async fn read_file_blocked_by_security_filter() {
         use aegis_security::aegisignore::AegisIgnore;
@@ -275,7 +275,7 @@ mod tests {
         );
     }
 
-    // @req REQ-AGENT-002
+    // rtmx:req REQ-AGENT-002
     #[tokio::test]
     async fn write_file_creates_and_writes() {
         let tmp = TempDir::new().unwrap();
@@ -294,7 +294,7 @@ mod tests {
         assert_eq!(content, "new content");
     }
 
-    // @req REQ-AGENT-002
+    // rtmx:req REQ-AGENT-002
     #[tokio::test]
     async fn write_file_creates_parent_dirs() {
         let tmp = TempDir::new().unwrap();
@@ -312,7 +312,7 @@ mod tests {
         assert!(tmp.path().join("deep/nested/file.txt").exists());
     }
 
-    // @req REQ-AGENT-002
+    // rtmx:req REQ-AGENT-002
     #[tokio::test]
     async fn run_command_captures_stdout() {
         let tmp = TempDir::new().unwrap();
@@ -337,7 +337,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AGENT-002
+    // rtmx:req REQ-AGENT-002
     #[tokio::test]
     async fn run_command_returns_error_on_failure() {
         let tmp = TempDir::new().unwrap();
@@ -357,7 +357,7 @@ mod tests {
         );
     }
 
-    // @req REQ-AGENT-011
+    // rtmx:req REQ-AGENT-011
     #[tokio::test]
     async fn run_command_times_out() {
         let tmp = TempDir::new().unwrap();
@@ -382,7 +382,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AGENT-002
+    // rtmx:req REQ-AGENT-002
     #[tokio::test]
     async fn list_dir_returns_sorted_entries() {
         let tmp = TempDir::new().unwrap();
@@ -413,7 +413,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AGENT-002
+    // rtmx:req REQ-AGENT-002
     #[tokio::test]
     async fn grep_finds_pattern() {
         let tmp = TempDir::new().unwrap();
@@ -440,7 +440,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AGENT-002
+    // rtmx:req REQ-AGENT-002
     #[tokio::test]
     async fn grep_returns_no_matches() {
         let tmp = TempDir::new().unwrap();

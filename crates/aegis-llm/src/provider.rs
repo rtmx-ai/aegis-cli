@@ -26,7 +26,7 @@ pub fn create_provider(config: &ProviderConfig) -> Result<Box<dyn LlmProvider>, 
 mod tests {
     use super::*;
 
-    // @req REQ-LLM-001
+    // rtmx:req REQ-LLM-001
     #[test]
     fn factory_creates_local_provider() {
         let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
@@ -34,7 +34,7 @@ mod tests {
         assert!(provider.is_ok());
     }
 
-    // @req REQ-LLM-001
+    // rtmx:req REQ-LLM-001
     #[test]
     fn factory_rejects_unimplemented_providers() {
         let cfg = ProviderConfig {

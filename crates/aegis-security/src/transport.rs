@@ -125,21 +125,21 @@ pub fn validate_endpoint(url: &str, is_local: bool) -> Result<(), DomainError> {
 mod tests {
     use super::*;
 
-    // @req REQ-SECURITY-002
+    // rtmx:req REQ-SECURITY-002
     #[test]
     fn cloud_config_requires_tls_13() {
         let config = TransportConfig::cloud();
         assert_eq!(config.min_tls_version, TlsVersion::Tls13);
     }
 
-    // @req REQ-SECURITY-002
+    // rtmx:req REQ-SECURITY-002
     #[test]
     fn local_config_allows_tls_12() {
         let config = TransportConfig::local();
         assert_eq!(config.min_tls_version, TlsVersion::Tls12);
     }
 
-    // @req REQ-SECURITY-002
+    // rtmx:req REQ-SECURITY-002
     #[test]
     fn cloud_config_builds_client() {
         let config = TransportConfig::cloud();
@@ -147,7 +147,7 @@ mod tests {
         assert!(client.is_ok());
     }
 
-    // @req REQ-SECURITY-002
+    // rtmx:req REQ-SECURITY-002
     #[test]
     fn local_config_builds_client() {
         let config = TransportConfig::local();
@@ -155,7 +155,7 @@ mod tests {
         assert!(client.is_ok());
     }
 
-    // @req REQ-SECURITY-002
+    // rtmx:req REQ-SECURITY-002
     #[test]
     fn default_timeouts_are_reasonable() {
         let config = TransportConfig::cloud();
@@ -163,7 +163,7 @@ mod tests {
         assert_eq!(config.read_timeout, Duration::from_secs(30));
     }
 
-    // @req REQ-ONBOARD-007
+    // rtmx:req REQ-ONBOARD-007
     #[test]
     fn missing_ca_bundle_returns_error() {
         let config = TransportConfig {
@@ -174,14 +174,14 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // @req REQ-LLM-016
+    // rtmx:req REQ-LLM-016
     #[test]
     fn validate_cloud_endpoint_requires_https() {
         assert!(validate_endpoint("https://vertex.googleapis.com", false).is_ok());
         assert!(validate_endpoint("http://vertex.googleapis.com", false).is_err());
     }
 
-    // @req REQ-LLM-016
+    // rtmx:req REQ-LLM-016
     #[test]
     fn validate_local_endpoint_allows_loopback_http() {
         assert!(validate_endpoint("http://localhost:11434", true).is_ok());
@@ -189,13 +189,13 @@ mod tests {
         assert!(validate_endpoint("http://[::1]:11434", true).is_ok());
     }
 
-    // @req REQ-LLM-016
+    // rtmx:req REQ-LLM-016
     #[test]
     fn validate_local_endpoint_rejects_non_loopback_http() {
         assert!(validate_endpoint("http://remote-host:8080", true).is_err());
     }
 
-    // @req REQ-SECURITY-002
+    // rtmx:req REQ-SECURITY-002
     #[test]
     fn validate_empty_endpoint_errors() {
         assert!(validate_endpoint("", false).is_err());

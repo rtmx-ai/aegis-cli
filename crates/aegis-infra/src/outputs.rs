@@ -58,7 +58,7 @@ mod tests {
     use super::*;
     use crate::events::ResultEvent;
 
-    // @req REQ-INFRA-008
+    // rtmx:req REQ-INFRA-008
     #[test]
     fn merge_outputs_combines_disjoint_maps() {
         let existing = HashMap::from([("vpc_id".to_string(), "vpc-abc".to_string())]);
@@ -69,7 +69,7 @@ mod tests {
         assert_eq!(merged["endpoint"], "https://vertex.example");
     }
 
-    // @req REQ-INFRA-008
+    // rtmx:req REQ-INFRA-008
     #[test]
     fn merge_outputs_new_overwrites_collision() {
         let existing =
@@ -80,7 +80,7 @@ mod tests {
         assert_eq!(merged["endpoint"], "https://new.example");
     }
 
-    // @req REQ-INFRA-008
+    // rtmx:req REQ-INFRA-008
     #[test]
     fn merge_outputs_empty_new_preserves_existing() {
         let existing = HashMap::from([("vpc_id".to_string(), "vpc-abc".to_string())]);
@@ -88,7 +88,7 @@ mod tests {
         assert_eq!(merged, existing);
     }
 
-    // @req REQ-INFRA-008
+    // rtmx:req REQ-INFRA-008
     #[test]
     fn merge_outputs_empty_existing_returns_new() {
         let new = HashMap::from([("endpoint".to_string(), "https://new.example".to_string())]);
@@ -96,14 +96,14 @@ mod tests {
         assert_eq!(merged, new);
     }
 
-    // @req REQ-INFRA-008
+    // rtmx:req REQ-INFRA-008
     #[test]
     fn merge_outputs_both_empty() {
         let merged = merge_outputs(&HashMap::new(), &HashMap::new());
         assert!(merged.is_empty());
     }
 
-    // @req REQ-INFRA-008
+    // rtmx:req REQ-INFRA-008
     #[test]
     fn extract_outputs_from_successful_result() {
         let mut outputs = HashMap::new();
@@ -134,7 +134,7 @@ mod tests {
         assert_eq!(extracted["vpc_name"], "aegis-vpc");
     }
 
-    // @req REQ-INFRA-008
+    // rtmx:req REQ-INFRA-008
     #[test]
     fn extract_outputs_returns_empty_on_failure() {
         let plugin_output = PluginOutput {
@@ -156,7 +156,7 @@ mod tests {
         );
     }
 
-    // @req REQ-INFRA-008
+    // rtmx:req REQ-INFRA-008
     #[test]
     fn extract_outputs_returns_empty_when_no_result() {
         let plugin_output = PluginOutput {
@@ -170,7 +170,7 @@ mod tests {
         assert!(extracted.is_empty());
     }
 
-    // @req REQ-INFRA-008
+    // rtmx:req REQ-INFRA-008
     #[test]
     fn extract_outputs_returns_empty_when_outputs_is_none() {
         let plugin_output = PluginOutput {
@@ -189,7 +189,7 @@ mod tests {
         assert!(extracted.is_empty());
     }
 
-    // @req REQ-INFRA-008
+    // rtmx:req REQ-INFRA-008
     #[test]
     fn format_outputs_sorted_key_value() {
         let outputs = HashMap::from([
@@ -205,14 +205,14 @@ mod tests {
         assert_eq!(lines[2], "vpc_name=aegis-vpc");
     }
 
-    // @req REQ-INFRA-008
+    // rtmx:req REQ-INFRA-008
     #[test]
     fn format_outputs_empty_map_returns_empty_string() {
         let formatted = format_outputs(&HashMap::new());
         assert!(formatted.is_empty());
     }
 
-    // @req REQ-INFRA-008
+    // rtmx:req REQ-INFRA-008
     #[test]
     fn format_outputs_single_entry() {
         let outputs = HashMap::from([("key".to_string(), "value".to_string())]);

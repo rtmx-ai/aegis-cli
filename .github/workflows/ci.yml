@@ -382,9 +382,8 @@ jobs:
       - run: pip install rtmx
       - run: rtmx status
 
-  # REQ-TEST-039: Scan @req markers and verify requirements traceability.
-  # Uses native rtmx CLI (v0.2.5+) which scans Rust // @req markers directly.
-  # Replaces the Python bridge script that could not parse Rust markers.
+  # REQ-TEST-039: Scan // rtmx:req markers and verify requirements traceability.
+  # Uses native rtmx CLI (v0.2.5+) which scans Rust // rtmx:req markers.
   rtmx-update:
     name: RTMX Requirements Update
     runs-on: ubuntu-latest
@@ -392,14 +391,15 @@ jobs:
     needs: [unit-tests]
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
       - name: Install rtmx
         run: pip install rtmx
       - name: Scan test markers
-        run: rtmx from-tests --update
-      - name: Verify requirements traceability
-        run: rtmx verify --command "cargo test --workspace" --dry-run
+        run: rtmx from-tests crates/ --update
+      - name: Report marker coverage
+        run: rtmx from-tests crates/ --show-all | tail -5
 
   build-gate:
     name: Build Gate

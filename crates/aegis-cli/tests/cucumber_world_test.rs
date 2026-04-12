@@ -5,7 +5,7 @@
 //! main(). These tests verify the underlying AegisWorld components work
 //! correctly under the standard test harness.
 
-// @req REQ-TEST-020
+// rtmx:req REQ-TEST-020
 #[test]
 fn test_aegis_world_default_constructs() {
     // AegisWorld is Default-constructible with all fields None/empty.
@@ -24,7 +24,7 @@ fn test_aegis_world_default_constructs() {
     assert!(last_error.is_none());
 }
 
-// @req REQ-TEST-020
+// rtmx:req REQ-TEST-020
 #[test]
 fn test_aegis_world_state_round_trip() {
     // Verify the world fields can be populated and read back.
@@ -35,7 +35,7 @@ fn test_aegis_world_state_round_trip() {
     assert_eq!(final_response.as_deref(), Some("hi there"));
 }
 
-// @req REQ-TEST-020
+// rtmx:req REQ-TEST-020
 #[test]
 fn test_cucumber_features_directory_exists() {
     let features_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -60,7 +60,7 @@ fn test_cucumber_features_directory_exists() {
     }
 }
 
-// @req REQ-TEST-020
+// rtmx:req REQ-TEST-020
 #[test]
 fn test_cucumber_runner_binary_exists() {
     // The cucumber test binary should be configured in Cargo.toml

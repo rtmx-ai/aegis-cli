@@ -74,7 +74,7 @@ impl SystemPromptManager {
 mod tests {
     use super::*;
 
-    // @req REQ-AGENT-015
+    // rtmx:req REQ-AGENT-015
     #[test]
     fn empty_manager_builds_empty_string() {
         let mgr = SystemPromptManager::new();
@@ -82,7 +82,7 @@ mod tests {
         assert!(mgr.is_empty());
     }
 
-    // @req REQ-AGENT-015
+    // rtmx:req REQ-AGENT-015
     #[test]
     fn single_base_layer() {
         let mut mgr = SystemPromptManager::new();
@@ -90,7 +90,7 @@ mod tests {
         assert_eq!(mgr.build(), "You are aegis.");
     }
 
-    // @req REQ-AGENT-015
+    // rtmx:req REQ-AGENT-015
     #[test]
     fn layers_concatenated_in_priority_order() {
         let mut mgr = SystemPromptManager::new();
@@ -107,7 +107,7 @@ mod tests {
         assert_eq!(parts[2], "Focus on security.");
     }
 
-    // @req REQ-AGENT-015
+    // rtmx:req REQ-AGENT-015
     #[test]
     fn higher_layer_replaces_previous_value() {
         let mut mgr = SystemPromptManager::new();
@@ -116,7 +116,7 @@ mod tests {
         assert_eq!(mgr.build(), "new instructions");
     }
 
-    // @req REQ-AGENT-015
+    // rtmx:req REQ-AGENT-015
     #[test]
     fn clear_layer_removes_it() {
         let mut mgr = SystemPromptManager::new();
@@ -126,7 +126,7 @@ mod tests {
         assert_eq!(mgr.build(), "You are aegis.");
     }
 
-    // @req REQ-AGENT-015
+    // rtmx:req REQ-AGENT-015
     #[test]
     fn setting_empty_text_removes_layer() {
         let mut mgr = SystemPromptManager::new();
@@ -136,7 +136,7 @@ mod tests {
         assert_eq!(mgr.build(), "");
     }
 
-    // @req REQ-AGENT-015
+    // rtmx:req REQ-AGENT-015
     #[test]
     fn skips_missing_middle_layer() {
         let mut mgr = SystemPromptManager::new();
@@ -146,14 +146,14 @@ mod tests {
         assert_eq!(prompt, "base prompt\n\nsession override");
     }
 
-    // @req REQ-AGENT-015
+    // rtmx:req REQ-AGENT-015
     #[test]
     fn layer_ordering_matches_enum_variants() {
         assert!(SystemPromptLayer::Base < SystemPromptLayer::Project);
         assert!(SystemPromptLayer::Project < SystemPromptLayer::Session);
     }
 
-    // @req REQ-AGENT-015
+    // rtmx:req REQ-AGENT-015
     #[test]
     fn clone_produces_independent_copy() {
         let mut mgr = SystemPromptManager::new();

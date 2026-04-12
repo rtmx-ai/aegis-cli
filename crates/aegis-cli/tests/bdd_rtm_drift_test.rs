@@ -1,6 +1,6 @@
 //! Validates BDD-RTM drift detection tooling (REQ-TEST-040).
 
-// @req REQ-TEST-040
+// rtmx:req REQ-TEST-040
 #[test]
 fn test_drift_script_exists() {
     let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -12,7 +12,7 @@ fn test_drift_script_exists() {
     assert!(script.exists(), "bdd-rtm-drift.py must exist");
 }
 
-// @req REQ-TEST-040
+// rtmx:req REQ-TEST-040
 #[test]
 fn test_drift_script_is_valid_python() {
     let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

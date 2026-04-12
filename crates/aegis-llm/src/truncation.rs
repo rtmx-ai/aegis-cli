@@ -146,28 +146,28 @@ mod tests {
         }
     }
 
-    // @req REQ-LLM-018
+    // rtmx:req REQ-LLM-018
     #[test]
     fn estimate_tokens_basic() {
         // 12 chars -> 3 tokens
         assert_eq!(estimate_tokens("hello world!"), 3);
     }
 
-    // @req REQ-LLM-018
+    // rtmx:req REQ-LLM-018
     #[test]
     fn estimate_tokens_minimum_is_one() {
         assert_eq!(estimate_tokens(""), 1);
         assert_eq!(estimate_tokens("ab"), 1);
     }
 
-    // @req REQ-LLM-018
+    // rtmx:req REQ-LLM-018
     #[test]
     fn estimate_message_tokens_adds_overhead() {
         let msg = user("hello world!"); // 12 chars -> 3 tokens + 4 overhead = 7
         assert_eq!(estimate_message_tokens(&msg), 7);
     }
 
-    // @req REQ-LLM-018
+    // rtmx:req REQ-LLM-018
     #[test]
     fn truncate_no_op_when_within_budget() {
         let msgs = vec![sys("system prompt"), user("hello"), assistant("hi")];
@@ -176,7 +176,7 @@ mod tests {
         assert_eq!(result.dropped_count, 0);
     }
 
-    // @req REQ-LLM-018
+    // rtmx:req REQ-LLM-018
     #[test]
     fn truncate_preserves_system_messages() {
         // System message: "system" = 6 chars -> 1 token + 4 = 5 tokens
@@ -192,7 +192,7 @@ mod tests {
         assert_eq!(result.messages[1].content, "bbbb");
     }
 
-    // @req REQ-LLM-018
+    // rtmx:req REQ-LLM-018
     #[test]
     fn truncate_drops_oldest_non_system_first() {
         // 3 user messages, budget enough for system + 2 newest
@@ -210,7 +210,7 @@ mod tests {
         assert_eq!(result.messages[2].content, "msg3msg3");
     }
 
-    // @req REQ-LLM-018
+    // rtmx:req REQ-LLM-018
     #[test]
     fn truncate_system_exceeds_budget_returns_only_system() {
         let msgs = vec![sys("a]very long system prompt that is huge"), user("hi")];
@@ -221,7 +221,7 @@ mod tests {
         assert_eq!(result.dropped_count, 1);
     }
 
-    // @req REQ-LLM-018
+    // rtmx:req REQ-LLM-018
     #[test]
     fn truncate_empty_messages() {
         let result = truncate(&[], 1000);
@@ -230,7 +230,7 @@ mod tests {
         assert_eq!(result.estimated_tokens, 0);
     }
 
-    // @req REQ-LLM-018
+    // rtmx:req REQ-LLM-018
     #[test]
     fn truncate_to_fit_returns_only_messages() {
         let msgs = vec![sys("syst"), user("aaaa"), user("bbbb")];
@@ -238,7 +238,7 @@ mod tests {
         assert_eq!(result.len(), 2);
     }
 
-    // @req REQ-LLM-018
+    // rtmx:req REQ-LLM-018
     #[test]
     fn truncate_preserves_message_order() {
         let msgs = vec![
@@ -258,7 +258,7 @@ mod tests {
         assert!(matches!(result.messages[4].role, Role::Assistant));
     }
 
-    // @req REQ-LLM-018
+    // rtmx:req REQ-LLM-018
     #[test]
     fn truncate_multiple_system_messages_all_preserved() {
         let msgs = vec![sys("sys1"), user("u1u1"), sys("sys2"), user("u2u2")];
@@ -270,7 +270,7 @@ mod tests {
         assert_eq!(result.messages[2].content, "u2u2");
     }
 
-    // @req REQ-LLM-018
+    // rtmx:req REQ-LLM-018
     #[test]
     fn truncate_result_estimated_tokens_is_accurate() {
         let msgs = vec![sys("syst"), user("testtest")]; // sys: 5, user: 2+4=6

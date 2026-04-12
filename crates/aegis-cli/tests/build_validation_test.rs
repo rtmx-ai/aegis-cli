@@ -11,7 +11,7 @@ fn workspace_root() -> std::path::PathBuf {
         .to_path_buf()
 }
 
-// @req REQ-BUILD-024
+// rtmx:req REQ-BUILD-024
 #[test]
 fn test_release_workflow_exists_and_creates_github_release() {
     let release_yml = workspace_root().join(".github/workflows/release.yml");
@@ -35,7 +35,7 @@ fn test_release_workflow_exists_and_creates_github_release() {
     );
 }
 
-// @req REQ-BUILD-026
+// rtmx:req REQ-BUILD-026
 #[test]
 fn test_ci_has_macos_aarch64_build() {
     let ci = workspace_root().join(".github/workflows/ci.yml");
@@ -50,7 +50,7 @@ fn test_ci_has_macos_aarch64_build() {
     );
 }
 
-// @req REQ-BUILD-026
+// rtmx:req REQ-BUILD-026
 #[test]
 fn test_release_has_macos_aarch64_build() {
     let release_yml = workspace_root().join(".github/workflows/release.yml");
@@ -65,7 +65,7 @@ fn test_release_has_macos_aarch64_build() {
     );
 }
 
-// @req REQ-BUILD-040
+// rtmx:req REQ-BUILD-040
 #[test]
 fn test_release_workflow_has_gpg_signing() {
     let release_yml = workspace_root().join(".github/workflows/release.yml");
@@ -84,7 +84,7 @@ fn test_release_workflow_has_gpg_signing() {
     );
 }
 
-// @req REQ-BUILD-041
+// rtmx:req REQ-BUILD-041
 #[test]
 fn test_release_workflow_has_authenticode_signing() {
     let release_yml = workspace_root().join(".github/workflows/release.yml");
@@ -111,7 +111,7 @@ fn test_release_workflow_has_authenticode_signing() {
     );
 }
 
-// @req REQ-BUILD-047
+// rtmx:req REQ-BUILD-047
 #[test]
 fn test_wix_source_file_exists() {
     let wxs = workspace_root().join("crates/aegis-cli/wix/main.wxs");
@@ -138,7 +138,7 @@ fn test_wix_source_file_exists() {
     );
 }
 
-// @req REQ-BUILD-047
+// rtmx:req REQ-BUILD-047
 #[test]
 fn test_release_workflow_has_wix_msi_generation() {
     let release_yml = workspace_root().join(".github/workflows/release.yml");
@@ -153,7 +153,7 @@ fn test_release_workflow_has_wix_msi_generation() {
     );
 }
 
-// @req REQ-BUILD-048
+// rtmx:req REQ-BUILD-048
 #[test]
 fn test_release_workflow_has_msi_smoke_test() {
     let release_yml = workspace_root().join(".github/workflows/release.yml");
@@ -168,7 +168,7 @@ fn test_release_workflow_has_msi_smoke_test() {
     );
 }
 
-// @req REQ-BUILD-005
+// rtmx:req REQ-BUILD-005
 #[test]
 fn test_rust_toolchain_file_exists() {
     let toolchain = workspace_root().join("rust-toolchain.toml");
@@ -188,14 +188,14 @@ fn test_rust_toolchain_file_exists() {
     );
 }
 
-// @req REQ-BUILD-005
+// rtmx:req REQ-BUILD-005
 #[test]
 fn test_cargo_lock_is_committed() {
     let lock = workspace_root().join("Cargo.lock");
     assert!(lock.exists(), "Cargo.lock must exist and be committed");
 }
 
-// @req REQ-BUILD-005
+// rtmx:req REQ-BUILD-005
 #[test]
 fn test_ci_sets_source_date_epoch() {
     let ci = workspace_root().join(".github/workflows/ci.yml");
@@ -206,7 +206,7 @@ fn test_ci_sets_source_date_epoch() {
     );
 }
 
-// @req REQ-BUILD-005
+// rtmx:req REQ-BUILD-005
 #[test]
 fn test_release_sets_source_date_epoch() {
     let release = workspace_root().join(".github/workflows/release.yml");
@@ -217,7 +217,7 @@ fn test_release_sets_source_date_epoch() {
     );
 }
 
-// @req REQ-BUILD-027
+// rtmx:req REQ-BUILD-027
 #[test]
 fn test_homebrew_formula_exists() {
     let formula = workspace_root().join("packaging/homebrew/aegis.rb");
@@ -228,7 +228,7 @@ fn test_homebrew_formula_exists() {
     assert!(content.contains("Apache-2.0"), "must specify license");
 }
 
-// @req REQ-BUILD-027
+// rtmx:req REQ-BUILD-027
 #[test]
 fn test_homebrew_formula_has_both_arch_urls() {
     let formula = workspace_root().join("packaging/homebrew/aegis.rb");

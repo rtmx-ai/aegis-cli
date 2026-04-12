@@ -11,7 +11,7 @@ use aegis_onboard::tutorial::{
 };
 use aegis_test_support::isolation::IsolatedHome;
 
-// @req REQ-TEST-025
+// rtmx:req REQ-TEST-025
 #[test]
 fn test_first_run_user_journey() {
     let home = IsolatedHome::new().expect("create isolated home");

@@ -1,6 +1,6 @@
 //! Validates user journey coverage metric infrastructure (REQ-TEST-032).
 
-// @req REQ-TEST-032
+// rtmx:req REQ-TEST-032
 #[test]
 fn test_user_journey_coverage_script_exists() {
     let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -12,7 +12,7 @@ fn test_user_journey_coverage_script_exists() {
     assert!(script.exists(), "user-journey-coverage.py must exist");
 }
 
-// @req REQ-TEST-032
+// rtmx:req REQ-TEST-032
 #[test]
 fn test_user_journey_coverage_script_is_executable() {
     #[cfg(unix)]

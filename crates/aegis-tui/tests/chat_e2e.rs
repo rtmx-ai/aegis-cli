@@ -33,7 +33,7 @@ fn stream_event_to_tui_event(event: StreamEvent) -> TuiEvent {
     }
 }
 
-// @req REQ-TEST-026
+// rtmx:req REQ-TEST-026
 #[tokio::test]
 async fn test_interactive_chat_with_streaming() {
     // 1. Set up mock provider with a multi-token streaming response.
@@ -146,7 +146,7 @@ async fn test_interactive_chat_with_streaming() {
     assert_eq!(app.output_tokens, 3);
 }
 
-// @req REQ-TEST-027
+// rtmx:req REQ-TEST-027
 #[tokio::test]
 async fn test_hitl_approval_approve_path() {
     // 1. Set up mock provider: first response proposes a write_file tool call,
@@ -276,7 +276,7 @@ async fn test_hitl_approval_approve_path() {
     assert_eq!(app.output_tokens, 9);
 }
 
-// @req REQ-TEST-028
+// rtmx:req REQ-TEST-028
 #[tokio::test]
 async fn test_hitl_approval_deny_path() {
     // 1. Set up mock provider: proposes a write_file (will be denied),

@@ -411,7 +411,7 @@ mod tests {
         }
     }
 
-    // @req REQ-SECURITY-003
+    // rtmx:req REQ-SECURITY-003
     #[test]
     fn allowed_path_returns_true_for_child() {
         let config = test_config(
@@ -424,7 +424,7 @@ mod tests {
         assert!(sandbox.is_path_allowed(Path::new("/tmp/sandbox_test/foo.txt"), true));
     }
 
-    // @req REQ-SECURITY-003
+    // rtmx:req REQ-SECURITY-003
     #[test]
     fn disallowed_path_returns_false() {
         let config = test_config(
@@ -437,7 +437,7 @@ mod tests {
         assert!(!sandbox.is_path_allowed(Path::new("/etc/passwd"), true));
     }
 
-    // @req REQ-SECURITY-003
+    // rtmx:req REQ-SECURITY-003
     #[test]
     fn readonly_path_denies_write() {
         let config = test_config(
@@ -452,7 +452,7 @@ mod tests {
         assert!(!sandbox.is_path_allowed(Path::new("/tmp/readonly_area/data.txt"), true));
     }
 
-    // @req REQ-SECURITY-003
+    // rtmx:req REQ-SECURITY-003
     #[test]
     fn default_config_allows_cwd() {
         let config = SandboxConfig::default();
@@ -462,7 +462,7 @@ mod tests {
         assert!(sandbox.is_path_allowed(&child, true));
     }
 
-    // @req REQ-SECURITY-003
+    // rtmx:req REQ-SECURITY-003
     #[test]
     fn default_config_allows_home_readonly() {
         let config = SandboxConfig::default();
@@ -480,7 +480,7 @@ mod tests {
         }
     }
 
-    // @req REQ-SECURITY-003
+    // rtmx:req REQ-SECURITY-003
     #[test]
     fn path_traversal_is_blocked() {
         // Create a real temp directory so canonicalization works.
@@ -501,7 +501,7 @@ mod tests {
         let _ = fs::remove_dir_all(&tmpdir);
     }
 
-    // @req REQ-SECURITY-003
+    // rtmx:req REQ-SECURITY-003
     #[test]
     fn symlink_resolution_blocks_escape() {
         // Create a temp directory with a symlink that points outside.
@@ -534,7 +534,7 @@ mod tests {
         let _ = fs::remove_dir_all(&tmpdir);
     }
 
-    // @req REQ-SECURITY-003
+    // rtmx:req REQ-SECURITY-003
     #[test]
     fn banned_command_is_rejected() {
         let config = test_config(vec![], vec![], PathBuf::from("/tmp"));
@@ -544,7 +544,7 @@ mod tests {
         assert!(matches!(result, Err(SandboxError::BannedCommand { .. })));
     }
 
-    // @req REQ-SECURITY-003
+    // rtmx:req REQ-SECURITY-003
     #[test]
     fn safe_command_executes() {
         let dir = std::env::temp_dir();
@@ -561,35 +561,35 @@ mod tests {
         assert_eq!(output.exit_code, 0);
     }
 
-    // @req REQ-SECURITY-003
+    // rtmx:req REQ-SECURITY-003
     #[test]
     fn lexical_normalize_resolves_dotdot() {
         let normalized = lexical_normalize(Path::new("/a/b/../c"));
         assert_eq!(normalized, PathBuf::from("/a/c"));
     }
 
-    // @req REQ-SECURITY-003
+    // rtmx:req REQ-SECURITY-003
     #[test]
     fn lexical_normalize_resolves_dot() {
         let normalized = lexical_normalize(Path::new("/a/./b/./c"));
         assert_eq!(normalized, PathBuf::from("/a/b/c"));
     }
 
-    // @req REQ-SECURITY-003
+    // rtmx:req REQ-SECURITY-003
     #[test]
     fn is_command_banned_case_insensitive() {
         assert!(is_command_banned("RM -RF /"));
         assert!(is_command_banned("MKFS /dev/sda"));
     }
 
-    // @req REQ-SECURITY-003
+    // rtmx:req REQ-SECURITY-003
     #[test]
     fn is_command_banned_whitespace_normalized() {
         assert!(is_command_banned("rm   -rf   /"));
         assert!(is_command_banned("dd   if=/dev/zero   of=disk"));
     }
 
-    // @req REQ-SECURITY-003
+    // rtmx:req REQ-SECURITY-003
     #[test]
     fn safe_commands_not_banned() {
         assert!(!is_command_banned("ls -la"));
@@ -599,21 +599,21 @@ mod tests {
 
     // --- REQ-SECURITY-008: File size and memory limits ---
 
-    // @req REQ-SECURITY-008
+    // rtmx:req REQ-SECURITY-008
     #[test]
     fn default_max_file_read_bytes_is_10mb() {
         let config = SandboxConfig::default();
         assert_eq!(config.max_file_read_bytes, 10 * 1024 * 1024);
     }
 
-    // @req REQ-SECURITY-008
+    // rtmx:req REQ-SECURITY-008
     #[test]
     fn default_max_process_memory_is_512mb() {
         let config = SandboxConfig::default();
         assert_eq!(config.max_process_memory_bytes, Some(512 * 1024 * 1024));
     }
 
-    // @req REQ-SECURITY-008
+    // rtmx:req REQ-SECURITY-008
     #[test]
     fn check_file_size_ok_for_small_file() {
         let tmpdir = std::env::temp_dir().join("aegis_sandbox_filesize");
@@ -634,7 +634,7 @@ mod tests {
         let _ = fs::remove_dir_all(&tmpdir);
     }
 
-    // @req REQ-SECURITY-008
+    // rtmx:req REQ-SECURITY-008
     #[test]
     fn check_file_size_returns_file_too_large() {
         let tmpdir = std::env::temp_dir().join("aegis_sandbox_filesize_large");
@@ -668,7 +668,7 @@ mod tests {
         let _ = fs::remove_dir_all(&tmpdir);
     }
 
-    // @req REQ-SECURITY-008
+    // rtmx:req REQ-SECURITY-008
     #[test]
     fn file_too_large_error_includes_path_size_limit() {
         let err = SandboxError::FileTooLarge {
@@ -684,14 +684,14 @@ mod tests {
 
     // --- REQ-SECURITY-009: Process isolation per tool invocation ---
 
-    // @req REQ-SECURITY-009
+    // rtmx:req REQ-SECURITY-009
     #[test]
     fn default_inherit_env_is_false() {
         let config = SandboxConfig::default();
         assert!(!config.inherit_env);
     }
 
-    // @req REQ-SECURITY-009
+    // rtmx:req REQ-SECURITY-009
     #[test]
     fn default_env_allowlist_includes_path() {
         let config = SandboxConfig::default();
@@ -701,7 +701,7 @@ mod tests {
         );
     }
 
-    // @req REQ-SECURITY-009
+    // rtmx:req REQ-SECURITY-009
     #[test]
     fn default_env_allowlist_includes_expected_vars() {
         let config = SandboxConfig::default();
@@ -714,7 +714,7 @@ mod tests {
         }
     }
 
-    // @req REQ-SECURITY-009
+    // rtmx:req REQ-SECURITY-009
     #[cfg(unix)]
     #[test]
     fn execute_with_inherit_env_false_strips_env_vars() {
@@ -751,7 +751,7 @@ mod tests {
         }
     }
 
-    // @req REQ-SECURITY-009
+    // rtmx:req REQ-SECURITY-009
     #[cfg(unix)]
     #[test]
     fn execute_with_env_allowlist_passes_only_listed_vars() {
@@ -791,7 +791,7 @@ mod tests {
         }
     }
 
-    // @req REQ-SECURITY-009
+    // rtmx:req REQ-SECURITY-009
     #[cfg(windows)]
     #[test]
     fn execute_with_inherit_env_false_strips_env_vars_windows() {
@@ -825,7 +825,7 @@ mod tests {
 
     // --- REQ-SECURITY-010: Network egress allowlist enforcement ---
 
-    // @req REQ-SECURITY-010
+    // rtmx:req REQ-SECURITY-010
     #[test]
     fn egress_blocked_when_allow_network_is_false() {
         let config = SandboxConfig {
@@ -837,7 +837,7 @@ mod tests {
         assert!(!config.is_egress_allowed("anything.com"));
     }
 
-    // @req REQ-SECURITY-010
+    // rtmx:req REQ-SECURITY-010
     #[test]
     fn egress_permits_all_when_allowlist_empty_and_network_enabled() {
         let config = SandboxConfig {
@@ -849,7 +849,7 @@ mod tests {
         assert!(config.is_egress_allowed("anything.internal"));
     }
 
-    // @req REQ-SECURITY-010
+    // rtmx:req REQ-SECURITY-010
     #[test]
     fn egress_permits_listed_hosts_only() {
         let config = SandboxConfig {
@@ -866,7 +866,7 @@ mod tests {
         assert!(!config.is_egress_allowed("googleapis.com"));
     }
 
-    // @req REQ-SECURITY-010
+    // rtmx:req REQ-SECURITY-010
     #[test]
     fn egress_wildcard_matches_subdomains() {
         let config = SandboxConfig {
@@ -879,7 +879,7 @@ mod tests {
         assert!(config.is_egress_allowed("deep.sub.googleapis.com"));
     }
 
-    // @req REQ-SECURITY-010
+    // rtmx:req REQ-SECURITY-010
     #[test]
     fn egress_wildcard_does_not_match_exact_domain() {
         let config = SandboxConfig {
@@ -893,7 +893,7 @@ mod tests {
         );
     }
 
-    // @req REQ-SECURITY-010
+    // rtmx:req REQ-SECURITY-010
     #[test]
     fn is_egress_allowed_returns_false_for_unlisted_host() {
         let config = SandboxConfig {
@@ -905,7 +905,7 @@ mod tests {
         assert!(!config.is_egress_allowed("other.com"));
     }
 
-    // @req REQ-SECURITY-010
+    // rtmx:req REQ-SECURITY-010
     #[test]
     fn check_egress_returns_egress_blocked_error() {
         let config = SandboxConfig {
@@ -929,7 +929,7 @@ mod tests {
         }
     }
 
-    // @req REQ-SECURITY-010
+    // rtmx:req REQ-SECURITY-010
     #[test]
     fn default_config_is_fully_airgapped() {
         let config = SandboxConfig::default();
@@ -939,7 +939,7 @@ mod tests {
         assert!(!config.is_egress_allowed("anything.com"));
     }
 
-    // @req REQ-SECURITY-010
+    // rtmx:req REQ-SECURITY-010
     #[test]
     fn egress_matching_is_case_insensitive() {
         let config = SandboxConfig {

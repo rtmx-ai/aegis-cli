@@ -118,7 +118,7 @@ mod tests {
         }
     }
 
-    // @req REQ-INFRA-012
+    // rtmx:req REQ-INFRA-012
     #[test]
     fn parse_successful_preview_result() {
         let mut outputs = HashMap::new();
@@ -143,7 +143,7 @@ mod tests {
         assert_eq!(preview.raw_outputs, outputs);
     }
 
-    // @req REQ-INFRA-012
+    // rtmx:req REQ-INFRA-012
     #[test]
     fn parse_preview_with_zero_changes() {
         let result_event = ResultEvent {
@@ -162,7 +162,7 @@ mod tests {
         assert_eq!(preview.summary, "No changes detected.");
     }
 
-    // @req REQ-INFRA-012
+    // rtmx:req REQ-INFRA-012
     #[test]
     fn parse_preview_missing_result_event_returns_error() {
         let output = make_output(None);
@@ -174,7 +174,7 @@ mod tests {
         );
     }
 
-    // @req REQ-INFRA-012
+    // rtmx:req REQ-INFRA-012
     #[test]
     fn parse_preview_failed_result_returns_error() {
         let result_event = ResultEvent {
@@ -193,7 +193,7 @@ mod tests {
         );
     }
 
-    // @req REQ-INFRA-012
+    // rtmx:req REQ-INFRA-012
     #[test]
     fn parse_preview_defaults_missing_counts_to_zero() {
         let mut outputs = HashMap::new();
@@ -216,7 +216,7 @@ mod tests {
         assert!(preview.summary.contains("5 resource(s)"));
     }
 
-    // @req REQ-INFRA-012
+    // rtmx:req REQ-INFRA-012
     #[test]
     fn parse_preview_generates_default_summary() {
         let mut outputs = HashMap::new();
@@ -240,7 +240,7 @@ mod tests {
         );
     }
 
-    // @req REQ-INFRA-012
+    // rtmx:req REQ-INFRA-012
     #[test]
     fn format_preview_output() {
         let preview = PreviewResult {
@@ -259,7 +259,7 @@ mod tests {
         assert!(formatted.contains("3 new, 1 updated"));
     }
 
-    // @req REQ-INFRA-012
+    // rtmx:req REQ-INFRA-012
     #[test]
     fn parse_preview_with_no_outputs_field() {
         let result_event = ResultEvent {

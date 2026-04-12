@@ -423,7 +423,7 @@ mod tests {
         }
     }
 
-    // @req REQ-TEST-002
+    // rtmx:req REQ-TEST-002
     #[test]
     fn save_and_load_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
@@ -456,7 +456,7 @@ mod tests {
         }
     }
 
-    // @req REQ-TEST-002
+    // rtmx:req REQ-TEST-002
     #[tokio::test]
     async fn replay_provider_yields_recorded_events_in_order() {
         let recording = sample_recording();
@@ -509,7 +509,7 @@ mod tests {
         assert!(stream.next().await.is_none());
     }
 
-    // @req REQ-TEST-002
+    // rtmx:req REQ-TEST-002
     #[tokio::test]
     async fn empty_recording_produces_done_event() {
         let recording = Recording::new();
@@ -532,7 +532,7 @@ mod tests {
         assert!(stream.next().await.is_none());
     }
 
-    // @req REQ-TEST-002
+    // rtmx:req REQ-TEST-002
     #[tokio::test]
     async fn replay_from_file_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
@@ -575,7 +575,7 @@ mod tests {
         serde_json::to_string(c).unwrap()
     }
 
-    // @req REQ-TEST-024
+    // rtmx:req REQ-TEST-024
     #[test]
     fn test_cassette_record_mode_detection() {
         // Use a guard so concurrent tests don't trample env state.
@@ -602,7 +602,7 @@ mod tests {
         }
     }
 
-    // @req REQ-TEST-024
+    // rtmx:req REQ-TEST-024
     #[test]
     fn test_cassette_save_and_load_roundtrip() {
         let test_name = "unit_roundtrip_REQ_TEST_024";
@@ -618,7 +618,7 @@ mod tests {
         let _ = std::fs::remove_file(cassette_path(test_name));
     }
 
-    // @req REQ-TEST-024
+    // rtmx:req REQ-TEST-024
     #[test]
     fn test_cassette_load_returns_none_for_missing() {
         let test_name = "definitely_does_not_exist_REQ_TEST_024_xyz";
@@ -626,7 +626,7 @@ mod tests {
         assert!(load_cassette(test_name).is_none());
     }
 
-    // @req REQ-TEST-024
+    // rtmx:req REQ-TEST-024
     #[test]
     fn test_cassette_path_resolution() {
         let p = cassette_path("foo");

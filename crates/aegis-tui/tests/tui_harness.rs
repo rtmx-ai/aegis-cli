@@ -132,7 +132,7 @@ impl TuiHarness {
     }
 }
 
-// @req REQ-TEST-021
+// rtmx:req REQ-TEST-021
 #[test]
 fn test_harness_renders_idle_state() {
     let mut harness = TuiHarness::new(80, 20, "llama3-il5");
@@ -144,7 +144,7 @@ fn test_harness_renders_idle_state() {
     insta::assert_snapshot!("idle_state", frame);
 }
 
-// @req REQ-TEST-021
+// rtmx:req REQ-TEST-021
 #[test]
 fn test_harness_streams_token_into_buffer() {
     let mut harness = TuiHarness::new(60, 15, "llama3");
@@ -156,7 +156,7 @@ fn test_harness_streams_token_into_buffer() {
     assert!(frame.contains("llama3"));
 }
 
-// @req REQ-TEST-021
+// rtmx:req REQ-TEST-021
 #[test]
 fn test_harness_user_can_type_and_submit() {
     let mut harness = TuiHarness::new(60, 15, "llama3");
@@ -174,7 +174,7 @@ fn test_harness_user_can_type_and_submit() {
     assert_eq!(drained, vec!["hi".to_string()]);
 }
 
-// @req REQ-TEST-021
+// rtmx:req REQ-TEST-021
 #[test]
 fn test_harness_done_finalizes_assistant_message() {
     let mut harness = TuiHarness::new(60, 15, "llama3");
@@ -189,7 +189,7 @@ fn test_harness_done_finalizes_assistant_message() {
     assert_eq!(harness.app().output_tokens, 20);
 }
 
-// @req REQ-TEST-021
+// rtmx:req REQ-TEST-021
 #[test]
 fn test_harness_tool_use_appears_in_messages() {
     use aegis_domain::types::FilePath;

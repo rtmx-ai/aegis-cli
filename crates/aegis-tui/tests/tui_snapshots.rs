@@ -18,7 +18,7 @@ use tui_harness::TuiHarness;
 const WIDTH: u16 = 80;
 const HEIGHT: u16 = 24;
 
-// @req REQ-TEST-003
+// rtmx:req REQ-TEST-003
 #[test]
 fn snapshot_idle_fresh_app() {
     let mut harness = TuiHarness::new(WIDTH, HEIGHT, "gemini-2.0-flash");
@@ -26,7 +26,7 @@ fn snapshot_idle_fresh_app() {
     insta::assert_snapshot!("idle_fresh_app", frame);
 }
 
-// @req REQ-TEST-003
+// rtmx:req REQ-TEST-003
 #[test]
 fn snapshot_with_user_message() {
     let mut harness = TuiHarness::new(WIDTH, HEIGHT, "gemini-2.0-flash");
@@ -37,7 +37,7 @@ fn snapshot_with_user_message() {
     insta::assert_snapshot!("with_user_message", frame);
 }
 
-// @req REQ-TEST-003
+// rtmx:req REQ-TEST-003
 #[test]
 fn snapshot_with_assistant_response() {
     let mut harness = TuiHarness::new(WIDTH, HEIGHT, "gemini-2.0-flash");
@@ -52,7 +52,7 @@ fn snapshot_with_assistant_response() {
     insta::assert_snapshot!("with_assistant_response", frame);
 }
 
-// @req REQ-TEST-003
+// rtmx:req REQ-TEST-003
 #[test]
 fn snapshot_with_streaming_buffer() {
     let mut harness = TuiHarness::new(WIDTH, HEIGHT, "gemini-2.0-flash");
@@ -69,7 +69,7 @@ fn snapshot_with_streaming_buffer() {
     insta::assert_snapshot!("with_streaming_buffer", frame);
 }
 
-// @req REQ-TEST-003
+// rtmx:req REQ-TEST-003
 #[test]
 fn snapshot_status_line_idle() {
     let mut harness = TuiHarness::new(WIDTH, HEIGHT, "llama3-il5");
@@ -77,7 +77,7 @@ fn snapshot_status_line_idle() {
     insta::assert_snapshot!("status_line_idle", frame);
 }
 
-// @req REQ-TEST-003
+// rtmx:req REQ-TEST-003
 #[test]
 fn snapshot_status_line_streaming() {
     let mut harness = TuiHarness::new(WIDTH, HEIGHT, "llama3-il5");
@@ -87,7 +87,7 @@ fn snapshot_status_line_streaming() {
     insta::assert_snapshot!("status_line_streaming", frame);
 }
 
-// @req REQ-TEST-003
+// rtmx:req REQ-TEST-003
 #[test]
 fn snapshot_status_line_tool_executing() {
     let mut harness = TuiHarness::new(WIDTH, HEIGHT, "llama3-il5");
@@ -99,7 +99,7 @@ fn snapshot_status_line_tool_executing() {
     insta::assert_snapshot!("status_line_tool_executing", frame);
 }
 
-// @req REQ-TEST-003
+// rtmx:req REQ-TEST-003
 #[test]
 fn snapshot_status_line_with_token_counts() {
     let mut harness = TuiHarness::new(WIDTH, HEIGHT, "llama3-il5");
@@ -110,7 +110,7 @@ fn snapshot_status_line_with_token_counts() {
     insta::assert_snapshot!("status_line_with_token_counts", frame);
 }
 
-// @req REQ-TEST-003
+// rtmx:req REQ-TEST-003
 #[test]
 fn snapshot_multi_turn_conversation() {
     let mut harness = TuiHarness::new(WIDTH, HEIGHT, "gemini-2.0-flash");
@@ -136,7 +136,7 @@ fn snapshot_multi_turn_conversation() {
     insta::assert_snapshot!("multi_turn_conversation", frame);
 }
 
-// @req REQ-TEST-003
+// rtmx:req REQ-TEST-003
 #[test]
 fn snapshot_error_message() {
     let mut harness = TuiHarness::new(WIDTH, HEIGHT, "gemini-2.0-flash");
@@ -151,7 +151,7 @@ fn snapshot_error_message() {
     insta::assert_snapshot!("error_message", frame);
 }
 
-// @req REQ-TEST-003
+// rtmx:req REQ-TEST-003
 #[test]
 fn snapshot_system_message() {
     let mut harness = TuiHarness::new(WIDTH, HEIGHT, "gemini-2.0-flash");

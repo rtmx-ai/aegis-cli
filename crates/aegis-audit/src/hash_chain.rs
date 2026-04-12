@@ -191,28 +191,28 @@ mod tests {
         entries
     }
 
-    // @req REQ-AUDIT-005
+    // rtmx:req REQ-AUDIT-005
     #[test]
     fn empty_chain_is_valid() {
         let entries: Vec<String> = vec![];
         assert!(verify_chain(&entries).is_ok());
     }
 
-    // @req REQ-AUDIT-005
+    // rtmx:req REQ-AUDIT-005
     #[test]
     fn single_entry_chain_is_valid() {
         let chain = build_chain(1);
         assert!(verify_chain(&chain).is_ok());
     }
 
-    // @req REQ-AUDIT-005
+    // rtmx:req REQ-AUDIT-005
     #[test]
     fn multi_entry_chain_is_valid() {
         let chain = build_chain(5);
         assert!(verify_chain(&chain).is_ok());
     }
 
-    // @req REQ-AUDIT-005
+    // rtmx:req REQ-AUDIT-005
     #[test]
     fn genesis_entry_has_zero_prev_hash() {
         let chain = build_chain(1);
@@ -220,7 +220,7 @@ mod tests {
         assert_eq!(parsed["prev_hash"].as_str().unwrap(), GENESIS_PREV_HASH);
     }
 
-    // @req REQ-AUDIT-005
+    // rtmx:req REQ-AUDIT-005
     #[test]
     fn tampered_entry_detected() {
         let mut chain = build_chain(3);
@@ -240,7 +240,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AUDIT-005
+    // rtmx:req REQ-AUDIT-005
     #[test]
     fn broken_link_detected() {
         let mut chain = build_chain(3);
@@ -260,7 +260,7 @@ mod tests {
         }
     }
 
-    // @req REQ-AUDIT-005
+    // rtmx:req REQ-AUDIT-005
     #[test]
     fn missing_prev_hash_detected() {
         let entry = json!({
@@ -278,7 +278,7 @@ mod tests {
         ));
     }
 
-    // @req REQ-AUDIT-005
+    // rtmx:req REQ-AUDIT-005
     #[test]
     fn missing_entry_hash_detected() {
         let entry = json!({
@@ -296,7 +296,7 @@ mod tests {
         ));
     }
 
-    // @req REQ-AUDIT-005
+    // rtmx:req REQ-AUDIT-005
     #[test]
     fn invalid_json_detected() {
         let entries = vec!["not valid json".to_string()];
@@ -308,7 +308,7 @@ mod tests {
         ));
     }
 
-    // @req REQ-AUDIT-005
+    // rtmx:req REQ-AUDIT-005
     #[test]
     fn compute_entry_hash_is_deterministic() {
         let line = json!({
