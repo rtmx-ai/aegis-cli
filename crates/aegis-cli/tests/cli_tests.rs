@@ -149,7 +149,7 @@ fn chat_no_tui_flag_appears_in_help() {
 // rtmx:req REQ-TUI-013
 #[test]
 fn chat_no_tui_without_config_errors_gracefully() {
-    // --no-tui without a config should produce a config error, not a crash.
+    // --no-tui without a config or available backend should fail gracefully.
     let tmp = tempfile::TempDir::new().unwrap();
     Command::cargo_bin("aegis")
         .unwrap()
@@ -158,7 +158,11 @@ fn chat_no_tui_without_config_errors_gracefully() {
         .env("HOME", tmp.path())
         .assert()
         .failure()
-        .stderr(predicate::str::contains("No config found"));
+        .stderr(
+            predicate::str::contains("No config found")
+                .or(predicate::str::contains("No LLM backend found"))
+                .or(predicate::str::contains("ollama")),
+        );
 }
 
 // rtmx:req REQ-BUILD-007

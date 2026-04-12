@@ -233,39 +233,82 @@ fn resolve_provider_config(
         return Ok(ProviderConfig::local(&ep, "default"));
     }
 
-    let config_path =
-        aegis_onboard::config::AegisConfig::default_path().map_err(|e| e.to_string())?;
-    let config = aegis_onboard::config::AegisConfig::load(&config_path)
-        .map_err(|e| format!("No config found. Run 'aegis init --local' first. ({e})"))?;
+    // Try loading from saved config first.
+    let config_result = aegis_onboard::config::AegisConfig::default_path()
+        .ok()
+        .and_then(|path| aegis_onboard::config::AegisConfig::load(&path).ok());
 
-    let kind = match config.backend.provider.as_str() {
-        "vertex" => ProviderKind::Vertex,
-        "bedrock" => ProviderKind::Bedrock,
-        "azure" => ProviderKind::Azure,
-        _ => ProviderKind::Local,
+    if let Some(config) = config_result {
+        let kind = match config.backend.provider.as_str() {
+            "vertex" => ProviderKind::Vertex,
+            "bedrock" => ProviderKind::Bedrock,
+            "azure" => ProviderKind::Azure,
+            _ => ProviderKind::Local,
+        };
+
+        // For Vertex, extract project_id from infra outputs if not explicitly set
+        let project_id = config
+            .infra
+            .plugins
+            .get("gcp-assured-workloads")
+            .and_then(|p| p.outputs.get("project_id"))
+            .cloned();
+
+        let region = config.backend.region.clone();
+
+        let cfg = ProviderConfig {
+            kind,
+            model: config.backend.model,
+            endpoint: config.backend.endpoint,
+            max_tokens: config.backend.max_tokens,
+            temperature: 0.0,
+            connect_timeout_secs: 10,
+            read_timeout_secs: 300,
+            project_id,
+            region,
+        };
+
+        // Validate that the configured provider is reachable by attempting
+        // to create it. If it fails (e.g. connection refused, missing auth),
+        // fall through to discovery.
+        match aegis_llm::provider::create_provider(&cfg) {
+            Ok(_) => return Ok(cfg),
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "configured provider unavailable, falling back to discovery"
+                );
+            }
+        }
+    }
+
+    // No config or configured provider failed -- run auto-discovery.
+    let rt = tokio::runtime::Handle::try_current();
+    let discovered = match rt {
+        Ok(handle) => {
+            // Already inside an async runtime; spawn a blocking task to
+            // run discovery without nesting runtimes.
+            std::thread::scope(|s| {
+                s.spawn(|| handle.block_on(aegis_llm::discovery::discover_provider()))
+                    .join()
+                    .unwrap()
+            })
+        }
+        Err(_) => {
+            // No runtime yet; create a temporary one for discovery.
+            let tmp_rt =
+                tokio::runtime::Runtime::new().map_err(|e| format!("Runtime error: {e}"))?;
+            tmp_rt.block_on(aegis_llm::discovery::discover_provider())
+        }
     };
 
-    // For Vertex, extract project_id from infra outputs if not explicitly set
-    let project_id = config
-        .infra
-        .plugins
-        .get("gcp-assured-workloads")
-        .and_then(|p| p.outputs.get("project_id"))
-        .cloned();
-
-    let region = config.backend.region.clone();
-
-    Ok(ProviderConfig {
-        kind,
-        model: config.backend.model,
-        endpoint: config.backend.endpoint,
-        max_tokens: config.backend.max_tokens,
-        temperature: 0.0,
-        connect_timeout_secs: 10,
-        read_timeout_secs: 300,
-        project_id,
-        region,
-    })
+    match discovered {
+        Ok(dp) => {
+            eprintln!("aegis: auto-discovered provider: {}", dp.name);
+            Ok(dp.config)
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 async fn run_headless_chat(
