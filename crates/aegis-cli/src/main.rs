@@ -200,47 +200,81 @@ fn run_chat(
     no_tui: bool,
     local_endpoint: Option<String>,
 ) -> Result<(), String> {
+    let provider_cfg = resolve_provider_config(local_endpoint)?;
+
     if headless {
         let prompt = prompt.ok_or_else(|| {
             "Prompt required in headless mode. Use: aegis chat --headless -p 'your prompt'"
                 .to_string()
         })?;
 
-        let (endpoint, model) = resolve_endpoint_model(local_endpoint)?;
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("Runtime error: {e}"))?;
-        return rt.block_on(async { run_headless_chat(&prompt, &endpoint, &model).await });
+        return rt.block_on(async { run_headless_chat(&prompt, &provider_cfg).await });
     }
 
     // Check for plain-text mode: explicit flag or env detection
     let use_plain_text = aegis_tui::terminal::should_use_plain_text(no_tui);
     if use_plain_text {
-        let (endpoint, model) = resolve_endpoint_model(local_endpoint)?;
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("Runtime error: {e}"))?;
-        return rt.block_on(async { run_plaintext_chat(&endpoint, &model, prompt).await });
+        return rt.block_on(async { run_plaintext_chat(&provider_cfg, prompt).await });
     }
 
     // Interactive TUI mode
-    let (endpoint, model) = resolve_endpoint_model(local_endpoint)?;
     let rt = tokio::runtime::Runtime::new().map_err(|e| format!("Runtime error: {e}"))?;
-    rt.block_on(async { run_interactive_chat(&endpoint, &model, prompt).await })
+    rt.block_on(async { run_interactive_chat(&provider_cfg, prompt).await })
 }
 
-fn resolve_endpoint_model(local_endpoint: Option<String>) -> Result<(String, String), String> {
+fn resolve_provider_config(
+    local_endpoint: Option<String>,
+) -> Result<aegis_llm::config::ProviderConfig, String> {
+    use aegis_llm::config::{ProviderConfig, ProviderKind};
+
     if let Some(ep) = local_endpoint {
-        return Ok((ep, "default".to_string()));
+        return Ok(ProviderConfig::local(&ep, "default"));
     }
+
     let config_path =
         aegis_onboard::config::AegisConfig::default_path().map_err(|e| e.to_string())?;
     let config = aegis_onboard::config::AegisConfig::load(&config_path)
         .map_err(|e| format!("No config found. Run 'aegis init --local' first. ({e})"))?;
-    Ok((config.backend.endpoint, config.backend.model))
+
+    let kind = match config.backend.provider.as_str() {
+        "vertex" => ProviderKind::Vertex,
+        "bedrock" => ProviderKind::Bedrock,
+        "azure" => ProviderKind::Azure,
+        _ => ProviderKind::Local,
+    };
+
+    // For Vertex, extract project_id from infra outputs if not explicitly set
+    let project_id = config
+        .infra
+        .plugins
+        .get("gcp-assured-workloads")
+        .and_then(|p| p.outputs.get("project_id"))
+        .cloned();
+
+    let region = config.backend.region.clone();
+
+    Ok(ProviderConfig {
+        kind,
+        model: config.backend.model,
+        endpoint: config.backend.endpoint,
+        max_tokens: config.backend.max_tokens,
+        temperature: 0.0,
+        connect_timeout_secs: 10,
+        read_timeout_secs: 300,
+        project_id,
+        region,
+    })
 }
 
-async fn run_headless_chat(prompt: &str, endpoint: &str, model: &str) -> Result<(), String> {
-    // 1. Create LLM provider (local mode)
-    let provider_config = aegis_llm::config::ProviderConfig::local(endpoint, model);
+async fn run_headless_chat(
+    prompt: &str,
+    provider_config: &aegis_llm::config::ProviderConfig,
+) -> Result<(), String> {
+    // 1. Create LLM provider via factory
     let provider =
-        aegis_llm::local::LocalProvider::new(&provider_config).map_err(|e| e.to_string())?;
+        aegis_llm::provider::create_provider(provider_config).map_err(|e| e.to_string())?;
 
     // 2. Create security filter
     let filter: Arc<aegis_security::aegisignore::AegisIgnore> =
@@ -305,12 +339,12 @@ fn format_tool_call_plain(call: &ToolCall) -> String {
 /// sends them through the agent, and prints responses to stdout with
 /// simple text prefixes. Compatible with screen readers and dumb terminals.
 async fn run_plaintext_chat(
-    endpoint: &str,
-    model: &str,
+    provider_config: &aegis_llm::config::ProviderConfig,
     initial_prompt: Option<String>,
 ) -> Result<(), String> {
     use std::io::{BufRead, Write};
 
+    let model = &provider_config.model;
     println!("[system] aegis plain-text mode (model: {model})");
     println!("[system] type /help for commands, /quit to exit");
     println!();
@@ -318,7 +352,7 @@ async fn run_plaintext_chat(
     // Process an initial prompt if supplied
     if let Some(ref prompt) = initial_prompt {
         println!("> {prompt}");
-        run_plaintext_turn(prompt, endpoint, model).await?;
+        run_plaintext_turn(prompt, provider_config).await?;
     }
 
     let stdin = std::io::stdin();
@@ -366,19 +400,21 @@ async fn run_plaintext_chat(
         println!("> {trimmed}");
 
         // Run the agent for this turn
-        run_plaintext_turn(trimmed, endpoint, model).await?;
+        run_plaintext_turn(trimmed, provider_config).await?;
     }
 
     Ok(())
 }
 
 /// Execute a single agent turn in plain-text mode, printing streamed output.
-async fn run_plaintext_turn(prompt: &str, endpoint: &str, model: &str) -> Result<(), String> {
+async fn run_plaintext_turn(
+    prompt: &str,
+    provider_config: &aegis_llm::config::ProviderConfig,
+) -> Result<(), String> {
     use aegis_domain::ports::StreamEvent;
 
-    let provider_config = aegis_llm::config::ProviderConfig::local(endpoint, model);
     let provider =
-        aegis_llm::local::LocalProvider::new(&provider_config).map_err(|e| e.to_string())?;
+        aegis_llm::provider::create_provider(provider_config).map_err(|e| e.to_string())?;
 
     let filter: Arc<aegis_security::aegisignore::AegisIgnore> =
         Arc::new(aegis_security::aegisignore::AegisIgnore::with_defaults());
@@ -455,8 +491,7 @@ async fn run_plaintext_turn(prompt: &str, endpoint: &str, model: &str) -> Result
 }
 
 async fn run_interactive_chat(
-    endpoint: &str,
-    model: &str,
+    provider_config: &aegis_llm::config::ProviderConfig,
     initial_prompt: Option<String>,
 ) -> Result<(), String> {
     use crossterm::event as ct_event;
@@ -546,15 +581,13 @@ async fn run_interactive_chat(
     });
 
     // 8. Spawn agent task (listens for prompts, runs agent, forwards stream events)
-    let endpoint_owned = endpoint.to_string();
-    let model_owned = model.to_string();
+    let agent_provider_config = provider_config.clone();
     let event_tx_agent = event_tx.clone();
     tokio::spawn(async move {
         while let Some(prompt) = agent_input_rx.recv().await {
             let result = run_agent_for_tui(
                 &prompt,
-                &endpoint_owned,
-                &model_owned,
+                &agent_provider_config,
                 approval_gate.clone(),
                 &event_tx_agent,
             )
@@ -569,7 +602,7 @@ async fn run_interactive_chat(
     let platform = aegis_tui::platform::Platform::detect();
 
     // 10. Create App state, restoring previous session if available (REQ-BUILD-036)
-    let mut app = App::new(model);
+    let mut app = App::new(&provider_config.model);
     let session_dir = aegis_agent::session::default_session_dir();
     if let Some(ref dir) = session_dir {
         let current = dir.join("current.json");
@@ -763,14 +796,12 @@ fn restore_app_from_snapshot(app: &mut App, snapshot: &aegis_agent::session::Ses
 /// Run the agent loop for one prompt, forwarding stream events to the TUI.
 async fn run_agent_for_tui(
     prompt: &str,
-    endpoint: &str,
-    model: &str,
+    provider_config: &aegis_llm::config::ProviderConfig,
     gate: aegis_hitl::approval::ChannelApprovalGate,
     event_tx: &tokio::sync::mpsc::UnboundedSender<TuiEvent>,
 ) -> Result<(), String> {
-    let provider_config = aegis_llm::config::ProviderConfig::local(endpoint, model);
     let provider =
-        aegis_llm::local::LocalProvider::new(&provider_config).map_err(|e| e.to_string())?;
+        aegis_llm::provider::create_provider(provider_config).map_err(|e| e.to_string())?;
 
     let filter: Arc<aegis_security::aegisignore::AegisIgnore> =
         Arc::new(aegis_security::aegisignore::AegisIgnore::with_defaults());

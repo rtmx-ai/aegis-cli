@@ -14,3 +14,4 @@ pub mod sse;
 pub mod tokens;
 pub mod truncation;
 pub mod validation;
+pub mod vertex;

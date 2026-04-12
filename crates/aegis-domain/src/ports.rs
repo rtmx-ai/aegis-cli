@@ -20,6 +20,18 @@ pub trait LlmProvider: Send + Sync {
     ) -> Result<Box<dyn TokenStream>, DomainError>;
 }
 
+// Blanket impl: Box<dyn LlmProvider> is also an LlmProvider.
+#[async_trait]
+impl LlmProvider for Box<dyn LlmProvider> {
+    async fn stream(
+        &self,
+        messages: &[Message],
+        tools: &[ToolSchema],
+    ) -> Result<Box<dyn TokenStream>, DomainError> {
+        (**self).stream(messages, tools).await
+    }
+}
+
 /// A stream of tokens from an LLM response.
 ///
 /// Uses `async_trait` to enable dyn-compatibility for `Box<dyn TokenStream>`.
