@@ -266,6 +266,14 @@ impl App {
             KeyCode::Char(c) => {
                 let mut query = picker.query.clone();
                 query.push(c);
+
+                // Detect @git: prefix -- switch to git-aware mode.
+                if picker.mode == super::file_picker::PickerMode::FileSystem && query == "git:" {
+                    let git_picker = super::file_picker::FilePicker::open_git(&cwd);
+                    *picker = git_picker;
+                    return Action::Continue;
+                }
+
                 picker.update_query(&query, &cwd);
                 Action::Continue
             }

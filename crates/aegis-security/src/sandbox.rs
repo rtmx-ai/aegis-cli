@@ -81,6 +81,16 @@ pub struct SandboxConfig {
     /// If false, only allowlisted env vars are passed to child processes
     /// (REQ-SECURITY-009).
     pub inherit_env: bool,
+    /// Network egress allowlist: list of allowed hostnames/domains
+    /// (REQ-SECURITY-010).
+    ///
+    /// Supports wildcard subdomains: `*.googleapis.com` matches
+    /// `vertex.googleapis.com`. When `allow_network` is false, all egress is
+    /// blocked regardless of this list. When `allow_network` is true and this
+    /// list is empty, all egress is permitted (connected mode). When
+    /// `allow_network` is true and this list is non-empty, only listed hosts
+    /// are allowed.
+    pub egress_allowlist: Vec<String>,
 }
 
 impl Default for SandboxConfig {
@@ -104,7 +114,38 @@ impl Default for SandboxConfig {
                 .map(|s| (*s).to_string())
                 .collect(),
             inherit_env: false,
+            egress_allowlist: vec![],
         }
+    }
+}
+
+impl SandboxConfig {
+    /// Check whether a hostname is permitted by the egress policy
+    /// (REQ-SECURITY-010).
+    ///
+    /// Returns `true` if egress to the given host is allowed under the current
+    /// configuration.
+    pub fn is_egress_allowed(&self, host: &str) -> bool {
+        if !self.allow_network {
+            return false;
+        }
+        if self.egress_allowlist.is_empty() {
+            return true;
+        }
+        let host_lower = host.to_lowercase();
+        for pattern in &self.egress_allowlist {
+            let pattern_lower = pattern.to_lowercase();
+            if let Some(suffix) = pattern_lower.strip_prefix("*.") {
+                // Wildcard: *.example.com matches sub.example.com but NOT
+                // example.com itself.
+                if host_lower.ends_with(&format!(".{}", suffix)) {
+                    return true;
+                }
+            } else if host_lower == pattern_lower {
+                return true;
+            }
+        }
+        false
     }
 }
 
@@ -139,6 +180,9 @@ pub enum SandboxError {
         limit: usize,
     },
 
+    #[error("network egress blocked by sandbox policy: {host}")]
+    EgressBlocked { host: String },
+
     #[error("command execution failed: {0}")]
     ExecutionError(#[from] io::Error),
 }
@@ -152,6 +196,21 @@ pub struct Sandbox {
 impl Sandbox {
     pub fn new(config: SandboxConfig) -> Self {
         Self { config }
+    }
+
+    /// Check whether network egress to a host is permitted
+    /// (REQ-SECURITY-010).
+    ///
+    /// Returns `Ok(())` if allowed, or `Err(SandboxError::EgressBlocked)` if
+    /// the host is not on the allowlist.
+    pub fn check_egress(&self, host: &str) -> Result<(), SandboxError> {
+        if self.config.is_egress_allowed(host) {
+            Ok(())
+        } else {
+            Err(SandboxError::EgressBlocked {
+                host: host.to_string(),
+            })
+        }
     }
 
     /// Check whether a file's size is within the configured limit
@@ -348,6 +407,7 @@ mod tests {
                 .map(|s| (*s).to_string())
                 .collect(),
             inherit_env: true, // existing tests expect full env inheritance
+            egress_allowlist: vec![],
         }
     }
 
@@ -761,5 +821,133 @@ mod tests {
         unsafe {
             std::env::remove_var("AEGIS_TEST_SECRET_009");
         }
+    }
+
+    // --- REQ-SECURITY-010: Network egress allowlist enforcement ---
+
+    // @req REQ-SECURITY-010
+    #[test]
+    fn egress_blocked_when_allow_network_is_false() {
+        let config = SandboxConfig {
+            allow_network: false,
+            egress_allowlist: vec!["example.com".to_string()],
+            ..SandboxConfig::default()
+        };
+        assert!(!config.is_egress_allowed("example.com"));
+        assert!(!config.is_egress_allowed("anything.com"));
+    }
+
+    // @req REQ-SECURITY-010
+    #[test]
+    fn egress_permits_all_when_allowlist_empty_and_network_enabled() {
+        let config = SandboxConfig {
+            allow_network: true,
+            egress_allowlist: vec![],
+            ..SandboxConfig::default()
+        };
+        assert!(config.is_egress_allowed("example.com"));
+        assert!(config.is_egress_allowed("anything.internal"));
+    }
+
+    // @req REQ-SECURITY-010
+    #[test]
+    fn egress_permits_listed_hosts_only() {
+        let config = SandboxConfig {
+            allow_network: true,
+            egress_allowlist: vec![
+                "vertex.googleapis.com".to_string(),
+                "api.example.com".to_string(),
+            ],
+            ..SandboxConfig::default()
+        };
+        assert!(config.is_egress_allowed("vertex.googleapis.com"));
+        assert!(config.is_egress_allowed("api.example.com"));
+        assert!(!config.is_egress_allowed("evil.com"));
+        assert!(!config.is_egress_allowed("googleapis.com"));
+    }
+
+    // @req REQ-SECURITY-010
+    #[test]
+    fn egress_wildcard_matches_subdomains() {
+        let config = SandboxConfig {
+            allow_network: true,
+            egress_allowlist: vec!["*.googleapis.com".to_string()],
+            ..SandboxConfig::default()
+        };
+        assert!(config.is_egress_allowed("vertex.googleapis.com"));
+        assert!(config.is_egress_allowed("storage.googleapis.com"));
+        assert!(config.is_egress_allowed("deep.sub.googleapis.com"));
+    }
+
+    // @req REQ-SECURITY-010
+    #[test]
+    fn egress_wildcard_does_not_match_exact_domain() {
+        let config = SandboxConfig {
+            allow_network: true,
+            egress_allowlist: vec!["*.example.com".to_string()],
+            ..SandboxConfig::default()
+        };
+        assert!(
+            !config.is_egress_allowed("example.com"),
+            "*.example.com should not match example.com itself"
+        );
+    }
+
+    // @req REQ-SECURITY-010
+    #[test]
+    fn is_egress_allowed_returns_false_for_unlisted_host() {
+        let config = SandboxConfig {
+            allow_network: true,
+            egress_allowlist: vec!["safe.example.com".to_string()],
+            ..SandboxConfig::default()
+        };
+        assert!(!config.is_egress_allowed("evil.example.com"));
+        assert!(!config.is_egress_allowed("other.com"));
+    }
+
+    // @req REQ-SECURITY-010
+    #[test]
+    fn check_egress_returns_egress_blocked_error() {
+        let config = SandboxConfig {
+            allow_network: true,
+            egress_allowlist: vec!["allowed.com".to_string()],
+            ..SandboxConfig::default()
+        };
+        let sandbox = Sandbox::new(config);
+
+        // Allowed host succeeds.
+        assert!(sandbox.check_egress("allowed.com").is_ok());
+
+        // Blocked host returns EgressBlocked with the hostname.
+        let result = sandbox.check_egress("blocked.com");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SandboxError::EgressBlocked { host } => {
+                assert_eq!(host, "blocked.com");
+            }
+            other => panic!("expected EgressBlocked, got: {:?}", other),
+        }
+    }
+
+    // @req REQ-SECURITY-010
+    #[test]
+    fn default_config_is_fully_airgapped() {
+        let config = SandboxConfig::default();
+        assert!(!config.allow_network);
+        assert!(config.egress_allowlist.is_empty());
+        // All egress should be blocked.
+        assert!(!config.is_egress_allowed("anything.com"));
+    }
+
+    // @req REQ-SECURITY-010
+    #[test]
+    fn egress_matching_is_case_insensitive() {
+        let config = SandboxConfig {
+            allow_network: true,
+            egress_allowlist: vec!["Api.Example.COM".to_string()],
+            ..SandboxConfig::default()
+        };
+        assert!(config.is_egress_allowed("api.example.com"));
+        assert!(config.is_egress_allowed("API.EXAMPLE.COM"));
     }
 }

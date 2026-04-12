@@ -630,6 +630,8 @@ async fn run_interactive_chat(
                                 query: fp.query.clone(),
                                 entries: fp.tree_entries(),
                                 selected: fp.selected,
+                                preview: fp.preview_content(),
+                                preview_extension: fp.selected_extension(),
                             }
                         }),
                     };

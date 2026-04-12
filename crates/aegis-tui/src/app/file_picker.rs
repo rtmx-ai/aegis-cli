@@ -4,13 +4,24 @@
 //! input listing files and directories from the resolved path. The picker is
 //! path-aware: `@` alone scans cwd, `@src/` scans ./src/, `@/tmp/` scans
 //! /tmp/, `@~/` scans $HOME.
+//!
+//! The `@git:` prefix triggers git-aware mode, listing modified, staged,
+//! untracked, and recently committed files from `git status` and `git log`.
 
 use std::collections::HashSet;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 /// Maximum number of directory entries to collect.
 const MAX_ENTRIES: usize = 500;
+
+/// Maximum number of lines to read for file preview.
+const PREVIEW_MAX_LINES: usize = 30;
+
+/// Maximum bytes to read from a file for preview (guard against huge files).
+const PREVIEW_MAX_BYTES: usize = 64 * 1024;
 
 /// A single directory entry (file or subdirectory).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,9 +45,21 @@ pub struct TreeEntry {
     pub expanded: bool,
 }
 
+/// Whether the picker is browsing the filesystem or showing git changes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PickerMode {
+    /// Standard directory-browsing mode.
+    FileSystem,
+    /// Git-aware mode showing modified, staged, untracked, and recently
+    /// committed files.
+    GitChanges,
+}
+
 /// Interactive file picker state.
 #[derive(Debug, Clone)]
 pub struct FilePicker {
+    /// Whether we are in filesystem or git-changes mode.
+    pub mode: PickerMode,
     /// Raw query text typed after `@` (e.g. "src/ma").
     pub query: String,
     /// Resolved base directory being scanned.
@@ -58,6 +81,7 @@ impl FilePicker {
         let entries = scan_directory(&base_dir);
         let filtered = filter_entries(&entries, filter);
         Self {
+            mode: PickerMode::FileSystem,
             query: query.to_string(),
             base_dir,
             entries,
@@ -67,15 +91,42 @@ impl FilePicker {
         }
     }
 
-    /// Update the query. Re-scans only when the base directory changes.
-    pub fn update_query(&mut self, query: &str, cwd: &Path) {
-        let (new_base, filter) = resolve_path(query, cwd);
-        self.query = query.to_string();
-        if new_base != self.base_dir {
-            self.base_dir = new_base;
-            self.entries = scan_directory(&self.base_dir);
+    /// Open a git-aware file picker listing modified, staged, untracked,
+    /// and recently committed files. If `cwd` is not inside a git repo or
+    /// git is not installed, returns an empty picker.
+    pub fn open_git(cwd: &Path) -> Self {
+        let entries = collect_git_entries(cwd);
+        let filtered = entries.clone();
+        Self {
+            mode: PickerMode::GitChanges,
+            query: String::new(),
+            base_dir: cwd.to_path_buf(),
+            entries,
+            filtered,
+            selected: 0,
+            expanded: HashSet::new(),
         }
-        self.filtered = filter_entries(&self.entries, filter);
+    }
+
+    /// Update the query. Re-scans only when the base directory changes.
+    ///
+    /// In `GitChanges` mode this filters the git entries by substring.
+    pub fn update_query(&mut self, query: &str, cwd: &Path) {
+        match self.mode {
+            PickerMode::FileSystem => {
+                let (new_base, filter) = resolve_path(query, cwd);
+                self.query = query.to_string();
+                if new_base != self.base_dir {
+                    self.base_dir = new_base;
+                    self.entries = scan_directory(&self.base_dir);
+                }
+                self.filtered = filter_entries(&self.entries, filter);
+            }
+            PickerMode::GitChanges => {
+                self.query = query.to_string();
+                self.filtered = filter_entries(&self.entries, query);
+            }
+        }
         self.selected = 0;
     }
 
@@ -86,17 +137,33 @@ impl FilePicker {
 
     /// Get the full path string for the selected entry, suitable for
     /// insertion into the input. For directories, the path ends with `/`.
+    ///
+    /// In `GitChanges` mode the status prefix (e.g. `"M "`) is stripped so
+    /// only the bare file path is returned.
     pub fn selected_path(&self) -> Option<String> {
         self.selected_entry().map(|e| {
-            let mut path = self.query.to_string();
-            // Strip the filter portion (text after last `/` or all if no `/`)
-            if let Some(slash_pos) = path.rfind('/') {
-                path.truncate(slash_pos + 1);
-            } else {
-                path.clear();
+            match self.mode {
+                PickerMode::GitChanges => {
+                    // Strip the "X " status prefix.
+                    if e.name.len() > 2 {
+                        e.name[2..].to_string()
+                    } else {
+                        e.name.clone()
+                    }
+                }
+                PickerMode::FileSystem => {
+                    let mut path = self.query.to_string();
+                    // Strip the filter portion
+                    // (text after last `/` or all if no `/`)
+                    if let Some(slash_pos) = path.rfind('/') {
+                        path.truncate(slash_pos + 1);
+                    } else {
+                        path.clear();
+                    }
+                    path.push_str(&e.name);
+                    path
+                }
             }
-            path.push_str(&e.name);
-            path
         })
     }
 
@@ -140,6 +207,51 @@ impl FilePicker {
         }
     }
 
+    /// Return the full filesystem path of the currently selected entry, if any.
+    pub fn selected_full_path(&self) -> Option<PathBuf> {
+        let tree = self.tree_entries();
+        tree.get(self.selected)
+            .map(|entry| self.base_dir.join(entry.name.trim_end_matches('/')))
+    }
+
+    /// Return the file extension (without dot) of the selected entry, if it
+    /// is a file.
+    pub fn selected_extension(&self) -> Option<String> {
+        let tree = self.tree_entries();
+        tree.get(self.selected).and_then(|entry| {
+            if entry.is_dir {
+                return None;
+            }
+            Path::new(&entry.name)
+                .extension()
+                .map(|ext| ext.to_string_lossy().to_string())
+        })
+    }
+
+    /// Read the first 30 lines of the currently selected file for preview.
+    ///
+    /// Returns `None` for directories, unreadable files, binary content, or
+    /// when no entry is selected. Never panics.
+    pub fn preview_content(&self) -> Option<String> {
+        let tree = self.tree_entries();
+        let entry = tree.get(self.selected)?;
+        if entry.is_dir {
+            return None;
+        }
+        let path = self.base_dir.join(&entry.name);
+        let mut file = fs::File::open(&path).ok()?;
+        let mut buf = vec![0u8; PREVIEW_MAX_BYTES];
+        let n = file.read(&mut buf).ok()?;
+        buf.truncate(n);
+        // Reject likely-binary content (contains null bytes).
+        if buf.contains(&0) {
+            return None;
+        }
+        let text = String::from_utf8(buf).ok()?;
+        let lines: Vec<&str> = text.lines().take(PREVIEW_MAX_LINES).collect();
+        Some(lines.join("\n"))
+    }
+
     /// Build a flat list of visible tree entries respecting expanded state.
     /// Each entry carries its depth for indentation rendering.
     pub fn tree_entries(&self) -> Vec<TreeEntry> {
@@ -180,6 +292,98 @@ impl FilePicker {
             }
         }
     }
+}
+
+/// Sort order value for git status categories. Lower = higher priority.
+fn git_sort_key(name: &str) -> u8 {
+    // The first two characters encode the status prefix, e.g. "M ", "? ", "C ".
+    match name.chars().next() {
+        Some('M') | Some('A') | Some('D') => 0, // modified/added/deleted
+        Some('?') => 1,                         // untracked
+        Some('C') => 2,                         // committed (from log)
+        _ => 3,
+    }
+}
+
+/// Collect git-changed files from `git status --porcelain` and
+/// `git log --name-only -5`, deduplicating and sorting.
+///
+/// Each entry name is prefixed with a status character and a space, e.g.
+/// `"M src/main.rs"`, `"? new_file.txt"`, `"C old_change.rs"`.
+///
+/// Returns an empty vec if git is not available or `cwd` is not inside a
+/// git repository.
+fn collect_git_entries(cwd: &Path) -> Vec<DirEntry> {
+    let mut seen = HashSet::new();
+    let mut entries = Vec::new();
+
+    // 1. git status --porcelain
+    if let Ok(output) = Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(cwd)
+        .output()
+        && output.status.success()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if line.len() < 4 {
+                continue;
+            }
+            let xy = &line[..2];
+            let file = line[3..].trim();
+            if file.is_empty() {
+                continue;
+            }
+            // Map porcelain XY to a single-char prefix.
+            let prefix = match xy {
+                "??" => '?',
+                _ if xy.contains('D') => 'D',
+                _ if xy.contains('A') => 'A',
+                _ => 'M', // M, MM, AM, etc. all map to modified
+            };
+            if seen.insert(file.to_string()) {
+                entries.push((prefix, file.to_string()));
+            }
+        }
+    }
+
+    // 2. git log --name-only --pretty=format: -5
+    if let Ok(output) = Command::new("git")
+        .args(["log", "--name-only", "--pretty=format:", "-5"])
+        .current_dir(cwd)
+        .output()
+        && output.status.success()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            let file = line.trim();
+            if file.is_empty() {
+                continue;
+            }
+            if seen.insert(file.to_string()) {
+                entries.push(('C', file.to_string()));
+            }
+        }
+    }
+
+    // Build DirEntry list with status-prefixed names.
+    let mut result: Vec<DirEntry> = entries
+        .into_iter()
+        .map(|(prefix, path)| DirEntry {
+            name: format!("{} {}", prefix, path),
+            is_dir: false,
+        })
+        .collect();
+
+    // Sort: modified first, then untracked, then committed; alphabetical
+    // within each category.
+    result.sort_by(|a, b| {
+        git_sort_key(&a.name)
+            .cmp(&git_sort_key(&b.name))
+            .then_with(|| a.name.cmp(&b.name))
+    });
+
+    result
 }
 
 /// Resolve an `@`-query into a (base_directory, filter_text) pair.
@@ -696,5 +900,304 @@ mod tests {
         // Only entry is a file
         let toggled = picker.toggle_expand(tmp.path());
         assert!(!toggled, "toggle_expand on a file should return false");
+    }
+
+    // --- preview_content tests ---
+
+    // @req REQ-TUI-048
+    #[test]
+    fn preview_content_returns_none_for_directory() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("subdir")).unwrap();
+
+        let picker = FilePicker::open("", tmp.path());
+        // First entry is the directory (dirs sort first).
+        let tree = picker.tree_entries();
+        assert!(tree[0].is_dir, "First entry should be a directory");
+        let preview = picker.preview_content();
+        assert!(
+            preview.is_none(),
+            "preview_content should return None for directories"
+        );
+    }
+
+    // @req REQ-TUI-048
+    #[test]
+    fn preview_content_returns_first_30_lines() {
+        let tmp = TempDir::new().unwrap();
+        // Create a file with 50 lines.
+        let content: String = (1..=50)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(tmp.path().join("big.txt"), &content).unwrap();
+
+        let picker = FilePicker::open("", tmp.path());
+        let preview = picker.preview_content().unwrap();
+        let line_count = preview.lines().count();
+        assert_eq!(
+            line_count, 30,
+            "preview_content should return at most 30 lines, got {line_count}"
+        );
+        assert!(preview.starts_with("line 1\n"));
+        assert!(preview.contains("line 30"));
+        assert!(!preview.contains("line 31"), "Should not include line 31");
+    }
+
+    // @req REQ-TUI-048
+    #[test]
+    fn preview_content_returns_none_for_nonexistent_path() {
+        let tmp = TempDir::new().unwrap();
+        // Open picker on a nonexistent subdirectory -- entries will be empty.
+        let picker = FilePicker::open("nonexistent/", tmp.path());
+        let preview = picker.preview_content();
+        assert!(
+            preview.is_none(),
+            "preview_content should return None when no entry is selected"
+        );
+    }
+
+    // @req REQ-TUI-048
+    #[test]
+    fn preview_content_returns_short_file_content() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("hello.rs"), "fn main() {}\n").unwrap();
+
+        let picker = FilePicker::open("", tmp.path());
+        let preview = picker.preview_content().unwrap();
+        assert!(
+            preview.contains("fn main()"),
+            "Should contain the file content: {preview}"
+        );
+    }
+
+    // @req REQ-TUI-048
+    #[test]
+    fn selected_extension_returns_ext_for_file() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("hello.rs"), "").unwrap();
+
+        let picker = FilePicker::open("", tmp.path());
+        let ext = picker.selected_extension();
+        assert_eq!(ext.as_deref(), Some("rs"));
+    }
+
+    // @req REQ-TUI-048
+    #[test]
+    fn selected_extension_returns_none_for_dir() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("subdir")).unwrap();
+
+        let picker = FilePicker::open("", tmp.path());
+        let ext = picker.selected_extension();
+        assert!(
+            ext.is_none(),
+            "selected_extension should return None for directories"
+        );
+    }
+
+    // --- Git-aware picker tests ---
+
+    /// Helper: initialise a throwaway git repo in the given directory and
+    /// make an initial commit so that `git log` has something to show.
+    fn git_init(dir: &Path) {
+        Command::new("git")
+            .args(["init"])
+            .current_dir(dir)
+            .output()
+            .expect("git init");
+        Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(dir)
+            .output()
+            .expect("git config email");
+        Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(dir)
+            .output()
+            .expect("git config name");
+    }
+
+    // @req REQ-TUI-050
+    #[test]
+    fn open_git_lists_modified_files() {
+        let tmp = TempDir::new().unwrap();
+        git_init(tmp.path());
+
+        // Create and commit a file, then modify it.
+        let f = tmp.path().join("hello.rs");
+        fs::write(&f, "fn main() {}").unwrap();
+        Command::new("git")
+            .args(["add", "hello.rs"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        fs::write(&f, "fn main() { changed }").unwrap();
+
+        let picker = FilePicker::open_git(tmp.path());
+        assert_eq!(picker.mode, PickerMode::GitChanges);
+        assert!(
+            picker.entries.iter().any(|e| e.name == "M hello.rs"),
+            "entries: {:?}",
+            picker.entries
+        );
+    }
+
+    // @req REQ-TUI-050
+    #[test]
+    fn open_git_on_non_git_dir_returns_empty() {
+        let tmp = TempDir::new().unwrap();
+        // No git init -- just a plain directory.
+        fs::write(tmp.path().join("hello.rs"), "").unwrap();
+
+        let picker = FilePicker::open_git(tmp.path());
+        assert!(
+            picker.entries.is_empty(),
+            "Non-git dir should yield empty entries"
+        );
+    }
+
+    // @req REQ-TUI-050
+    #[test]
+    fn open_git_deduplicates_status_and_log() {
+        let tmp = TempDir::new().unwrap();
+        git_init(tmp.path());
+
+        // Create and commit a file, then modify it again. The file appears
+        // in both `git status` (modified) and `git log` (committed).
+        let f = tmp.path().join("shared.rs");
+        fs::write(&f, "v1").unwrap();
+        Command::new("git")
+            .args(["add", "shared.rs"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "add shared"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        fs::write(&f, "v2").unwrap();
+
+        let picker = FilePicker::open_git(tmp.path());
+        let count = picker
+            .entries
+            .iter()
+            .filter(|e| e.name.contains("shared.rs"))
+            .count();
+        assert_eq!(
+            count, 1,
+            "Duplicate file should appear only once: {:?}",
+            picker.entries
+        );
+    }
+
+    // @req REQ-TUI-050
+    #[test]
+    fn open_git_filter_works() {
+        let tmp = TempDir::new().unwrap();
+        git_init(tmp.path());
+
+        fs::write(tmp.path().join("alpha.rs"), "").unwrap();
+        fs::write(tmp.path().join("beta.rs"), "").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        fs::write(tmp.path().join("alpha.rs"), "changed").unwrap();
+        fs::write(tmp.path().join("beta.rs"), "changed").unwrap();
+
+        let mut picker = FilePicker::open_git(tmp.path());
+        assert!(picker.filtered.len() >= 2);
+
+        // Filter to just "alpha"
+        picker.update_query("alpha", tmp.path());
+        assert_eq!(picker.filtered.len(), 1);
+        assert!(picker.filtered[0].name.contains("alpha.rs"));
+    }
+
+    // @req REQ-TUI-050
+    #[test]
+    fn open_git_status_prefixes_correct() {
+        let tmp = TempDir::new().unwrap();
+        git_init(tmp.path());
+
+        // Create initial commit.
+        fs::write(tmp.path().join("committed.rs"), "v1").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+
+        // Modify committed file.
+        fs::write(tmp.path().join("committed.rs"), "v2").unwrap();
+
+        // Create an untracked file.
+        fs::write(tmp.path().join("untracked.txt"), "new").unwrap();
+
+        let picker = FilePicker::open_git(tmp.path());
+
+        let modified = picker
+            .entries
+            .iter()
+            .find(|e| e.name.contains("committed.rs"));
+        assert!(
+            modified.is_some(),
+            "committed.rs should appear: {:?}",
+            picker.entries
+        );
+        assert!(
+            modified.unwrap().name.starts_with("M "),
+            "Modified file should have M prefix: {}",
+            modified.unwrap().name
+        );
+
+        let untracked = picker
+            .entries
+            .iter()
+            .find(|e| e.name.contains("untracked.txt"));
+        assert!(
+            untracked.is_some(),
+            "untracked.txt should appear: {:?}",
+            picker.entries
+        );
+        assert!(
+            untracked.unwrap().name.starts_with("? "),
+            "Untracked file should have ? prefix: {}",
+            untracked.unwrap().name
+        );
+
+        // Verify sort order: M before ?
+        let m_idx = picker
+            .entries
+            .iter()
+            .position(|e| e.name.starts_with("M "))
+            .unwrap();
+        let q_idx = picker
+            .entries
+            .iter()
+            .position(|e| e.name.starts_with("? "))
+            .unwrap();
+        assert!(
+            m_idx < q_idx,
+            "Modified (M) should sort before untracked (?)"
+        );
     }
 }

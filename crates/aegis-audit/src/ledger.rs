@@ -21,6 +21,17 @@ struct LedgerEntry<'a> {
     event: &'a DomainEvent,
 }
 
+/// Report returned by crash recovery describing what was found and repaired.
+#[derive(Debug)]
+pub struct RecoveryReport {
+    /// Number of valid JSONL entries retained in the log file.
+    pub valid_entries: usize,
+    /// Number of corrupt/truncated entries moved to the quarantine file.
+    pub quarantined_entries: usize,
+    /// Path to the `.corrupt` quarantine file, if any entries were quarantined.
+    pub quarantine_path: Option<PathBuf>,
+}
+
 /// Maximum log file size before rotation (10 MB).
 const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
 
@@ -92,6 +103,109 @@ impl JsonlLedger {
             .map_err(|e| DomainError::AuditError {
                 message: format!("Failed to open log file {}: {e}", path.display()),
             })
+    }
+
+    /// Scan all `.jsonl` log files in `log_dir` for truncated/corrupt entries.
+    ///
+    /// Valid lines are kept in place; invalid lines are moved to a sibling
+    /// `.corrupt` file. A `LEDGER_REPAIRED` entry is appended to each
+    /// repaired log file so the repair is itself auditable.
+    ///
+    /// Returns a [`RecoveryReport`] summarising what was found.
+    pub fn recover(log_dir: &Path) -> RecoveryReport {
+        let mut total_valid: usize = 0;
+        let mut total_quarantined: usize = 0;
+        let mut quarantine_path: Option<PathBuf> = None;
+
+        let entries = match std::fs::read_dir(log_dir) {
+            Ok(e) => e,
+            Err(_) => {
+                return RecoveryReport {
+                    valid_entries: 0,
+                    quarantined_entries: 0,
+                    quarantine_path: None,
+                };
+            }
+        };
+
+        for dir_entry in entries.flatten() {
+            let path = dir_entry.path();
+            if path.extension().is_some_and(|e| e == "jsonl") {
+                let content = match std::fs::read_to_string(&path) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+
+                let mut valid_lines: Vec<String> = Vec::new();
+                let mut corrupt_lines: Vec<String> = Vec::new();
+
+                for line in content.lines() {
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    if serde_json::from_str::<serde_json::Value>(line).is_ok() {
+                        valid_lines.push(line.to_string());
+                    } else {
+                        corrupt_lines.push(line.to_string());
+                    }
+                }
+
+                total_valid += valid_lines.len();
+
+                if !corrupt_lines.is_empty() {
+                    total_quarantined += corrupt_lines.len();
+
+                    // Write corrupt lines to .corrupt file
+                    let corrupt_path = path.with_extension("jsonl.corrupt");
+                    let mut corrupt_content = String::new();
+                    for cl in &corrupt_lines {
+                        corrupt_content.push_str(cl);
+                        corrupt_content.push('\n');
+                    }
+                    // Append to existing corrupt file if present
+                    let mut file = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&corrupt_path)
+                        .expect("Failed to open corrupt quarantine file");
+                    file.write_all(corrupt_content.as_bytes())
+                        .expect("Failed to write corrupt entries");
+                    quarantine_path = Some(corrupt_path);
+
+                    // Build the LEDGER_REPAIRED entry
+                    let (os_user, hostname) = Self::current_identity();
+                    let repair_entry = serde_json::json!({
+                        "timestamp": chrono::Utc::now().to_rfc3339(),
+                        "os_user": os_user,
+                        "hostname": hostname,
+                        "event": "LEDGER_REPAIRED",
+                        "quarantined_entries": corrupt_lines.len(),
+                    });
+                    valid_lines.push(
+                        serde_json::to_string(&repair_entry)
+                            .expect("Failed to serialize repair entry"),
+                    );
+                    // Count the repair entry as valid
+                    total_valid += 1;
+
+                    // Rewrite the log file with only valid lines
+                    // + repair entry
+                    let mut rewritten = String::new();
+                    for vl in &valid_lines {
+                        rewritten.push_str(vl);
+                        rewritten.push('\n');
+                    }
+                    std::fs::write(&path, rewritten)
+                        .expect("Failed to rewrite repaired log file");
+                }
+            }
+        }
+
+        RecoveryReport {
+            valid_entries: total_valid,
+            quarantined_entries: total_quarantined,
+            quarantine_path,
+        }
     }
 
     fn current_identity() -> (String, String) {
@@ -481,6 +595,157 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(line)
                 .expect("Each single-thread entry must be valid JSON");
         }
+    }
+
+    // --- Crash recovery tests (REQ-AUDIT-008) ---
+
+    /// Helper: write raw content to a dated log file in the given dir.
+    fn write_raw_log(log_dir: &Path, content: &str) -> PathBuf {
+        std::fs::create_dir_all(log_dir).unwrap();
+        let date = chrono::Utc::now().format("%Y-%m-%d");
+        let path = log_dir.join(format!("aegis-{date}.jsonl"));
+        std::fs::write(&path, content).unwrap();
+        path
+    }
+
+    /// Helper: build a minimal valid JSONL line.
+    fn valid_jsonl_line() -> String {
+        serde_json::to_string(&serde_json::json!({
+            "timestamp": "2026-01-01T00:00:00Z",
+            "os_user": "test",
+            "hostname": "host",
+            "event": "SessionStarted"
+        }))
+        .unwrap()
+    }
+
+    // @req REQ-AUDIT-008
+    #[test]
+    fn recover_clean_file_returns_zero_quarantined() {
+        let tmp = TempDir::new().unwrap();
+        let log_dir = tmp.path().join("logs");
+        let line = valid_jsonl_line();
+        write_raw_log(&log_dir, &format!("{line}\n{line}\n"));
+
+        let report = JsonlLedger::recover(&log_dir);
+
+        assert_eq!(report.quarantined_entries, 0);
+        assert_eq!(report.valid_entries, 2);
+        assert!(report.quarantine_path.is_none());
+    }
+
+    // @req REQ-AUDIT-008
+    #[test]
+    fn recover_truncated_last_line_quarantines_it() {
+        let tmp = TempDir::new().unwrap();
+        let log_dir = tmp.path().join("logs");
+        let line = valid_jsonl_line();
+        // Simulate crash: valid line followed by truncated JSON
+        write_raw_log(&log_dir, &format!("{line}\n{{\"trunca"));
+
+        let report = JsonlLedger::recover(&log_dir);
+
+        assert_eq!(report.quarantined_entries, 1);
+        assert_eq!(report.valid_entries, 2); // 1 original + 1 LEDGER_REPAIRED
+        assert!(report.quarantine_path.is_some());
+    }
+
+    // @req REQ-AUDIT-008
+    #[test]
+    fn recover_preserves_all_valid_entries() {
+        let tmp = TempDir::new().unwrap();
+        let log_dir = tmp.path().join("logs");
+        let line = valid_jsonl_line();
+        let path = write_raw_log(&log_dir, &format!("{line}\n{line}\n{line}\n"));
+
+        let report = JsonlLedger::recover(&log_dir);
+
+        assert_eq!(report.valid_entries, 3);
+        assert_eq!(report.quarantined_entries, 0);
+
+        // File content unchanged (no repair entry added)
+        let content = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
+        assert_eq!(lines.len(), 3);
+    }
+
+    // @req REQ-AUDIT-008
+    #[test]
+    fn quarantine_file_contains_corrupt_entries() {
+        let tmp = TempDir::new().unwrap();
+        let log_dir = tmp.path().join("logs");
+        let line = valid_jsonl_line();
+        write_raw_log(&log_dir, &format!("{line}\n{{\"broken\n{line}\n"));
+
+        let report = JsonlLedger::recover(&log_dir);
+
+        let qpath = report.quarantine_path.unwrap();
+        assert!(qpath.exists());
+        let corrupt_content = std::fs::read_to_string(&qpath).unwrap();
+        assert!(corrupt_content.contains("{\"broken"));
+        assert_eq!(
+            corrupt_content
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .count(),
+            1
+        );
+    }
+
+    // @req REQ-AUDIT-008
+    #[test]
+    fn ledger_repaired_entry_appended_after_recovery() {
+        let tmp = TempDir::new().unwrap();
+        let log_dir = tmp.path().join("logs");
+        let line = valid_jsonl_line();
+        let path = write_raw_log(&log_dir, &format!("{line}\n{{\"bad\n"));
+
+        JsonlLedger::recover(&log_dir);
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
+
+        // Last line should be the LEDGER_REPAIRED entry
+        let last: serde_json::Value = serde_json::from_str(lines.last().unwrap()).unwrap();
+        assert_eq!(last["event"], "LEDGER_REPAIRED");
+        assert_eq!(last["quarantined_entries"], 1);
+    }
+
+    // @req REQ-AUDIT-008
+    #[test]
+    fn recover_empty_file_returns_zero_quarantined() {
+        let tmp = TempDir::new().unwrap();
+        let log_dir = tmp.path().join("logs");
+        write_raw_log(&log_dir, "");
+
+        let report = JsonlLedger::recover(&log_dir);
+
+        assert_eq!(report.quarantined_entries, 0);
+        assert_eq!(report.valid_entries, 0);
+        assert!(report.quarantine_path.is_none());
+    }
+
+    // @req REQ-AUDIT-008
+    #[test]
+    fn recover_multiple_corrupt_lines_all_quarantined() {
+        let tmp = TempDir::new().unwrap();
+        let log_dir = tmp.path().join("logs");
+        let line = valid_jsonl_line();
+        write_raw_log(&log_dir, &format!("{line}\n{{\"bad1\n{{\"bad2\n{{\"bad3\n"));
+
+        let report = JsonlLedger::recover(&log_dir);
+
+        assert_eq!(report.quarantined_entries, 3);
+        // 1 original valid + 1 LEDGER_REPAIRED
+        assert_eq!(report.valid_entries, 2);
+
+        let qpath = report.quarantine_path.unwrap();
+        let corrupt_content = std::fs::read_to_string(&qpath).unwrap();
+        let corrupt_lines: Vec<&str> = corrupt_content
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .collect();
+        assert_eq!(corrupt_lines.len(), 3);
     }
 
     /// Read all JSONL entries from all log files in the directory.

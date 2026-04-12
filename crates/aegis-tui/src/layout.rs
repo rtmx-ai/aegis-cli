@@ -84,6 +84,10 @@ pub struct FilePickerView {
     pub entries: Vec<crate::app::file_picker::TreeEntry>,
     /// Index of the currently selected entry.
     pub selected: usize,
+    /// Preview content of the selected file (first 30 lines), if available.
+    pub preview: Option<String>,
+    /// File extension of the selected file for syntax highlighting.
+    pub preview_extension: Option<String>,
 }
 
 impl Default for AppState {
@@ -444,8 +448,23 @@ fn render_approval_modal(frame: &mut Frame, area: Rect, info: &ApprovalDisplayIn
     frame.render_widget(paragraph, modal_area);
 }
 
-/// Render the file picker modal as a centered overlay.
+/// Background color for the file preview pane.
+const PREVIEW_BG: Color = Color::Rgb(30, 30, 30);
+
+/// Render the file picker dropdown with a tree view (left) and preview (right).
 fn render_file_picker_dropdown(frame: &mut Frame, area: Rect, picker: &FilePickerView) {
+    // Split horizontally: 40% tree, 60% preview.
+    let panels = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .split(area);
+
+    render_file_picker_tree(frame, panels[0], picker);
+    render_file_picker_preview(frame, panels[1], picker);
+}
+
+/// Render the tree (left panel) of the file picker.
+fn render_file_picker_tree(frame: &mut Frame, area: Rect, picker: &FilePickerView) {
     // Maximum visible entries in the list.
     let max_visible: usize = area.height.saturating_sub(1) as usize; // query line takes 1
 
@@ -503,6 +522,88 @@ fn render_file_picker_dropdown(frame: &mut Frame, area: Rect, picker: &FilePicke
     }
 
     let paragraph = Paragraph::new(lines).style(Style::default().bg(Color::Black));
+    frame.render_widget(paragraph, area);
+}
+
+/// Render the preview (right panel) of the file picker.
+fn render_file_picker_preview(frame: &mut Frame, area: Rect, picker: &FilePickerView) {
+    use syntect::easy::HighlightLines;
+    use syntect::highlighting::ThemeSet;
+    use syntect::parsing::SyntaxSet;
+
+    // Determine what the selected entry is.
+    let is_dir = picker
+        .entries
+        .get(picker.selected)
+        .map(|e| e.is_dir)
+        .unwrap_or(false);
+
+    if is_dir {
+        let lines = vec![Line::from(Span::styled(
+            "  Directory",
+            Style::default().fg(Color::DarkGray).bg(PREVIEW_BG),
+        ))];
+        let paragraph = Paragraph::new(lines).style(Style::default().bg(PREVIEW_BG));
+        frame.render_widget(paragraph, area);
+        return;
+    }
+
+    let content = match &picker.preview {
+        Some(c) => c,
+        None => {
+            let lines = vec![Line::from(Span::styled(
+                "  No preview",
+                Style::default().fg(Color::DarkGray).bg(PREVIEW_BG),
+            ))];
+            let paragraph = Paragraph::new(lines).style(Style::default().bg(PREVIEW_BG));
+            frame.render_widget(paragraph, area);
+            return;
+        }
+    };
+
+    // Set up syntect for highlighting based on file extension.
+    let ss = SyntaxSet::load_defaults_newlines();
+    let ts = ThemeSet::load_defaults();
+    let theme = &ts.themes["base16-ocean.dark"];
+
+    let syntax = picker
+        .preview_extension
+        .as_deref()
+        .and_then(|ext| ss.find_syntax_by_extension(ext))
+        .unwrap_or_else(|| ss.find_syntax_plain_text());
+
+    let mut highlighter = HighlightLines::new(syntax, theme);
+    let dim_style = Style::default()
+        .fg(Color::DarkGray)
+        .bg(PREVIEW_BG)
+        .add_modifier(Modifier::DIM);
+
+    let mut lines: Vec<Line> = Vec::new();
+    for (i, line_text) in content.lines().enumerate() {
+        let line_num = format!("{:>3} ", i + 1);
+        let mut spans = vec![Span::styled(line_num, dim_style)];
+
+        let regions = highlighter
+            .highlight_line(line_text, &ss)
+            .unwrap_or_default();
+        for (style, text) in &regions {
+            let fg = Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
+            spans.push(Span::styled(
+                text.to_string(),
+                Style::default().fg(fg).bg(PREVIEW_BG),
+            ));
+        }
+        if regions.is_empty() {
+            spans.push(Span::styled(
+                line_text.to_string(),
+                Style::default().bg(PREVIEW_BG),
+            ));
+        }
+
+        lines.push(Line::from(spans));
+    }
+
+    let paragraph = Paragraph::new(lines).style(Style::default().bg(PREVIEW_BG));
     frame.render_widget(paragraph, area);
 }
 
@@ -1173,6 +1274,8 @@ mod tests {
                     },
                 ],
                 selected: 0,
+                preview: None,
+                preview_extension: None,
             }),
             ..Default::default()
         };
@@ -1212,6 +1315,8 @@ mod tests {
                     expanded: false,
                 }],
                 selected: 0,
+                preview: None,
+                preview_extension: None,
             }),
             ..Default::default()
         };
@@ -1231,6 +1336,8 @@ mod tests {
                 query: "nonexistent".to_string(),
                 entries: Vec::new(),
                 selected: 0,
+                preview: None,
+                preview_extension: None,
             }),
             ..Default::default()
         };
@@ -1262,6 +1369,8 @@ mod tests {
                     },
                 ],
                 selected: 0,
+                preview: None,
+                preview_extension: None,
             }),
             ..Default::default()
         };
@@ -1274,5 +1383,111 @@ mod tests {
             output.contains("main.rs"),
             "Should show file entry: {output}"
         );
+    }
+
+    // @req REQ-TUI-048
+    #[test]
+    fn layout_splits_picker_into_two_panels_with_preview() {
+        let state = AppState {
+            file_picker: Some(FilePickerView {
+                query: "".to_string(),
+                entries: vec![crate::app::file_picker::TreeEntry {
+                    name: "hello.rs".to_string(),
+                    is_dir: false,
+                    depth: 0,
+                    expanded: false,
+                }],
+                selected: 0,
+                preview: Some("fn main() {}".to_string()),
+                preview_extension: Some("rs".to_string()),
+            }),
+            ..Default::default()
+        };
+        let output = render_to_string(&state, 100, 25);
+        // Tree side should show the file entry.
+        assert!(
+            output.contains("hello.rs"),
+            "Should show tree entry: {output}"
+        );
+        // Preview side should show the file content.
+        assert!(
+            output.contains("fn main()"),
+            "Should show preview content: {output}"
+        );
+    }
+
+    // @req REQ-TUI-048
+    #[test]
+    fn layout_shows_directory_label_for_dir_selection() {
+        let state = AppState {
+            file_picker: Some(FilePickerView {
+                query: "".to_string(),
+                entries: vec![crate::app::file_picker::TreeEntry {
+                    name: "src/".to_string(),
+                    is_dir: true,
+                    depth: 0,
+                    expanded: false,
+                }],
+                selected: 0,
+                preview: None,
+                preview_extension: None,
+            }),
+            ..Default::default()
+        };
+        let output = render_to_string(&state, 100, 25);
+        assert!(
+            output.contains("Directory"),
+            "Should show 'Directory' in preview pane for dir: {output}"
+        );
+    }
+
+    // @req REQ-TUI-048
+    #[test]
+    fn layout_shows_no_preview_for_unreadable_file() {
+        let state = AppState {
+            file_picker: Some(FilePickerView {
+                query: "".to_string(),
+                entries: vec![crate::app::file_picker::TreeEntry {
+                    name: "binary.dat".to_string(),
+                    is_dir: false,
+                    depth: 0,
+                    expanded: false,
+                }],
+                selected: 0,
+                preview: None,
+                preview_extension: None,
+            }),
+            ..Default::default()
+        };
+        let output = render_to_string(&state, 100, 25);
+        assert!(
+            output.contains("No preview"),
+            "Should show 'No preview' for unreadable file: {output}"
+        );
+    }
+
+    // @req REQ-TUI-048
+    #[test]
+    fn layout_shows_line_numbers_in_preview() {
+        let content = "line one\nline two\nline three".to_string();
+        let state = AppState {
+            file_picker: Some(FilePickerView {
+                query: "".to_string(),
+                entries: vec![crate::app::file_picker::TreeEntry {
+                    name: "test.txt".to_string(),
+                    is_dir: false,
+                    depth: 0,
+                    expanded: false,
+                }],
+                selected: 0,
+                preview: Some(content),
+                preview_extension: Some("txt".to_string()),
+            }),
+            ..Default::default()
+        };
+        let output = render_to_string(&state, 100, 25);
+        // Line numbers should be visible (1, 2, 3).
+        assert!(output.contains("1 "), "Should show line number 1: {output}");
+        assert!(output.contains("2 "), "Should show line number 2: {output}");
     }
 }
