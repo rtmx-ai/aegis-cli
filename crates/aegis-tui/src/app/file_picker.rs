@@ -120,7 +120,8 @@ fn collect_files(root: &Path, dir: &Path, depth: usize, out: &mut Vec<String>) {
         } else if path.is_file()
             && let Ok(relative) = path.strip_prefix(root)
         {
-            out.push(relative.to_string_lossy().to_string());
+            // Normalize to forward slashes for cross-platform consistency.
+            out.push(relative.to_string_lossy().replace('\\', "/"));
         }
     }
 }
