@@ -35,7 +35,16 @@ else
 fi
 pass "all tests"
 
-# 4. RTMX health (matches CI: rtmx status)
+# 4. License & advisory audit (matches CI: cargo-deny check)
+if command -v cargo-deny &>/dev/null; then
+    echo -n "Checking licenses and advisories... "
+    cargo deny check licenses advisories 2>/dev/null || fail "cargo deny check licenses advisories"
+    pass "cargo deny"
+else
+    warn "cargo-deny not installed -- skipping license/advisory audit (install: cargo install cargo-deny)"
+fi
+
+# 5. RTMX health (matches CI: rtmx status)
 if command -v rtmx &>/dev/null; then
     echo -n "Checking RTMX health... "
     rtmx status 2>/dev/null || fail "rtmx status"
@@ -44,12 +53,12 @@ else
     warn "rtmx not installed -- skipping requirements health check (install: pip install rtmx)"
 fi
 
-# 5. Build check (ensure it compiles in release mode, catches release-only issues)
+# 6. Build check (ensure it compiles in release mode, catches release-only issues)
 echo -n "Checking release build... "
 RUSTFLAGS="-D warnings" cargo check --workspace --release 2>/dev/null || fail "cargo check --release"
 pass "release build"
 
-# 6. Dev loop GIF freshness (REQ-BUILD-038)
+# 7. Dev loop GIF freshness (REQ-BUILD-038)
 # Validates that docs/demos/dev-loop.gif exists and is not older than dev.sh.
 # This is a REAL recording (not a simulation), so regeneration is manual:
 #   vhs docs/demos/tapes/dev-loop.tape
