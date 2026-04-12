@@ -1,10 +1,9 @@
 //! Provider-specific authentication credential types.
 //!
-//! Models auth credentials for each cloud provider without performing
-//! actual token exchange or refresh. Provides credential resolution
-//! from `ProviderConfig` and validation that required fields are present.
-
-use std::path::PathBuf;
+//! Models auth credentials for each cloud provider. For GCP/Vertex AI,
+//! performs ADC access-token resolution via `gcloud` CLI or GCE metadata
+//! server. Provides credential resolution from `ProviderConfig` and
+//! validation that required fields are present.
 
 use aegis_domain::error::DomainError;
 
@@ -20,12 +19,11 @@ pub enum ProviderAuth {
     ApiKey(String),
 
     /// Google Cloud Application Default Credentials (ADC).
-    /// Uses service account JSON file or GCE metadata server.
+    /// Carries a resolved OAuth2 access token obtained via `gcloud`
+    /// CLI or the GCE metadata server.
     Gcp {
-        /// Path to service account JSON key file.
-        /// When `None`, ADC falls back to the metadata server
-        /// or `GOOGLE_APPLICATION_CREDENTIALS` env var.
-        credentials_path: Option<PathBuf>,
+        /// OAuth2 bearer token for Vertex AI requests.
+        access_token: String,
     },
 
     /// AWS Security Token Service credentials for Bedrock.
@@ -46,19 +44,109 @@ pub enum ProviderAuth {
     },
 }
 
+/// Resolve a GCP OAuth2 access token using Application Default Credentials.
+///
+/// Strategy (in order):
+/// 1. Shell out to `gcloud auth print-access-token`. Works when the user has
+///    run `gcloud auth login`, `gcloud auth application-default login`, or
+///    has `GOOGLE_APPLICATION_CREDENTIALS` set to a service-account key.
+/// 2. Fall back to the GCE metadata server at
+///    `http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token`.
+///    Works on GCE, GKE, and Cloud Run.
+/// 3. If both fail, return a `DomainError::ProviderError` with guidance.
+pub fn resolve_gcp_access_token() -> Result<String, DomainError> {
+    // Strategy 1: gcloud CLI
+    if let Some(token) = try_gcloud_access_token() {
+        return Ok(token);
+    }
+
+    // Strategy 2: GCE metadata server
+    if let Some(token) = try_metadata_server_token() {
+        return Ok(token);
+    }
+
+    Err(DomainError::ProviderError {
+        message: "Failed to obtain GCP access token. Ensure you have \
+                  authenticated via `gcloud auth application-default login` \
+                  or are running on a GCE/GKE instance with a service account."
+            .to_string(),
+    })
+}
+
+/// Attempt to obtain a token via `gcloud auth print-access-token`.
+fn try_gcloud_access_token() -> Option<String> {
+    let output = std::process::Command::new("gcloud")
+        .args(["auth", "print-access-token"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let token = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    if token.is_empty() {
+        return None;
+    }
+
+    Some(token)
+}
+
+/// Attempt to obtain a token from the GCE metadata server.
+fn try_metadata_server_token() -> Option<String> {
+    let output = std::process::Command::new("curl")
+        .args([
+            "--silent",
+            "--fail",
+            "--max-time",
+            "2",
+            "--header",
+            "Metadata-Flavor: Google",
+            "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let body = String::from_utf8(output.stdout).ok()?;
+    // Response is JSON: {"access_token":"...","expires_in":3600,"token_type":"Bearer"}
+    // Parse minimally without pulling in serde_json at this layer.
+    extract_access_token_from_json(&body)
+}
+
+/// Extract the `access_token` value from a GCE metadata JSON response.
+///
+/// Avoids a serde_json dependency by doing simple string parsing.
+fn extract_access_token_from_json(json: &str) -> Option<String> {
+    let marker = "\"access_token\":\"";
+    let start = json.find(marker)? + marker.len();
+    let rest = &json[start..];
+    let end = rest.find('"')?;
+    let token = &rest[..end];
+    if token.is_empty() {
+        return None;
+    }
+    Some(token.to_string())
+}
+
 /// Resolve the appropriate `ProviderAuth` variant from a `ProviderConfig`.
 ///
-/// This inspects `config.kind` and returns a skeleton credential struct
-/// with fields populated from environment variables where available.
-/// Actual token exchange is out of scope.
+/// This inspects `config.kind` and returns a credential struct with fields
+/// populated from environment variables or token exchange where applicable.
+/// For Vertex AI, performs ADC access-token resolution.
 pub fn resolve_auth(config: &ProviderConfig) -> Result<ProviderAuth, DomainError> {
     match config.kind {
         ProviderKind::Local => Ok(ProviderAuth::NoAuth),
         ProviderKind::Vertex => {
-            let credentials_path = std::env::var("GOOGLE_APPLICATION_CREDENTIALS")
-                .ok()
-                .map(PathBuf::from);
-            Ok(ProviderAuth::Gcp { credentials_path })
+            let access_token = resolve_gcp_access_token()?;
+            Ok(ProviderAuth::Gcp { access_token })
         }
         ProviderKind::Bedrock => {
             let access_key_id =
@@ -112,12 +200,10 @@ pub fn validate_auth(auth: &ProviderAuth) -> Result<(), DomainError> {
             }
             Ok(())
         }
-        ProviderAuth::Gcp { credentials_path } => {
-            if let Some(path) = credentials_path
-                && path.as_os_str().is_empty()
-            {
+        ProviderAuth::Gcp { access_token } => {
+            if access_token.trim().is_empty() {
                 return Err(DomainError::ConfigError {
-                    message: "GCP credentials path must not be empty".to_string(),
+                    message: "GCP access token must not be empty".to_string(),
                 });
             }
             Ok(())
@@ -173,11 +259,10 @@ pub fn auth_header(auth: &ProviderAuth) -> Option<(String, String)> {
     match auth {
         ProviderAuth::NoAuth => None,
         ProviderAuth::ApiKey(key) => Some(("Authorization".to_string(), format!("Bearer {key}"))),
-        ProviderAuth::Gcp { .. } => {
-            // ADC token exchange produces a Bearer token, but the actual
-            // token value requires an OAuth2 flow (out of scope).
-            None
-        }
+        ProviderAuth::Gcp { access_token } => Some((
+            "Authorization".to_string(),
+            format!("Bearer {access_token}"),
+        )),
         ProviderAuth::Aws { .. } => {
             // AWS SigV4 signing requires multiple headers (Authorization,
             // x-amz-date, x-amz-security-token). Not representable as a
@@ -204,13 +289,10 @@ mod tests {
         assert_eq!(auth, ProviderAuth::NoAuth);
     }
 
-    // rtmx:req REQ-LLM-015
+    // rtmx:req REQ-LLM-021
     #[test]
-    fn resolve_auth_vertex_returns_gcp() {
-        // SAFETY: test-only; env mutation is acceptable in serial test runs.
-        unsafe {
-            std::env::remove_var("GOOGLE_APPLICATION_CREDENTIALS");
-        }
+    #[ignore] // requires gcloud CLI or GCE metadata server
+    fn resolve_auth_vertex_returns_gcp_with_token() {
         let cfg = ProviderConfig {
             kind: ProviderKind::Vertex,
             model: "gemini-2.5-pro-001".to_string(),
@@ -219,14 +301,16 @@ mod tests {
             temperature: 0.0,
             connect_timeout_secs: 10,
             read_timeout_secs: 300,
+            project_id: None,
+            region: None,
         };
         let auth = resolve_auth(&cfg).unwrap();
-        assert_eq!(
-            auth,
-            ProviderAuth::Gcp {
-                credentials_path: None
+        match auth {
+            ProviderAuth::Gcp { ref access_token } => {
+                assert!(!access_token.trim().is_empty(), "token must not be empty");
             }
-        );
+            other => panic!("expected Gcp variant, got {other:?}"),
+        }
     }
 
     // rtmx:req REQ-LLM-015
@@ -245,6 +329,8 @@ mod tests {
             temperature: 0.0,
             connect_timeout_secs: 10,
             read_timeout_secs: 300,
+            project_id: None,
+            region: None,
         };
         let result = resolve_auth(&cfg);
         assert!(result.is_err());
@@ -266,6 +352,8 @@ mod tests {
             temperature: 0.0,
             connect_timeout_secs: 10,
             read_timeout_secs: 300,
+            project_id: None,
+            region: None,
         };
         let result = resolve_auth(&cfg);
         assert!(result.is_err());
@@ -300,29 +388,29 @@ mod tests {
         assert!(validate_auth(&auth).is_err());
     }
 
-    // rtmx:req REQ-LLM-015
+    // rtmx:req REQ-LLM-021
     #[test]
-    fn validate_gcp_ok_without_path() {
+    fn validate_gcp_ok_with_token() {
         let auth = ProviderAuth::Gcp {
-            credentials_path: None,
+            access_token: "ya29.a0ARrdaM_example_token".to_string(),
         };
         assert!(validate_auth(&auth).is_ok());
     }
 
-    // rtmx:req REQ-LLM-015
+    // rtmx:req REQ-LLM-021
     #[test]
-    fn validate_gcp_ok_with_valid_path() {
+    fn validate_gcp_fails_with_empty_token() {
         let auth = ProviderAuth::Gcp {
-            credentials_path: Some(PathBuf::from("/etc/gcp/sa-key.json")),
+            access_token: "".to_string(),
         };
-        assert!(validate_auth(&auth).is_ok());
+        assert!(validate_auth(&auth).is_err());
     }
 
-    // rtmx:req REQ-LLM-015
+    // rtmx:req REQ-LLM-021
     #[test]
-    fn validate_gcp_fails_with_empty_path() {
+    fn validate_gcp_fails_with_whitespace_token() {
         let auth = ProviderAuth::Gcp {
-            credentials_path: Some(PathBuf::from("")),
+            access_token: "   ".to_string(),
         };
         assert!(validate_auth(&auth).is_err());
     }
@@ -448,13 +536,15 @@ mod tests {
         assert_eq!(header.1, "Bearer sk-test");
     }
 
-    // rtmx:req REQ-LLM-015
+    // rtmx:req REQ-LLM-021
     #[test]
-    fn auth_header_gcp_returns_none() {
+    fn auth_header_gcp_returns_bearer_token() {
         let auth = ProviderAuth::Gcp {
-            credentials_path: None,
+            access_token: "ya29.test-token".to_string(),
         };
-        assert!(auth_header(&auth).is_none());
+        let header = auth_header(&auth).unwrap();
+        assert_eq!(header.0, "Authorization");
+        assert_eq!(header.1, "Bearer ya29.test-token");
     }
 
     // rtmx:req REQ-LLM-015
@@ -491,5 +581,59 @@ mod tests {
             api_key: None,
         };
         assert!(auth_header(&auth).is_none());
+    }
+
+    // --- resolve_gcp_access_token tests ---
+
+    // rtmx:req REQ-LLM-021
+    #[test]
+    #[ignore] // requires gcloud CLI authenticated
+    fn resolve_gcp_access_token_returns_non_empty() {
+        let token = resolve_gcp_access_token().unwrap();
+        assert!(!token.trim().is_empty(), "token must not be empty");
+        // GCP access tokens typically start with "ya29."
+        assert!(
+            token.starts_with("ya29."),
+            "expected ya29. prefix, got: {token}"
+        );
+    }
+
+    // --- extract_access_token_from_json tests ---
+
+    // rtmx:req REQ-LLM-021
+    #[test]
+    fn extract_token_from_valid_json() {
+        let json = r#"{"access_token":"ya29.test123","expires_in":3600,"token_type":"Bearer"}"#;
+        let token = extract_access_token_from_json(json).unwrap();
+        assert_eq!(token, "ya29.test123");
+    }
+
+    // rtmx:req REQ-LLM-021
+    #[test]
+    fn extract_token_from_json_with_spaces() {
+        let json = r#"{ "access_token" : "ya29.spaced" , "expires_in" : 3600 }"#;
+        // Our parser expects no space after the colon in the marker,
+        // so this returns None (metadata server returns compact JSON).
+        assert!(extract_access_token_from_json(json).is_none());
+    }
+
+    // rtmx:req REQ-LLM-021
+    #[test]
+    fn extract_token_from_empty_json() {
+        assert!(extract_access_token_from_json("").is_none());
+    }
+
+    // rtmx:req REQ-LLM-021
+    #[test]
+    fn extract_token_from_json_with_empty_token() {
+        let json = r#"{"access_token":"","expires_in":3600}"#;
+        assert!(extract_access_token_from_json(json).is_none());
+    }
+
+    // rtmx:req REQ-LLM-021
+    #[test]
+    fn extract_token_missing_field() {
+        let json = r#"{"expires_in":3600,"token_type":"Bearer"}"#;
+        assert!(extract_access_token_from_json(json).is_none());
     }
 }

@@ -26,6 +26,12 @@ pub struct ProviderConfig {
     pub connect_timeout_secs: u64,
     #[serde(default = "default_read_timeout_secs")]
     pub read_timeout_secs: u64,
+    /// GCP project ID (required for Vertex AI).
+    #[serde(default)]
+    pub project_id: Option<String>,
+    /// Cloud region (e.g. "us-central1", "us-east-1").
+    #[serde(default)]
+    pub region: Option<String>,
 }
 
 fn default_max_tokens() -> u32 {
@@ -55,6 +61,8 @@ impl ProviderConfig {
             temperature: default_temperature(),
             connect_timeout_secs: default_connect_timeout_secs(),
             read_timeout_secs: default_read_timeout_secs(),
+            project_id: None,
+            region: None,
         }
     }
 
@@ -125,6 +133,8 @@ mod tests {
             temperature: 0.0,
             connect_timeout_secs: 10,
             read_timeout_secs: 300,
+            project_id: None,
+            region: None,
         };
         assert!(cfg.validate_model_version().is_ok());
     }
@@ -140,6 +150,8 @@ mod tests {
             temperature: 0.0,
             connect_timeout_secs: 10,
             read_timeout_secs: 300,
+            project_id: None,
+            region: None,
         };
         assert!(cfg.validate_model_version().is_ok());
     }
@@ -155,6 +167,8 @@ mod tests {
             temperature: 0.0,
             connect_timeout_secs: 10,
             read_timeout_secs: 300,
+            project_id: None,
+            region: None,
         };
         assert!(cfg.validate_model_version().is_ok());
     }
@@ -170,6 +184,8 @@ mod tests {
             temperature: 0.0,
             connect_timeout_secs: 10,
             read_timeout_secs: 300,
+            project_id: None,
+            region: None,
         };
         assert!(cfg.validate_model_version().is_err());
     }
@@ -185,6 +201,8 @@ mod tests {
             temperature: 0.0,
             connect_timeout_secs: 10,
             read_timeout_secs: 300,
+            project_id: None,
+            region: None,
         };
         assert!(cfg.validate_model_version().is_err());
     }
@@ -214,6 +232,8 @@ mod tests {
             temperature: 0.0,
             connect_timeout_secs: 10,
             read_timeout_secs: 300,
+            project_id: None,
+            region: None,
         };
         assert!(cfg.validate_model_version().is_err());
     }
@@ -229,6 +249,8 @@ mod tests {
             temperature: 0.0,
             connect_timeout_secs: 10,
             read_timeout_secs: 300,
+            project_id: None,
+            region: None,
         };
         let err = cfg.validate_model_version().unwrap_err();
         assert!(
@@ -296,5 +318,64 @@ mod tests {
             serde_json::to_string(&ProviderKind::Azure).unwrap(),
             "\"azure\""
         );
+    }
+
+    // rtmx:req REQ-LLM-025
+    #[test]
+    fn config_with_project_id_and_region() {
+        let cfg = ProviderConfig {
+            kind: ProviderKind::Vertex,
+            model: "gemini-2.5-pro-001".to_string(),
+            endpoint: "https://vertex.googleapis.com".to_string(),
+            max_tokens: 4096,
+            temperature: 0.0,
+            connect_timeout_secs: 10,
+            read_timeout_secs: 300,
+            project_id: Some("my-project-123".to_string()),
+            region: Some("us-central1".to_string()),
+        };
+        assert_eq!(cfg.project_id.as_deref(), Some("my-project-123"));
+        assert_eq!(cfg.region.as_deref(), Some("us-central1"));
+    }
+
+    // rtmx:req REQ-LLM-025
+    #[test]
+    fn config_without_project_id_and_region() {
+        let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
+        assert!(cfg.project_id.is_none());
+        assert!(cfg.region.is_none());
+    }
+
+    // rtmx:req REQ-LLM-025
+    #[test]
+    fn config_project_id_region_serde_roundtrip() {
+        let cfg = ProviderConfig {
+            kind: ProviderKind::Vertex,
+            model: "gemini-2.5-pro-001".to_string(),
+            endpoint: "https://vertex.googleapis.com".to_string(),
+            max_tokens: 4096,
+            temperature: 0.0,
+            connect_timeout_secs: 10,
+            read_timeout_secs: 300,
+            project_id: Some("my-project".to_string()),
+            region: Some("us-east4".to_string()),
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        let deserialized: ProviderConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.project_id.as_deref(), Some("my-project"));
+        assert_eq!(deserialized.region.as_deref(), Some("us-east4"));
+    }
+
+    // rtmx:req REQ-LLM-025
+    #[test]
+    fn config_project_id_region_default_to_none_in_json() {
+        let json = r#"{
+            "kind": "vertex",
+            "model": "gemini-2.5-pro-001",
+            "endpoint": "https://vertex.googleapis.com"
+        }"#;
+        let cfg: ProviderConfig = serde_json::from_str(json).unwrap();
+        assert!(cfg.project_id.is_none());
+        assert!(cfg.region.is_none());
     }
 }

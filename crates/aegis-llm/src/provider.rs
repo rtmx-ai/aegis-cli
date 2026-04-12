@@ -45,6 +45,8 @@ mod tests {
             temperature: 0.0,
             connect_timeout_secs: 10,
             read_timeout_secs: 300,
+            project_id: None,
+            region: None,
         };
         let result = create_provider(&cfg);
         assert!(result.is_err());
