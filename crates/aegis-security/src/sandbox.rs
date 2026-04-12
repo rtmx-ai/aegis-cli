@@ -417,17 +417,22 @@ mod tests {
     // @req REQ-SECURITY-003
     #[test]
     fn safe_command_executes() {
+        let dir = std::env::temp_dir();
         let config = SandboxConfig {
             allowed_paths: vec![],
             readonly_paths: vec![],
             allow_network: false,
-            working_dir: PathBuf::from("/tmp"),
+            working_dir: dir,
         };
         let sandbox = Sandbox::new(config);
+        // Use a command that works on both Unix and Windows
+        #[cfg(unix)]
         let result = sandbox.execute("echo", &["hello"]);
-        assert!(result.is_ok());
+        #[cfg(windows)]
+        let result = sandbox.execute("cmd", &["/C", "echo", "hello"]);
+        assert!(result.is_ok(), "execute failed: {:?}", result.err());
         let output = result.unwrap();
-        assert_eq!(output.stdout.trim(), "hello");
+        assert!(output.stdout.trim().contains("hello"));
         assert_eq!(output.exit_code, 0);
     }
 
