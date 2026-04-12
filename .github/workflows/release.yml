@@ -201,6 +201,33 @@ jobs:
         run: |
           VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Install cargo-wix
+        run: cargo install cargo-wix --locked
+      - name: Generate MSI installer
+        shell: bash
+        run: |
+          # cargo-wix expects to run from the workspace root
+          cargo wix --package aegis-cli --nocapture \
+            --target x86_64-pc-windows-msvc \
+            --no-build
+          echo "--- Generated MSI ---"
+          ls -la target/wix/*.msi
+      - name: Smoke test MSI silent install
+        shell: pwsh
+        run: |
+          # REQ-BUILD-048: silent install smoke test
+          $msi = Get-ChildItem -Path target\wix\*.msi | Select-Object -First 1
+          Write-Host "Installing: $($msi.FullName)"
+          Start-Process msiexec -ArgumentList "/i", "`"$($msi.FullName)`"", "/qn" -Wait -NoNewWindow
+          # Verify aegis is on PATH and runs
+          $env:PATH = "C:\Program Files\aegis;$env:PATH"
+          $version = & aegis --version 2>&1
+          Write-Host "aegis --version: $version"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "aegis --version failed with exit code $LASTEXITCODE"
+            exit 1
+          }
+          Write-Host "MSI smoke test passed"
       - name: Create self-signed certificate and sign binary
         shell: pwsh
         run: |
@@ -212,24 +239,31 @@ jobs:
             -CertStoreLocation Cert:\CurrentUser\My `
             -NotAfter (Get-Date).AddYears(1)
 
-          # Sign the binary
-          $binary = "target\x86_64-pc-windows-msvc\release\aegis.exe"
-          Set-AuthenticodeSignature `
-            -FilePath $binary `
-            -Certificate $cert `
-            -TimestampServer "http://timestamp.digicert.com" `
-            -HashAlgorithm SHA256
+          # Sign the binary and MSI
+          $filesToSign = @(
+            "target\x86_64-pc-windows-msvc\release\aegis.exe"
+          )
+          # Add MSI if it exists
+          $msi = Get-ChildItem -Path target\wix\*.msi -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($msi) { $filesToSign += $msi.FullName }
 
-          # Verify the signature
-          $sig = Get-AuthenticodeSignature -FilePath $binary
-          Write-Host "Signature status: $($sig.Status)"
-          Write-Host "Signer: $($sig.SignerCertificate.Subject)"
+          foreach ($file in $filesToSign) {
+            Write-Host "Signing: $file"
+            Set-AuthenticodeSignature `
+              -FilePath $file `
+              -Certificate $cert `
+              -TimestampServer "http://timestamp.digicert.com" `
+              -HashAlgorithm SHA256
 
-          if ($sig.Status -ne "Valid") {
-            Write-Error "Authenticode signature is not valid: $($sig.StatusMessage)"
-            exit 1
+            $sig = Get-AuthenticodeSignature -FilePath $file
+            Write-Host "  Status: $($sig.Status) | Signer: $($sig.SignerCertificate.Subject)"
+
+            if ($sig.Status -ne "Valid") {
+              Write-Error "Authenticode signature is not valid for $file"
+              exit 1
+            }
           }
-          Write-Host "Binary signed successfully (self-signed cert)"
+          Write-Host "All files signed successfully (self-signed cert)"
       - name: Create release tarball
         shell: bash
         run: |
@@ -248,6 +282,8 @@ jobs:
           mkdir -p target/release-artifacts
           cp target/x86_64-pc-windows-msvc/release/aegis.exe target/release-artifacts/aegis-windows-x86_64.exe
           cp target/release-staging/aegis-*-windows-x86_64.zip target/release-artifacts/
+          # Include MSI if generated
+          cp target/wix/*.msi target/release-artifacts/ 2>/dev/null || true
           ls -la target/release-artifacts/
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7

@@ -111,6 +111,63 @@ fn test_release_workflow_has_authenticode_signing() {
     );
 }
 
+// @req REQ-BUILD-047
+#[test]
+fn test_wix_source_file_exists() {
+    let wxs = workspace_root().join("crates/aegis-cli/wix/main.wxs");
+    assert!(
+        wxs.exists(),
+        "WiX source file must exist at crates/aegis-cli/wix/main.wxs"
+    );
+    let content = std::fs::read_to_string(&wxs).unwrap();
+    assert!(
+        content.contains("aegis.exe"),
+        "WiX source must reference aegis.exe"
+    );
+    assert!(
+        content.contains("UpgradeCode"),
+        "WiX source must define UpgradeCode for upgrades"
+    );
+    assert!(
+        content.contains("perMachine"),
+        "WiX source must install per-machine"
+    );
+    assert!(
+        content.contains("PATH"),
+        "WiX source must add aegis to PATH"
+    );
+}
+
+// @req REQ-BUILD-047
+#[test]
+fn test_release_workflow_has_wix_msi_generation() {
+    let release_yml = workspace_root().join(".github/workflows/release.yml");
+    let content = std::fs::read_to_string(&release_yml).unwrap();
+    assert!(
+        content.contains("cargo-wix"),
+        "release workflow must install cargo-wix"
+    );
+    assert!(
+        content.contains("cargo wix"),
+        "release workflow must run cargo wix to generate MSI"
+    );
+}
+
+// @req REQ-BUILD-048
+#[test]
+fn test_release_workflow_has_msi_smoke_test() {
+    let release_yml = workspace_root().join(".github/workflows/release.yml");
+    let content = std::fs::read_to_string(&release_yml).unwrap();
+    assert!(
+        content.contains("msiexec"),
+        "release workflow must run msiexec for silent install smoke test"
+    );
+    assert!(
+        content.contains("aegis --version"),
+        "release workflow must verify aegis runs after MSI install"
+    );
+}
+
 // @req REQ-BUILD-027
 #[test]
 fn test_homebrew_formula_exists() {

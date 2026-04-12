@@ -83,6 +83,14 @@ assets = [
 name = "aegis-cli"
 license = "Apache-2.0"
 summary = "Terminal-native agentic AI pair programmer for CUI environments"
+# REQ-BUILD-044: SELinux file context labels.
+# /usr/bin/aegis gets bin_t type for standard binary execution.
+post_install_script = """
+if command -v semanage >/dev/null 2>&1; then
+  semanage fcontext -a -t bin_t '/usr/bin/aegis' 2>/dev/null || true
+  restorecon -v /usr/bin/aegis 2>/dev/null || true
+fi
+"""
 assets = [
     { source = "../../target/x86_64-unknown-linux-musl/release/aegis", dest = "/usr/bin/aegis", mode = "755" },
     { source = "../../LICENSE", dest = "/usr/share/doc/aegis-cli/LICENSE", mode = "644", doc = true },

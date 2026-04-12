@@ -186,6 +186,16 @@ fn test_cargo_toml_has_rpm_metadata() {
     );
 }
 
+// @req REQ-BUILD-044
+#[test]
+fn test_rpm_has_selinux_labels() {
+    let toml = read_file("crates/aegis-cli/Cargo.toml");
+    assert!(
+        toml.contains("semanage") || toml.contains("restorecon") || toml.contains("bin_t"),
+        "RPM metadata must include SELinux file context labeling for /usr/bin/aegis"
+    );
+}
+
 // @req REQ-BUILD-049
 #[test]
 fn test_ci_has_airgap_bundle_job() {
