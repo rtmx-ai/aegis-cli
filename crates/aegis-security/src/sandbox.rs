@@ -185,9 +185,20 @@ impl Sandbox {
 /// does not exist on disk.
 fn canonicalize_or_normalize(path: &Path) -> PathBuf {
     if let Ok(canon) = std::fs::canonicalize(path) {
-        return canon;
+        return strip_unc_prefix(&canon);
     }
     lexical_normalize(path)
+}
+
+/// Strip the `\\?\` UNC prefix that Windows canonicalization adds.
+/// Without this, `starts_with` comparisons fail because `\\?\C:\foo`
+/// does not start with `C:\foo`.
+fn strip_unc_prefix(path: &Path) -> PathBuf {
+    let s = path.to_string_lossy();
+    match s.strip_prefix(r"\\?\") {
+        Some(stripped) => PathBuf::from(stripped),
+        None => path.to_path_buf(),
+    }
 }
 
 /// Lexical normalization: resolve `.` and `..` components without touching
