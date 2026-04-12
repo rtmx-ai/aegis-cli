@@ -39,6 +39,11 @@ impl App {
             AppPhase::Idle => {}
         }
 
+        // File-picker intercept: capture keystrokes when picker is open.
+        if self.file_picker.is_some() {
+            return self.handle_file_picker_key(key);
+        }
+
         // Search-mode intercept: capture keystrokes when search is active.
         if self.input.in_search_mode() {
             match key.code {
@@ -180,8 +185,84 @@ impl App {
                 self.input.move_end();
                 Action::Continue
             }
+            KeyCode::Char('@') => {
+                self.input.insert_char('@');
+                self.open_file_picker();
+                Action::Continue
+            }
             KeyCode::Char(c) => {
                 self.input.insert_char(c);
+                Action::Continue
+            }
+            _ => Action::Continue,
+        }
+    }
+
+    /// Open the file picker by scanning the current directory.
+    fn open_file_picker(&mut self) {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let entries = super::file_picker::FilePicker::scan_directory(&cwd);
+        self.file_picker = Some(super::file_picker::FilePicker::new(entries));
+    }
+
+    /// Handle a key event while the file picker is open.
+    fn handle_file_picker_key(&mut self, key: KeyEvent) -> Action {
+        let picker = match self.file_picker.as_mut() {
+            Some(p) => p,
+            None => return Action::Continue,
+        };
+
+        match key.code {
+            KeyCode::Esc => {
+                // Close picker and remove the @ from input
+                self.file_picker = None;
+                self.input.backspace();
+                Action::Continue
+            }
+            KeyCode::Enter => {
+                // Insert selected path, replacing the @
+                let path = picker.selected_path().map(|s| s.to_string());
+                self.file_picker = None;
+                if let Some(path) = path {
+                    // Remove the @ character we inserted
+                    self.input.backspace();
+                    // Insert the file path
+                    self.input.insert_str(&path);
+                }
+                Action::Continue
+            }
+            KeyCode::Up => {
+                picker.select_prev();
+                Action::Continue
+            }
+            KeyCode::Down => {
+                picker.select_next();
+                Action::Continue
+            }
+            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                picker.select_prev();
+                Action::Continue
+            }
+            KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                picker.select_next();
+                Action::Continue
+            }
+            KeyCode::Backspace => {
+                let mut query = picker.query.clone();
+                if query.is_empty() {
+                    // Close picker and remove @
+                    self.file_picker = None;
+                    self.input.backspace();
+                } else {
+                    query.pop();
+                    picker.update_query(&query);
+                }
+                Action::Continue
+            }
+            KeyCode::Char(c) => {
+                let mut query = picker.query.clone();
+                query.push(c);
+                picker.update_query(&query);
                 Action::Continue
             }
             _ => Action::Continue,

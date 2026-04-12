@@ -96,6 +96,13 @@ impl TuiHarness {
                     spinner_frame: (app.tick_count % 4) as u8,
                     stream_buffer: app.stream_buffer.clone(),
                     approval_display: app.approval_display.clone(),
+                    file_picker: app.file_picker.as_ref().map(|fp| {
+                        aegis_tui::layout::FilePickerView {
+                            query: fp.query.clone(),
+                            entries: fp.filtered.clone(),
+                            selected: fp.selected,
+                        }
+                    }),
                 };
                 aegis_tui::layout::render(frame, &view);
             })

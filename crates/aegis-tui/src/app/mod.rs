@@ -11,6 +11,7 @@
 
 mod approval;
 mod commands;
+pub mod file_picker;
 mod input_handler;
 mod phase;
 mod scroll;
@@ -65,6 +66,9 @@ pub struct App {
 
     // Search: index of currently matched message.
     pub search_match_index: Option<usize>,
+
+    // File picker: interactive @-mention file selector overlay.
+    pub file_picker: Option<file_picker::FilePicker>,
 }
 
 /// Number of lines to scroll per PageUp/PageDown press.
@@ -92,6 +96,7 @@ impl App {
             tool_start: None,
             tick_count: 0,
             search_match_index: None,
+            file_picker: None,
         }
     }
 
@@ -1028,5 +1033,133 @@ mod tests {
         assert_eq!(app.tick_count, 1);
         app.handle_event(TuiEvent::Tick, &tx);
         assert_eq!(app.tick_count, 2);
+    }
+
+    // @req REQ-TUI-018
+    #[test]
+    fn at_key_triggers_file_picker() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        assert!(app.file_picker.is_none());
+        app.handle_event(
+            TuiEvent::Terminal(CtEvent::Key(KeyEvent::from(KeyCode::Char('@')))),
+            &tx,
+        );
+        assert!(app.file_picker.is_some());
+        assert!(app.input.text.contains('@'));
+    }
+
+    // @req REQ-TUI-018
+    #[test]
+    fn file_picker_esc_closes_and_removes_at() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        // Open picker
+        app.handle_event(
+            TuiEvent::Terminal(CtEvent::Key(KeyEvent::from(KeyCode::Char('@')))),
+            &tx,
+        );
+        assert!(app.file_picker.is_some());
+        // Press Esc
+        app.handle_event(
+            TuiEvent::Terminal(CtEvent::Key(KeyEvent::from(KeyCode::Esc))),
+            &tx,
+        );
+        assert!(app.file_picker.is_none());
+        assert!(
+            !app.input.text.contains('@'),
+            "@ should be removed on Esc: {:?}",
+            app.input.text
+        );
+    }
+
+    // @req REQ-TUI-018
+    #[test]
+    fn file_picker_enter_inserts_selected_path() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        // Manually set up a picker with known entries
+        app.input.insert_char('@');
+        app.file_picker = Some(file_picker::FilePicker::new(vec![
+            "src/main.rs".to_string(),
+            "Cargo.toml".to_string(),
+        ]));
+        // Press Enter to select first entry
+        app.handle_event(
+            TuiEvent::Terminal(CtEvent::Key(KeyEvent::from(KeyCode::Enter))),
+            &tx,
+        );
+        assert!(app.file_picker.is_none());
+        assert!(
+            app.input.text.contains("src/main.rs"),
+            "Should contain selected path: {:?}",
+            app.input.text
+        );
+        assert!(
+            !app.input.text.contains('@'),
+            "@ should be replaced: {:?}",
+            app.input.text
+        );
+    }
+
+    // @req REQ-TUI-018
+    #[test]
+    fn file_picker_blocks_normal_input() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        // Type some text first
+        app.handle_event(
+            TuiEvent::Terminal(CtEvent::Key(KeyEvent::from(KeyCode::Char('h')))),
+            &tx,
+        );
+        // Open picker
+        app.handle_event(
+            TuiEvent::Terminal(CtEvent::Key(KeyEvent::from(KeyCode::Char('@')))),
+            &tx,
+        );
+        assert!(app.file_picker.is_some());
+        let text_before = app.input.text.clone();
+        // Type 'x' -- should go to picker query, not input
+        app.handle_event(
+            TuiEvent::Terminal(CtEvent::Key(KeyEvent::from(KeyCode::Char('x')))),
+            &tx,
+        );
+        assert_eq!(
+            app.input.text, text_before,
+            "Input should not change while picker is open"
+        );
+        assert_eq!(
+            app.file_picker.as_ref().unwrap().query,
+            "x",
+            "Char should go to picker query"
+        );
+    }
+
+    // @req REQ-TUI-018
+    #[test]
+    fn file_picker_arrow_keys_navigate() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        app.input.insert_char('@');
+        app.file_picker = Some(file_picker::FilePicker::new(vec![
+            "a.rs".to_string(),
+            "b.rs".to_string(),
+            "c.rs".to_string(),
+        ]));
+        assert_eq!(app.file_picker.as_ref().unwrap().selected, 0);
+
+        // Down arrow
+        app.handle_event(
+            TuiEvent::Terminal(CtEvent::Key(KeyEvent::from(KeyCode::Down))),
+            &tx,
+        );
+        assert_eq!(app.file_picker.as_ref().unwrap().selected, 1);
+
+        // Up arrow
+        app.handle_event(
+            TuiEvent::Terminal(CtEvent::Key(KeyEvent::from(KeyCode::Up))),
+            &tx,
+        );
+        assert_eq!(app.file_picker.as_ref().unwrap().selected, 0);
     }
 }
