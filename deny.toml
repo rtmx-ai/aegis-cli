@@ -40,3 +40,9 @@ version = 2
 # Fail CI on any known vulnerability from the RustSec advisory-db
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
+# Unmaintained transitive deps of syntect -- no replacement available upstream.
+# These are "unmaintained" advisories, not security vulnerabilities.
+ignore = [
+    "RUSTSEC-2025-0141", # bincode -- transitive dep of syntect
+    "RUSTSEC-2024-0320", # yaml-rust -- transitive dep of syntect
+]
