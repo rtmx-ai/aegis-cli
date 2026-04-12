@@ -2,5 +2,5 @@
 # All CI and local builds use exactly this version.
 # Update by changing the channel version and running `rustup update`.
 [toolchain]
-channel = "1.86.0"
+channel = "1.94.0"
 components = ["rustfmt", "clippy"]
