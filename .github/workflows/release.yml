@@ -1,10 +1,14 @@
 # @req REQ-BUILD-040 GPG signing of Linux release artifacts
+# @req REQ-BUILD-041 Authenticode signing of Windows release artifacts
 #
-# Tag-triggered release workflow: build, sign, and publish Linux artifacts.
+# Tag-triggered release workflow: build, sign, and publish artifacts.
 #
 # Required GitHub Actions secrets (provision in repo Settings > Secrets):
 #   GPG_PRIVATE_KEY  - ASCII-armored GPG private key for release signing
 #   GPG_PASSPHRASE   - Passphrase for the GPG key
+#
+# Windows Authenticode: uses a self-signed certificate generated in CI.
+# Replace with a CA-issued cert when REQ-BUILD-055 is implemented.
 
 name: Release
 
@@ -177,13 +181,89 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
+  # Job 1c: Build Windows MSVC binary + Authenticode sign (REQ-BUILD-041)
+  # ---------------------------------------------------------------------------
+  build-windows:
+    name: Build Windows Artifacts
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release binary (MSVC)
+        run: cargo build --release --package aegis-cli --target x86_64-pc-windows-msvc
+      - name: Extract version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Create self-signed certificate and sign binary
+        shell: pwsh
+        run: |
+          # Generate a self-signed Authenticode certificate
+          # REQ-BUILD-055: replace with CA-issued cert when available
+          $cert = New-SelfSignedCertificate `
+            -Type CodeSigningCert `
+            -Subject "CN=RTMX AI (Development), O=RTMX AI" `
+            -CertStoreLocation Cert:\CurrentUser\My `
+            -NotAfter (Get-Date).AddYears(1)
+
+          # Sign the binary
+          $binary = "target\x86_64-pc-windows-msvc\release\aegis.exe"
+          Set-AuthenticodeSignature `
+            -FilePath $binary `
+            -Certificate $cert `
+            -TimestampServer "http://timestamp.digicert.com" `
+            -HashAlgorithm SHA256
+
+          # Verify the signature
+          $sig = Get-AuthenticodeSignature -FilePath $binary
+          Write-Host "Signature status: $($sig.Status)"
+          Write-Host "Signer: $($sig.SignerCertificate.Subject)"
+
+          if ($sig.Status -ne "Valid") {
+            Write-Error "Authenticode signature is not valid: $($sig.StatusMessage)"
+            exit 1
+          }
+          Write-Host "Binary signed successfully (self-signed cert)"
+      - name: Create release tarball
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          DIRNAME="aegis-${VERSION}-windows-x86_64"
+          mkdir -p "target/release-staging/${DIRNAME}"
+          cp target/x86_64-pc-windows-msvc/release/aegis.exe "target/release-staging/${DIRNAME}/aegis.exe"
+          cp LICENSE "target/release-staging/${DIRNAME}/LICENSE"
+          cp README.md "target/release-staging/${DIRNAME}/README.md"
+          cd target/release-staging
+          7z a -tzip "${DIRNAME}.zip" "${DIRNAME}"
+          echo "Created: ${DIRNAME}.zip"
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p target/release-artifacts
+          cp target/x86_64-pc-windows-msvc/release/aegis.exe target/release-artifacts/aegis-windows-x86_64.exe
+          cp target/release-staging/aegis-*-windows-x86_64.zip target/release-artifacts/
+          ls -la target/release-artifacts/
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-artifacts-windows
+          path: target/release-artifacts/*
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
   # Job 2: Import GPG key, sign all artifacts, verify signatures
   # ---------------------------------------------------------------------------
   sign:
     name: Sign Artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [build-linux, build-macos]
+    needs: [build-linux, build-macos, build-windows]
     steps:
       - name: Download Linux build artifacts
         uses: actions/download-artifact@v8
@@ -194,6 +274,11 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: release-artifacts-macos
+          path: artifacts
+      - name: Download Windows build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: release-artifacts-windows
           path: artifacts
       - name: Import GPG key
         env:

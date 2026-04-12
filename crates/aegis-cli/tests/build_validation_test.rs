@@ -84,6 +84,33 @@ fn test_release_workflow_has_gpg_signing() {
     );
 }
 
+// @req REQ-BUILD-041
+#[test]
+fn test_release_workflow_has_authenticode_signing() {
+    let release_yml = workspace_root().join(".github/workflows/release.yml");
+    let content = std::fs::read_to_string(&release_yml).unwrap();
+    assert!(
+        content.contains("New-SelfSignedCertificate"),
+        "release workflow must generate a self-signed Authenticode certificate"
+    );
+    assert!(
+        content.contains("Set-AuthenticodeSignature"),
+        "release workflow must sign Windows binary with Authenticode"
+    );
+    assert!(
+        content.contains("Get-AuthenticodeSignature"),
+        "release workflow must verify the Authenticode signature"
+    );
+    assert!(
+        content.contains("windows-latest"),
+        "release workflow must build on windows-latest"
+    );
+    assert!(
+        content.contains("x86_64-pc-windows-msvc"),
+        "release workflow must target MSVC"
+    );
+}
+
 // @req REQ-BUILD-027
 #[test]
 fn test_homebrew_formula_exists() {
