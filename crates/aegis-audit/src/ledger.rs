@@ -128,15 +128,29 @@ impl AuditLedger for JsonlLedger {
         // File I/O with exclusive lock runs in a blocking task so we
         // do not block the async runtime (REQ-AUDIT-007).
         tokio::task::spawn_blocking(move || {
-            let mut file = Self::open_log_file(&log_dir)?;
+            // Use a separate .lock file for cross-platform locking.
+            // On Windows, locking the data file itself with LockFileEx
+            // returns "Access is denied" when multiple handles compete.
+            let lock_path = Self::current_log_path(&log_dir).with_extension("jsonl.lock");
+            let lock_file = std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(&lock_path)
+                .map_err(|e| DomainError::AuditError {
+                    message: format!("Failed to open lock file: {e}"),
+                })?;
 
             // Acquire OS-level exclusive lock (flock on Unix,
             // LockFileEx on Windows). Blocks until available.
-            file.lock_exclusive().map_err(|e| DomainError::AuditError {
-                message: format!("Failed to acquire exclusive lock: {e}"),
-            })?;
+            lock_file
+                .lock_exclusive()
+                .map_err(|e| DomainError::AuditError {
+                    message: format!("Failed to acquire exclusive lock: {e}"),
+                })?;
 
             let result = (|| {
+                let mut file = Self::open_log_file(&log_dir)?;
                 file.write_all(line.as_bytes())
                     .map_err(|e| DomainError::AuditError {
                         message: format!("Failed to write ledger entry: {e}"),
@@ -147,7 +161,7 @@ impl AuditLedger for JsonlLedger {
             })();
 
             // Explicitly unlock; also released on drop.
-            let _ = file.unlock();
+            let _ = lock_file.unlock();
 
             result
         })
