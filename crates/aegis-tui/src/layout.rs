@@ -115,8 +115,9 @@ impl AppState {
 pub fn render(frame: &mut Frame, state: &AppState) {
     let height = frame.area().height;
 
-    // Input height grows with newlines, capped so chat always has room
-    let input_lines = (state.input.lines().count().max(1)) as u16;
+    // Input height grows with newlines, capped so chat always has room.
+    // count newlines + 1 (Rust's lines() drops trailing empty line after \n)
+    let input_lines = (state.input.split('\n').count().max(1)) as u16;
     let max_input = (height / 3).max(1); // never exceed 1/3 of terminal
     let input_height = input_lines.min(max_input);
 
