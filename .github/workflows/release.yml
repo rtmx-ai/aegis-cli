@@ -23,6 +23,8 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  # REQ-BUILD-005: Reproducible builds -- fixed timestamp.
+  SOURCE_DATE_EPOCH: "1774656000"
 
 jobs:
   # ---------------------------------------------------------------------------

@@ -42,6 +42,9 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
   PROPTEST_SEED: "12345"
+  # REQ-BUILD-005: Reproducible builds -- fixed timestamp eliminates
+  # date-based variation in binaries. Set to project epoch (2026-03-25).
+  SOURCE_DATE_EPOCH: "1774656000"
 
 jobs:
   format:

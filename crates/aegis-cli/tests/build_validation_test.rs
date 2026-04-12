@@ -168,6 +168,55 @@ fn test_release_workflow_has_msi_smoke_test() {
     );
 }
 
+// @req REQ-BUILD-005
+#[test]
+fn test_rust_toolchain_file_exists() {
+    let toolchain = workspace_root().join("rust-toolchain.toml");
+    assert!(
+        toolchain.exists(),
+        "rust-toolchain.toml must exist for reproducible builds"
+    );
+    let content = std::fs::read_to_string(&toolchain).unwrap();
+    assert!(
+        content.contains("channel"),
+        "rust-toolchain.toml must specify a channel"
+    );
+    // Must be a pinned version, not "stable" or "nightly"
+    assert!(
+        !content.contains("channel = \"stable\"") && !content.contains("channel = \"nightly\""),
+        "rust-toolchain.toml must pin a specific version, not stable/nightly"
+    );
+}
+
+// @req REQ-BUILD-005
+#[test]
+fn test_cargo_lock_is_committed() {
+    let lock = workspace_root().join("Cargo.lock");
+    assert!(lock.exists(), "Cargo.lock must exist and be committed");
+}
+
+// @req REQ-BUILD-005
+#[test]
+fn test_ci_sets_source_date_epoch() {
+    let ci = workspace_root().join(".github/workflows/ci.yml");
+    let content = std::fs::read_to_string(&ci).unwrap();
+    assert!(
+        content.contains("SOURCE_DATE_EPOCH"),
+        "CI must set SOURCE_DATE_EPOCH for reproducible builds"
+    );
+}
+
+// @req REQ-BUILD-005
+#[test]
+fn test_release_sets_source_date_epoch() {
+    let release = workspace_root().join(".github/workflows/release.yml");
+    let content = std::fs::read_to_string(&release).unwrap();
+    assert!(
+        content.contains("SOURCE_DATE_EPOCH"),
+        "release workflow must set SOURCE_DATE_EPOCH for reproducible builds"
+    );
+}
+
 // @req REQ-BUILD-027
 #[test]
 fn test_homebrew_formula_exists() {
