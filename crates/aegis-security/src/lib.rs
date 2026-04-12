@@ -7,4 +7,4 @@
 pub mod aegisignore;
 pub mod transport;
 
-// pub mod sandbox;    // @req REQ-SECURITY-003
+pub mod sandbox;

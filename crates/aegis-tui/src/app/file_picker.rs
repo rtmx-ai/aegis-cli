@@ -1,62 +1,86 @@
 //! Interactive file picker for @-mention context injection.
 //!
-//! When the user types `@` in the input field, a modal overlay appears
-//! listing files from the working directory. The user can fuzzy-filter,
-//! navigate, and select a file to inject into the input as context.
+//! When the user types `@` in the input field, a dropdown appears below the
+//! input listing files and directories from the resolved path. The picker is
+//! path-aware: `@` alone scans cwd, `@src/` scans ./src/, `@/tmp/` scans
+//! /tmp/, `@~/` scans $HOME.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-/// Maximum directory traversal depth.
-const MAX_DEPTH: usize = 3;
-
-/// Maximum number of file entries to collect.
+/// Maximum number of directory entries to collect.
 const MAX_ENTRIES: usize = 500;
+
+/// A single directory entry (file or subdirectory).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirEntry {
+    /// Display name. Directories include a trailing `/`.
+    pub name: String,
+    /// Whether this entry is a directory.
+    pub is_dir: bool,
+}
 
 /// Interactive file picker state.
 #[derive(Debug, Clone)]
 pub struct FilePicker {
-    /// Fuzzy filter text typed by the user.
+    /// Raw query text typed after `@` (e.g. "src/ma").
     pub query: String,
-    /// All candidate file paths (relative to working directory).
-    pub entries: Vec<String>,
-    /// Entries matching the current query.
-    pub filtered: Vec<String>,
+    /// Resolved base directory being scanned.
+    pub base_dir: PathBuf,
+    /// All entries in `base_dir` (non-hidden, one level).
+    pub entries: Vec<DirEntry>,
+    /// Entries matching the current filter portion of the query.
+    pub filtered: Vec<DirEntry>,
     /// Index into `filtered` for the currently selected entry.
     pub selected: usize,
 }
 
 impl FilePicker {
-    /// Create a new file picker with the given candidate entries.
-    pub fn new(entries: Vec<String>) -> Self {
-        let filtered = entries.clone();
+    /// Open a new file picker by resolving the query against `cwd`.
+    pub fn open(query: &str, cwd: &Path) -> Self {
+        let (base_dir, filter) = resolve_path(query, cwd);
+        let entries = scan_directory(&base_dir);
+        let filtered = filter_entries(&entries, filter);
         Self {
-            query: String::new(),
+            query: query.to_string(),
+            base_dir,
             entries,
             filtered,
             selected: 0,
         }
     }
 
-    /// Update the query and refilter entries. Resets selection to 0.
-    pub fn update_query(&mut self, query: &str) {
+    /// Update the query. Re-scans only when the base directory changes.
+    pub fn update_query(&mut self, query: &str, cwd: &Path) {
+        let (new_base, filter) = resolve_path(query, cwd);
         self.query = query.to_string();
-        let lower = query.to_lowercase();
-        self.filtered = if lower.is_empty() {
-            self.entries.clone()
-        } else {
-            self.entries
-                .iter()
-                .filter(|e| e.to_lowercase().contains(&lower))
-                .cloned()
-                .collect()
-        };
+        if new_base != self.base_dir {
+            self.base_dir = new_base;
+            self.entries = scan_directory(&self.base_dir);
+        }
+        self.filtered = filter_entries(&self.entries, filter);
         self.selected = 0;
     }
 
-    /// Get the currently selected file path, if any.
-    pub fn selected_path(&self) -> Option<&str> {
-        self.filtered.get(self.selected).map(|s| s.as_str())
+    /// Get the currently selected entry, if any.
+    pub fn selected_entry(&self) -> Option<&DirEntry> {
+        self.filtered.get(self.selected)
+    }
+
+    /// Get the full path string for the selected entry, suitable for
+    /// insertion into the input. For directories, the path ends with `/`.
+    pub fn selected_path(&self) -> Option<String> {
+        self.selected_entry().map(|e| {
+            let mut path = self.query.to_string();
+            // Strip the filter portion (text after last `/` or all if no `/`)
+            if let Some(slash_pos) = path.rfind('/') {
+                path.truncate(slash_pos + 1);
+            } else {
+                path.clear();
+            }
+            path.push_str(&e.name);
+            path
+        })
     }
 
     /// Move selection to the next entry, wrapping around.
@@ -76,31 +100,67 @@ impl FilePicker {
             };
         }
     }
-
-    /// Scan a directory recursively for file entries, respecting depth
-    /// and entry count limits. Skips hidden directories and `target/`.
-    pub fn scan_directory(root: &Path) -> Vec<String> {
-        let mut entries = Vec::new();
-        collect_files(root, root, 0, &mut entries);
-        entries.sort();
-        entries
-    }
 }
 
-/// Recursively collect file paths relative to `root`.
-fn collect_files(root: &Path, dir: &Path, depth: usize, out: &mut Vec<String>) {
-    if depth > MAX_DEPTH || out.len() >= MAX_ENTRIES {
-        return;
-    }
+/// Resolve an `@`-query into a (base_directory, filter_text) pair.
+///
+/// - `""` -> (cwd, "")
+/// - `"src/"` -> (cwd/src, "")
+/// - `"src/ma"` -> (cwd/src, "ma")
+/// - `"/tmp/"` -> (/tmp, "")
+/// - `"~/"` -> ($HOME, "")
+/// - `"~/Downloads/"` -> ($HOME/Downloads, "")
+pub fn resolve_path<'a>(query: &'a str, cwd: &Path) -> (PathBuf, &'a str) {
+    // Normalize backslashes to forward slashes.
+    // We work with the original str for the filter slice, so we detect
+    // separator positions using both `\` and `/`.
+    let normalized: String = query.replace('\\', "/");
 
-    let read_dir = match fs::read_dir(dir) {
-        Ok(rd) => rd,
-        Err(_) => return,
+    // Split at the last `/` to separate directory from filter.
+    let (dir_part, filter) = match normalized.rfind('/') {
+        Some(pos) => {
+            // dir_part includes the trailing slash content
+            let dir_part = &normalized[..=pos];
+            let filter = &query[pos + 1..];
+            (dir_part.to_string(), filter)
+        }
+        None => {
+            // No slash -- everything is filter, base is cwd
+            return (cwd.to_path_buf(), query);
+        }
     };
 
+    // Resolve the directory part.
+    let base = if let Some(stripped) = dir_part.strip_prefix("~/") {
+        let home = home_dir();
+        let rest = stripped.trim_end_matches('/');
+        if rest.is_empty() {
+            home
+        } else {
+            home.join(rest)
+        }
+    } else if dir_part.starts_with('/') {
+        PathBuf::from(&dir_part)
+    } else {
+        cwd.join(&dir_part)
+    };
+
+    (base, filter)
+}
+
+/// Scan a single directory level. Returns sorted entries, skipping hidden
+/// names (starting with `.`). Directories have `is_dir: true` and their
+/// name includes a trailing `/`.
+pub fn scan_directory(dir: &Path) -> Vec<DirEntry> {
+    let read_dir = match fs::read_dir(dir) {
+        Ok(rd) => rd,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut entries = Vec::new();
     for entry in read_dir {
-        if out.len() >= MAX_ENTRIES {
-            return;
+        if entries.len() >= MAX_ENTRIES {
+            break;
         }
         let entry = match entry {
             Ok(e) => e,
@@ -109,21 +169,51 @@ fn collect_files(root: &Path, dir: &Path, depth: usize, out: &mut Vec<String>) {
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
 
-        // Skip hidden directories/files and target/
-        if name_str.starts_with('.') || name_str == "target" {
+        // Skip hidden entries.
+        if name_str.starts_with('.') {
             continue;
         }
 
-        let path = entry.path();
-        if path.is_dir() {
-            collect_files(root, &path, depth + 1, out);
-        } else if path.is_file()
-            && let Ok(relative) = path.strip_prefix(root)
-        {
-            // Normalize to forward slashes for cross-platform consistency.
-            out.push(relative.to_string_lossy().replace('\\', "/"));
-        }
+        let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+        let display_name = if is_dir {
+            format!("{}/", name_str)
+        } else {
+            // Normalize backslashes for cross-platform consistency.
+            name_str.replace('\\', "/")
+        };
+
+        entries.push(DirEntry {
+            name: display_name,
+            is_dir,
+        });
     }
+
+    entries.sort_by(|a, b| {
+        // Directories first, then alphabetical.
+        b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name))
+    });
+    entries
+}
+
+/// Filter entries by a case-insensitive substring match on the name.
+fn filter_entries(entries: &[DirEntry], filter: &str) -> Vec<DirEntry> {
+    if filter.is_empty() {
+        return entries.to_vec();
+    }
+    let lower = filter.to_lowercase();
+    entries
+        .iter()
+        .filter(|e| e.name.to_lowercase().contains(&lower))
+        .cloned()
+        .collect()
+}
+
+/// Get the user's home directory.
+fn home_dir() -> PathBuf {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/"))
 }
 
 #[cfg(test)]
@@ -132,155 +222,278 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    // @req REQ-TUI-018
+    // --- resolve_path tests ---
+
+    // @req REQ-TUI-047
     #[test]
-    fn new_populates_entries_and_filtered() {
-        let entries = vec!["src/main.rs".to_string(), "Cargo.toml".to_string()];
-        let picker = FilePicker::new(entries.clone());
-        assert_eq!(picker.entries, entries);
-        assert_eq!(picker.filtered, entries);
-        assert_eq!(picker.selected, 0);
-        assert_eq!(picker.query, "");
+    fn resolve_path_bare_query_returns_cwd() {
+        let cwd = Path::new("/projects/myapp");
+        let (base, filter) = resolve_path("", cwd);
+        assert_eq!(base, PathBuf::from("/projects/myapp"));
+        assert_eq!(filter, "");
     }
 
-    // @req REQ-TUI-018
+    // @req REQ-TUI-047
     #[test]
-    fn update_query_filters_case_insensitive() {
-        let entries = vec![
-            "src/main.rs".to_string(),
-            "src/lib.rs".to_string(),
-            "Cargo.toml".to_string(),
-            "README.md".to_string(),
-        ];
-        let mut picker = FilePicker::new(entries);
-
-        picker.update_query("cargo");
-        assert_eq!(picker.filtered, vec!["Cargo.toml"]);
-        assert_eq!(picker.selected, 0);
-
-        picker.update_query("src");
-        assert_eq!(picker.filtered, vec!["src/main.rs", "src/lib.rs"]);
-
-        picker.update_query("");
-        assert_eq!(picker.filtered.len(), 4);
+    fn resolve_path_filter_only_no_slash() {
+        let cwd = Path::new("/projects/myapp");
+        let (base, filter) = resolve_path("main", cwd);
+        assert_eq!(base, PathBuf::from("/projects/myapp"));
+        assert_eq!(filter, "main");
     }
 
-    // @req REQ-TUI-018
+    // @req REQ-TUI-047
     #[test]
-    fn selected_path_returns_current_selection() {
-        let entries = vec!["a.rs".to_string(), "b.rs".to_string()];
-        let picker = FilePicker::new(entries);
-        assert_eq!(picker.selected_path(), Some("a.rs"));
+    fn resolve_path_relative_dir() {
+        let cwd = Path::new("/projects/myapp");
+        let (base, filter) = resolve_path("src/", cwd);
+        assert_eq!(base, PathBuf::from("/projects/myapp/src/"));
+        assert_eq!(filter, "");
     }
 
-    // @req REQ-TUI-018
+    // @req REQ-TUI-047
     #[test]
-    fn selected_path_returns_none_when_empty() {
-        let picker = FilePicker::new(Vec::new());
-        assert_eq!(picker.selected_path(), None);
+    fn resolve_path_relative_dir_with_filter() {
+        let cwd = Path::new("/projects/myapp");
+        let (base, filter) = resolve_path("src/ma", cwd);
+        assert_eq!(base, PathBuf::from("/projects/myapp/src/"));
+        assert_eq!(filter, "ma");
     }
 
-    // @req REQ-TUI-018
+    // @req REQ-TUI-047
     #[test]
-    fn select_next_wraps_around() {
-        let entries = vec!["a.rs".to_string(), "b.rs".to_string(), "c.rs".to_string()];
-        let mut picker = FilePicker::new(entries);
-        assert_eq!(picker.selected, 0);
-
-        picker.select_next();
-        assert_eq!(picker.selected, 1);
-
-        picker.select_next();
-        assert_eq!(picker.selected, 2);
-
-        picker.select_next();
-        assert_eq!(picker.selected, 0); // wrapped
+    fn resolve_path_absolute() {
+        let cwd = Path::new("/projects/myapp");
+        let (base, filter) = resolve_path("/tmp/", cwd);
+        assert_eq!(base, PathBuf::from("/tmp/"));
+        assert_eq!(filter, "");
     }
 
-    // @req REQ-TUI-018
+    // @req REQ-TUI-047
     #[test]
-    fn select_prev_wraps_around() {
-        let entries = vec!["a.rs".to_string(), "b.rs".to_string(), "c.rs".to_string()];
-        let mut picker = FilePicker::new(entries);
-        assert_eq!(picker.selected, 0);
-
-        picker.select_prev();
-        assert_eq!(picker.selected, 2); // wrapped to end
-
-        picker.select_prev();
-        assert_eq!(picker.selected, 1);
+    fn resolve_path_absolute_with_filter() {
+        let cwd = Path::new("/projects/myapp");
+        let (base, filter) = resolve_path("/tmp/foo", cwd);
+        assert_eq!(base, PathBuf::from("/tmp/"));
+        assert_eq!(filter, "foo");
     }
 
-    // @req REQ-TUI-018
+    // @req REQ-TUI-047
     #[test]
-    fn select_next_noop_on_empty() {
-        let mut picker = FilePicker::new(Vec::new());
-        picker.select_next(); // should not panic
-        assert_eq!(picker.selected, 0);
+    fn resolve_path_home() {
+        let cwd = Path::new("/projects/myapp");
+        let (base, filter) = resolve_path("~/", cwd);
+        let home = home_dir();
+        assert_eq!(base, home);
+        assert_eq!(filter, "");
     }
 
-    // @req REQ-TUI-018
+    // @req REQ-TUI-047
     #[test]
-    fn select_prev_noop_on_empty() {
-        let mut picker = FilePicker::new(Vec::new());
-        picker.select_prev(); // should not panic
-        assert_eq!(picker.selected, 0);
+    fn resolve_path_home_subdir() {
+        let cwd = Path::new("/projects/myapp");
+        let (base, filter) = resolve_path("~/Downloads/", cwd);
+        let home = home_dir();
+        assert_eq!(base, home.join("Downloads"));
+        assert_eq!(filter, "");
     }
 
-    // @req REQ-TUI-018
+    // @req REQ-TUI-047
     #[test]
-    fn update_query_resets_selection() {
-        let entries = vec!["a.rs".to_string(), "b.rs".to_string()];
-        let mut picker = FilePicker::new(entries);
-        picker.select_next(); // selected = 1
-        picker.update_query("a");
-        assert_eq!(picker.selected, 0);
+    fn resolve_path_home_subdir_with_filter() {
+        let cwd = Path::new("/projects/myapp");
+        let (base, filter) = resolve_path("~/Downloads/re", cwd);
+        let home = home_dir();
+        assert_eq!(base, home.join("Downloads"));
+        assert_eq!(filter, "re");
     }
 
-    // @req REQ-TUI-018
+    // --- FilePicker::open tests ---
+
+    // @req REQ-TUI-047
     #[test]
-    fn scan_directory_finds_files() {
+    fn open_scans_correct_directory() {
         let tmp = TempDir::new().unwrap();
-        fs::write(tmp.path().join("file1.rs"), "").unwrap();
-        fs::write(tmp.path().join("file2.txt"), "").unwrap();
+        fs::write(tmp.path().join("hello.rs"), "").unwrap();
         fs::create_dir(tmp.path().join("sub")).unwrap();
-        fs::write(tmp.path().join("sub/nested.rs"), "").unwrap();
 
-        let entries = FilePicker::scan_directory(tmp.path());
-        assert!(entries.contains(&"file1.rs".to_string()));
-        assert!(entries.contains(&"file2.txt".to_string()));
-        assert!(entries.contains(&"sub/nested.rs".to_string()));
+        let picker = FilePicker::open("", tmp.path());
+        assert_eq!(picker.base_dir, tmp.path());
+        // Should find both the file and directory
+        let names: Vec<&str> = picker.entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"hello.rs"), "entries: {names:?}");
+        assert!(names.contains(&"sub/"), "entries: {names:?}");
     }
 
-    // @req REQ-TUI-018
+    // @req REQ-TUI-047
     #[test]
-    fn scan_directory_skips_hidden_and_target() {
+    fn open_scans_subdirectory() {
+        let tmp = TempDir::new().unwrap();
+        let sub = tmp.path().join("src");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("main.rs"), "").unwrap();
+        fs::write(sub.join("lib.rs"), "").unwrap();
+
+        let picker = FilePicker::open("src/", tmp.path());
+        let names: Vec<&str> = picker.entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"main.rs"), "entries: {names:?}");
+        assert!(names.contains(&"lib.rs"), "entries: {names:?}");
+    }
+
+    // @req REQ-TUI-047
+    #[test]
+    fn open_with_filter_filters_entries() {
+        let tmp = TempDir::new().unwrap();
+        let sub = tmp.path().join("src");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("main.rs"), "").unwrap();
+        fs::write(sub.join("lib.rs"), "").unwrap();
+
+        let picker = FilePicker::open("src/ma", tmp.path());
+        assert_eq!(picker.filtered.len(), 1);
+        assert_eq!(picker.filtered[0].name, "main.rs");
+    }
+
+    // --- update_query tests ---
+
+    // @req REQ-TUI-047
+    #[test]
+    fn update_query_rescans_on_dir_change() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("root.rs"), "").unwrap();
+        let sub = tmp.path().join("src");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("child.rs"), "").unwrap();
+
+        let mut picker = FilePicker::open("", tmp.path());
+        assert!(picker.entries.iter().any(|e| e.name == "root.rs"));
+
+        picker.update_query("src/", tmp.path());
+        assert!(picker.entries.iter().any(|e| e.name == "child.rs"));
+        assert!(!picker.entries.iter().any(|e| e.name == "root.rs"));
+    }
+
+    // @req REQ-TUI-047
+    #[test]
+    fn update_query_filters_without_rescan() {
+        let tmp = TempDir::new().unwrap();
+        let sub = tmp.path().join("src");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("main.rs"), "").unwrap();
+        fs::write(sub.join("lib.rs"), "").unwrap();
+
+        let mut picker = FilePicker::open("src/", tmp.path());
+        assert_eq!(picker.filtered.len(), 2);
+
+        picker.update_query("src/ma", tmp.path());
+        assert_eq!(picker.filtered.len(), 1);
+        assert_eq!(picker.filtered[0].name, "main.rs");
+        // entries should still have both (no rescan)
+        assert_eq!(picker.entries.len(), 2);
+    }
+
+    // --- Directory display tests ---
+
+    // @req REQ-TUI-047
+    #[test]
+    fn directories_shown_with_trailing_slash() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("mydir")).unwrap();
+        fs::write(tmp.path().join("myfile.txt"), "").unwrap();
+
+        let entries = scan_directory(tmp.path());
+        let dir_entry = entries.iter().find(|e| e.name.contains("mydir")).unwrap();
+        assert!(dir_entry.is_dir);
+        assert!(dir_entry.name.ends_with('/'));
+
+        let file_entry = entries.iter().find(|e| e.name.contains("myfile")).unwrap();
+        assert!(!file_entry.is_dir);
+        assert!(!file_entry.name.ends_with('/'));
+    }
+
+    // --- Hidden entry tests ---
+
+    // @req REQ-TUI-047
+    #[test]
+    fn hidden_entries_skipped() {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("visible.rs"), "").unwrap();
         fs::create_dir(tmp.path().join(".hidden")).unwrap();
-        fs::write(tmp.path().join(".hidden/secret.rs"), "").unwrap();
-        fs::create_dir(tmp.path().join("target")).unwrap();
-        fs::write(tmp.path().join("target/debug.rs"), "").unwrap();
+        fs::write(tmp.path().join(".gitignore"), "").unwrap();
 
-        let entries = FilePicker::scan_directory(tmp.path());
-        assert!(entries.contains(&"visible.rs".to_string()));
-        assert!(!entries.iter().any(|e| e.contains("hidden")));
-        assert!(!entries.iter().any(|e| e.contains("target")));
+        let entries = scan_directory(tmp.path());
+        assert!(entries.iter().any(|e| e.name == "visible.rs"));
+        assert!(!entries.iter().any(|e| e.name.contains("hidden")));
+        assert!(!entries.iter().any(|e| e.name.contains("gitignore")));
     }
 
-    // @req REQ-TUI-018
-    #[test]
-    fn scan_directory_respects_depth_limit() {
-        let tmp = TempDir::new().unwrap();
-        // Create depth 4: a/b/c/d/deep.rs -- should NOT appear
-        let deep = tmp.path().join("a/b/c/d");
-        fs::create_dir_all(&deep).unwrap();
-        fs::write(deep.join("deep.rs"), "").unwrap();
-        // Create depth 3: a/b/c/ok.rs -- should appear
-        fs::write(tmp.path().join("a/b/c/ok.rs"), "").unwrap();
+    // --- Navigation tests ---
 
-        let entries = FilePicker::scan_directory(tmp.path());
-        assert!(entries.contains(&"a/b/c/ok.rs".to_string()));
-        assert!(!entries.iter().any(|e| e.contains("deep.rs")));
+    // @req REQ-TUI-047
+    #[test]
+    fn select_next_wraps_around() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.rs"), "").unwrap();
+        fs::write(tmp.path().join("b.rs"), "").unwrap();
+
+        let mut picker = FilePicker::open("", tmp.path());
+        assert_eq!(picker.selected, 0);
+        let len = picker.filtered.len();
+
+        for _ in 0..len {
+            picker.select_next();
+        }
+        assert_eq!(picker.selected, 0); // wrapped
+    }
+
+    // @req REQ-TUI-047
+    #[test]
+    fn select_prev_wraps_around() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.rs"), "").unwrap();
+        fs::write(tmp.path().join("b.rs"), "").unwrap();
+
+        let mut picker = FilePicker::open("", tmp.path());
+        picker.select_prev();
+        assert_eq!(picker.selected, picker.filtered.len() - 1);
+    }
+
+    // @req REQ-TUI-047
+    #[test]
+    fn selected_path_includes_query_prefix() {
+        let tmp = TempDir::new().unwrap();
+        let sub = tmp.path().join("src");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("main.rs"), "").unwrap();
+
+        let picker = FilePicker::open("src/ma", tmp.path());
+        let path = picker.selected_path().unwrap();
+        assert_eq!(path, "src/main.rs");
+    }
+
+    // @req REQ-TUI-047
+    #[test]
+    fn selected_path_bare_query() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("hello.rs"), "").unwrap();
+
+        let picker = FilePicker::open("", tmp.path());
+        let path = picker.selected_path().unwrap();
+        assert_eq!(path, "hello.rs");
+    }
+
+    // --- Sorting tests ---
+
+    // @req REQ-TUI-047
+    #[test]
+    fn directories_sorted_before_files() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("aaa.rs"), "").unwrap();
+        fs::create_dir(tmp.path().join("zzz")).unwrap();
+
+        let entries = scan_directory(tmp.path());
+        // Directory should come first even though 'z' > 'a'
+        assert!(entries[0].is_dir, "First entry should be a directory");
+        assert!(!entries[1].is_dir, "Second entry should be a file");
     }
 }

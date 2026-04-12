@@ -201,12 +201,12 @@ impl App {
     /// Open the file picker by scanning the current directory.
     fn open_file_picker(&mut self) {
         let cwd = std::env::current_dir().unwrap_or_default();
-        let entries = super::file_picker::FilePicker::scan_directory(&cwd);
-        self.file_picker = Some(super::file_picker::FilePicker::new(entries));
+        self.file_picker = Some(super::file_picker::FilePicker::open("", &cwd));
     }
 
     /// Handle a key event while the file picker is open.
     fn handle_file_picker_key(&mut self, key: KeyEvent) -> Action {
+        let cwd = std::env::current_dir().unwrap_or_default();
         let picker = match self.file_picker.as_mut() {
             Some(p) => p,
             None => return Action::Continue,
@@ -221,7 +221,7 @@ impl App {
             }
             KeyCode::Enter => {
                 // Insert selected path, replacing the @
-                let path = picker.selected_path().map(|s| s.to_string());
+                let path = picker.selected_path();
                 self.file_picker = None;
                 if let Some(path) = path {
                     // Remove the @ character we inserted
@@ -255,14 +255,14 @@ impl App {
                     self.input.backspace();
                 } else {
                     query.pop();
-                    picker.update_query(&query);
+                    picker.update_query(&query, &cwd);
                 }
                 Action::Continue
             }
             KeyCode::Char(c) => {
                 let mut query = picker.query.clone();
                 query.push(c);
-                picker.update_query(&query);
+                picker.update_query(&query, &cwd);
                 Action::Continue
             }
             _ => Action::Continue,

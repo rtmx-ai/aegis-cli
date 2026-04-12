@@ -155,6 +155,7 @@ dependencies = [
  "reqwest",
  "rstest",
  "serde",
+ "thiserror 2.0.18",
  "tracing",
 ]
 

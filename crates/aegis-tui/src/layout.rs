@@ -75,13 +75,13 @@ pub struct AppState {
     pub file_picker: Option<FilePickerView>,
 }
 
-/// View data for the file picker overlay.
+/// View data for the file picker dropdown.
 #[derive(Debug, Clone)]
 pub struct FilePickerView {
     /// Current filter query.
     pub query: String,
-    /// Filtered file entries to display.
-    pub entries: Vec<String>,
+    /// Filtered entries to display: (name, is_dir).
+    pub entries: Vec<(String, bool)>,
     /// Index of the currently selected entry.
     pub selected: usize,
 }
@@ -166,9 +166,18 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         render_approval_modal(frame, frame.area(), info);
     }
 
-    // Render file picker overlay on top of everything.
+    // Render file picker dropdown below the separator.
     if let Some(ref picker) = state.file_picker {
-        render_file_picker_modal(frame, frame.area(), picker);
+        // The dropdown occupies up to half the terminal height, positioned
+        // just above the input line (i.e. overlaying the bottom of the chat).
+        let separator_y = chunks[2].y;
+        let max_dropdown_h = (height / 2).max(3);
+        let dropdown_h = max_dropdown_h.min(separator_y);
+        if dropdown_h > 0 {
+            let dropdown_area =
+                Rect::new(0, separator_y - dropdown_h, frame.area().width, dropdown_h);
+            render_file_picker_dropdown(frame, dropdown_area, picker);
+        }
     }
 }
 
@@ -436,14 +445,9 @@ fn render_approval_modal(frame: &mut Frame, area: Rect, info: &ApprovalDisplayIn
 }
 
 /// Render the file picker modal as a centered overlay.
-fn render_file_picker_modal(frame: &mut Frame, area: Rect, picker: &FilePickerView) {
-    let modal_area = centered_rect(60, 40, area);
-
-    // Clear the area behind the modal.
-    frame.render_widget(Clear, modal_area);
-
+fn render_file_picker_dropdown(frame: &mut Frame, area: Rect, picker: &FilePickerView) {
     // Maximum visible entries in the list.
-    let max_visible: usize = modal_area.height.saturating_sub(4) as usize; // border(2) + query(1) + separator(1)
+    let max_visible: usize = area.height.saturating_sub(1) as usize; // query line takes 1
 
     // Compute scroll window so the selected entry is always visible.
     let scroll_top = if picker.selected >= max_visible {
@@ -456,27 +460,29 @@ fn render_file_picker_modal(frame: &mut Frame, area: Rect, picker: &FilePickerVi
 
     // Query line
     lines.push(Line::from(vec![
-        Span::styled("  @ ", Style::default().fg(Color::Cyan)),
+        Span::styled(" @ ", Style::default().fg(Color::Cyan)),
         Span::raw(&picker.query),
     ]));
 
     // Entry list
-    for (i, entry) in picker
+    for (i, (name, is_dir)) in picker
         .entries
         .iter()
         .enumerate()
         .skip(scroll_top)
         .take(max_visible)
     {
-        let style = if i == picker.selected {
+        let base_style = if i == picker.selected {
             Style::default()
                 .bg(Color::DarkGray)
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD)
+        } else if *is_dir {
+            Style::default().fg(Color::Blue)
         } else {
             Style::default().fg(Color::Reset)
         };
-        lines.push(Line::from(Span::styled(format!("  {entry}"), style)));
+        lines.push(Line::from(Span::styled(format!("  {name}"), base_style)));
     }
 
     // If no entries match, show a hint
@@ -487,14 +493,8 @@ fn render_file_picker_modal(frame: &mut Frame, area: Rect, picker: &FilePickerVi
         )));
     }
 
-    let block = Block::default()
-        .title(" Files ")
-        .title_alignment(Alignment::Center)
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
-
-    let paragraph = Paragraph::new(lines).block(block);
-    frame.render_widget(paragraph, modal_area);
+    let paragraph = Paragraph::new(lines).style(Style::default().bg(Color::Black));
+    frame.render_widget(paragraph, area);
 }
 
 fn render_separator(frame: &mut Frame, area: Rect) {
@@ -1143,46 +1143,50 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-018
+    // @req REQ-TUI-049
     #[test]
-    fn layout_renders_file_picker_overlay() {
+    fn layout_renders_file_picker_dropdown() {
         let state = AppState {
             file_picker: Some(FilePickerView {
                 query: "main".to_string(),
-                entries: vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
+                entries: vec![
+                    ("src/main.rs".to_string(), false),
+                    ("src/lib.rs".to_string(), false),
+                ],
                 selected: 0,
             }),
             ..Default::default()
         };
         let output = render_to_string(&state, 80, 25);
         assert!(
-            output.contains("Files"),
-            "Should show modal title: {output}"
-        );
-        assert!(
             output.contains("src/main.rs"),
-            "Should show file entries: {output}"
+            "Should show file entries in dropdown: {output}"
+        );
+        // Should NOT contain centered modal title
+        assert!(
+            !output.contains(" Files "),
+            "Should not render centered modal title: {output}"
         );
     }
 
-    // @req REQ-TUI-018
+    // @req REQ-TUI-049
     #[test]
     fn layout_does_not_render_file_picker_when_none() {
         let state = AppState::default();
         let output = render_to_string(&state, 80, 25);
         assert!(
-            !output.contains("Files"),
+            !output.contains("@ "),
             "Should not show file picker when None: {output}"
         );
     }
 
-    // @req REQ-TUI-018
+    // @req REQ-TUI-049
     #[test]
     fn layout_renders_file_picker_query() {
         let state = AppState {
             file_picker: Some(FilePickerView {
                 query: "cargo".to_string(),
-                entries: vec!["Cargo.toml".to_string()],
+                entries: vec![("Cargo.toml".to_string(), false)],
                 selected: 0,
             }),
             ..Default::default()
@@ -1195,7 +1199,7 @@ mod tests {
         );
     }
 
-    // @req REQ-TUI-018
+    // @req REQ-TUI-049
     #[test]
     fn layout_renders_no_matching_files_hint() {
         let state = AppState {
@@ -1210,6 +1214,28 @@ mod tests {
         assert!(
             output.contains("no matching files"),
             "Should show no-match hint: {output}"
+        );
+    }
+
+    // @req REQ-TUI-049
+    #[test]
+    fn layout_renders_dirs_distinctly_in_picker() {
+        let state = AppState {
+            file_picker: Some(FilePickerView {
+                query: "".to_string(),
+                entries: vec![("src/".to_string(), true), ("main.rs".to_string(), false)],
+                selected: 0,
+            }),
+            ..Default::default()
+        };
+        let output = render_to_string(&state, 80, 25);
+        assert!(
+            output.contains("src/"),
+            "Should show directory with trailing slash: {output}"
+        );
+        assert!(
+            output.contains("main.rs"),
+            "Should show file entry: {output}"
         );
     }
 }

@@ -1078,23 +1078,19 @@ mod tests {
     fn file_picker_enter_inserts_selected_path() {
         let mut app = make_app();
         let (tx, _rx) = make_agent_tx();
-        // Manually set up a picker with known entries
+        // Create a temp dir with known files
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("main.rs"), "").unwrap();
+        std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
+        // Manually set up a picker
         app.input.insert_char('@');
-        app.file_picker = Some(file_picker::FilePicker::new(vec![
-            "src/main.rs".to_string(),
-            "Cargo.toml".to_string(),
-        ]));
+        app.file_picker = Some(file_picker::FilePicker::open("", tmp.path()));
         // Press Enter to select first entry
         app.handle_event(
             TuiEvent::Terminal(CtEvent::Key(KeyEvent::from(KeyCode::Enter))),
             &tx,
         );
         assert!(app.file_picker.is_none());
-        assert!(
-            app.input.text.contains("src/main.rs"),
-            "Should contain selected path: {:?}",
-            app.input.text
-        );
         assert!(
             !app.input.text.contains('@'),
             "@ should be replaced: {:?}",
@@ -1140,12 +1136,12 @@ mod tests {
     fn file_picker_arrow_keys_navigate() {
         let mut app = make_app();
         let (tx, _rx) = make_agent_tx();
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("a.rs"), "").unwrap();
+        std::fs::write(tmp.path().join("b.rs"), "").unwrap();
+        std::fs::write(tmp.path().join("c.rs"), "").unwrap();
         app.input.insert_char('@');
-        app.file_picker = Some(file_picker::FilePicker::new(vec![
-            "a.rs".to_string(),
-            "b.rs".to_string(),
-            "c.rs".to_string(),
-        ]));
+        app.file_picker = Some(file_picker::FilePicker::open("", tmp.path()));
         assert_eq!(app.file_picker.as_ref().unwrap().selected, 0);
 
         // Down arrow

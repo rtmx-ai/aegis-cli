@@ -9,6 +9,7 @@ pub mod banned_commands;
 pub mod cancellation;
 pub mod compaction;
 pub mod loop_runner;
+pub mod repo_context;
 pub mod retry;
 pub mod session;
 pub mod system_prompt;
