@@ -18,6 +18,17 @@ pub trait LlmProvider: Send + Sync {
         messages: &[Message],
         tools: &[ToolSchema],
     ) -> Result<Box<dyn TokenStream>, DomainError>;
+
+    /// Check the health of this provider (REQ-LLM-005).
+    ///
+    /// Returns `Healthy` if the provider responds within 1 second,
+    /// `Degraded` if it responds within 5 seconds, and `Unhealthy`
+    /// if it times out or returns an error.
+    async fn health_check(&self) -> ProviderHealth {
+        ProviderHealth::Unhealthy {
+            message: "health_check not implemented".to_string(),
+        }
+    }
 }
 
 // Blanket impl: Box<dyn LlmProvider> is also an LlmProvider.
@@ -29,6 +40,10 @@ impl LlmProvider for Box<dyn LlmProvider> {
         tools: &[ToolSchema],
     ) -> Result<Box<dyn TokenStream>, DomainError> {
         (**self).stream(messages, tools).await
+    }
+
+    async fn health_check(&self) -> ProviderHealth {
+        (**self).health_check().await
     }
 }
 
@@ -51,6 +66,22 @@ pub enum StreamEvent {
         output_tokens: u64,
     },
     Error(String),
+    /// A stream error with retryability classification (REQ-LLM-009).
+    RetryableError {
+        message: String,
+        retryable: bool,
+    },
+}
+
+/// Health status of an LLM provider (REQ-LLM-005).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ProviderHealth {
+    /// Provider responded within 1 second.
+    Healthy { latency_ms: u64 },
+    /// Provider responded between 1 and 5 seconds.
+    Degraded { latency_ms: u64, message: String },
+    /// Provider did not respond or returned an error.
+    Unhealthy { message: String },
 }
 
 /// A message in the conversation history.

@@ -30,6 +30,7 @@ fn stream_event_to_tui_event(event: StreamEvent) -> TuiEvent {
             output_tokens,
         },
         StreamEvent::Error(msg) => TuiEvent::AgentError(msg),
+        StreamEvent::RetryableError { message, .. } => TuiEvent::AgentError(message),
     }
 }
 

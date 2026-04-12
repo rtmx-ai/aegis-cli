@@ -8,6 +8,7 @@ pub mod auth;
 pub mod capabilities;
 pub mod config;
 pub mod discovery;
+pub mod failover;
 pub mod local;
 pub mod provider;
 pub mod retry;

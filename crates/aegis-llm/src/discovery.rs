@@ -15,6 +15,17 @@ use crate::config::ProviderConfig;
 /// Discovery probe timeout per endpoint.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// Quick health check: probe an OpenAI-compatible endpoint.
+/// Returns true if the endpoint responds to GET /models within 2 seconds.
+pub async fn probe_endpoint(base_url: &str) -> bool {
+    let client = match reqwest::Client::builder().timeout(PROBE_TIMEOUT).build() {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let url = format!("{base_url}/models");
+    matches!(client.get(&url).send().await, Ok(r) if r.status().is_success())
+}
+
 /// A provider that was discovered by probing available backends.
 #[derive(Debug)]
 pub struct DiscoveredProvider {

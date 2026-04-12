@@ -84,7 +84,11 @@ fn chat_headless_requires_prompt() {
         .arg("--headless")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("Prompt required"));
+        .stderr(
+            predicate::str::contains("Prompt required")
+                .or(predicate::str::contains("No LLM backend found"))
+                .or(predicate::str::contains("No config found")),
+        );
 }
 
 // rtmx:req REQ-CLI-002

@@ -46,8 +46,15 @@ while true; do
     if command -v fswatch >/dev/null 2>&1; then
         fswatch -1 -r -e "target" --include="\\.(rs|toml)$" crates/ Cargo.toml
     else
-        # Fallback: poll every 2 seconds
-        sleep 2
+        # Fallback: poll for actual file changes using find + checksum
+        BEFORE=$(find crates/ Cargo.toml -name '*.rs' -o -name '*.toml' 2>/dev/null | sort | xargs stat -f '%m' 2>/dev/null | md5 || echo "none")
+        while true; do
+            sleep 3
+            AFTER=$(find crates/ Cargo.toml -name '*.rs' -o -name '*.toml' 2>/dev/null | sort | xargs stat -f '%m' 2>/dev/null | md5 || echo "none")
+            if [ "$BEFORE" != "$AFTER" ]; then
+                break
+            fi
+        done
     fi
 
     echo "[rebuilding...]"

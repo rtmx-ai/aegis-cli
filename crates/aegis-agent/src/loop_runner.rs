@@ -259,6 +259,9 @@ where
                     StreamEvent::Error(msg) => {
                         return Err(DomainError::ProviderError { message: msg });
                     }
+                    StreamEvent::RetryableError { message, .. } => {
+                        return Err(DomainError::ProviderError { message });
+                    }
                 }
             }
 

@@ -200,9 +200,13 @@ fn run_chat(
     no_tui: bool,
     local_endpoint: Option<String>,
 ) -> Result<(), String> {
-    let provider_cfg = resolve_provider_config(local_endpoint)?;
+    let provider_result = resolve_provider_config(local_endpoint);
 
+    // For headless/plaintext modes, a provider is required upfront.
+    // For interactive TUI, we allow starting without a provider and
+    // show the error as a chat message so the user can fix it.
     if headless {
+        let provider_cfg = provider_result?;
         let prompt = prompt.ok_or_else(|| {
             "Prompt required in headless mode. Use: aegis chat --headless -p 'your prompt'"
                 .to_string()
@@ -215,13 +219,28 @@ fn run_chat(
     // Check for plain-text mode: explicit flag or env detection
     let use_plain_text = aegis_tui::terminal::should_use_plain_text(no_tui);
     if use_plain_text {
+        let provider_cfg = provider_result?;
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("Runtime error: {e}"))?;
         return rt.block_on(async { run_plaintext_chat(&provider_cfg, prompt).await });
     }
 
-    // Interactive TUI mode
+    // Interactive TUI mode -- start even without a provider.
+    // If provider resolution failed, pass the error message to the TUI
+    // so it can display it as a chat message.
+    let (provider_cfg, startup_error) = match provider_result {
+        Ok(cfg) => (cfg, None),
+        Err(e) => {
+            // Use a dummy local config so the TUI can start.
+            // Agent requests will fail, but the user can see the error and fix it.
+            (
+                aegis_llm::config::ProviderConfig::local("http://localhost:11434/v1", "none"),
+                Some(e),
+            )
+        }
+    };
+
     let rt = tokio::runtime::Runtime::new().map_err(|e| format!("Runtime error: {e}"))?;
-    rt.block_on(async { run_interactive_chat(&provider_cfg, prompt).await })
+    rt.block_on(async { run_interactive_chat(&provider_cfg, prompt, startup_error).await })
 }
 
 fn resolve_provider_config(
@@ -268,18 +287,32 @@ fn resolve_provider_config(
             region,
         };
 
-        // Validate that the configured provider is reachable by attempting
-        // to create it. If it fails (e.g. connection refused, missing auth),
-        // fall through to discovery.
-        match aegis_llm::provider::create_provider(&cfg) {
-            Ok(_) => return Ok(cfg),
-            Err(e) => {
-                tracing::warn!(
-                    error = %e,
-                    "configured provider unavailable, falling back to discovery"
-                );
+        // Probe the configured endpoint to verify it's reachable before
+        // accepting it. If unreachable, fall through to auto-discovery.
+        let endpoint = cfg.endpoint.clone();
+        let reachable = {
+            let rt = tokio::runtime::Handle::try_current();
+            match rt {
+                Ok(handle) => std::thread::scope(|s| {
+                    s.spawn(|| handle.block_on(aegis_llm::discovery::probe_endpoint(&endpoint)))
+                        .join()
+                        .unwrap_or(false)
+                }),
+                Err(_) => {
+                    let tmp = tokio::runtime::Runtime::new().ok();
+                    tmp.map(|rt| rt.block_on(aegis_llm::discovery::probe_endpoint(&endpoint)))
+                        .unwrap_or(false)
+                }
             }
+        };
+
+        if reachable {
+            return Ok(cfg);
         }
+        tracing::warn!(
+            endpoint = %endpoint,
+            "configured provider unreachable, falling back to discovery"
+        );
     }
 
     // No config or configured provider failed -- run auto-discovery.
@@ -510,6 +543,10 @@ async fn run_plaintext_turn(
                     println!();
                     println!("[error] {msg}");
                 }
+                StreamEvent::RetryableError { message, .. } => {
+                    println!();
+                    println!("[error] {message}");
+                }
             }
         }
     });
@@ -536,6 +573,7 @@ async fn run_plaintext_turn(
 async fn run_interactive_chat(
     provider_config: &aegis_llm::config::ProviderConfig,
     initial_prompt: Option<String>,
+    startup_error: Option<String>,
 ) -> Result<(), String> {
     use crossterm::event as ct_event;
     use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
@@ -661,7 +699,25 @@ async fn run_interactive_chat(
     let session_id = aegis_domain::types::SessionId::new().to_string();
     let work_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
 
-    // 10. If initial prompt provided, submit it immediately
+    // 10. Show startup error if provider resolution failed
+    if let Some(err) = startup_error {
+        app.messages
+            .push(aegis_tui::messages::ChatMessage::error(err));
+        app.messages.push(aegis_tui::messages::ChatMessage::system(
+            "No LLM backend connected.\n\n\
+                 To get started:\n\
+                 \n\
+                   /connect http://localhost:11434/v1    Connect to Ollama\n\
+                   /connect http://localhost:8080/v1     Connect to vLLM/TGI\n\
+                   /doctor                               Check connectivity\n\
+                 \n\
+                 Or start a local model server:\n\
+                   ollama serve && ollama pull llama3"
+                .to_string(),
+        ));
+    }
+
+    // 11. If initial prompt provided, submit it immediately
     if let Some(prompt) = initial_prompt {
         app.messages
             .push(aegis_tui::messages::ChatMessage::user(&prompt));
@@ -882,6 +938,7 @@ async fn run_agent_for_tui(
                     output_tokens,
                 },
                 StreamEvent::Error(msg) => TuiEvent::AgentError(msg),
+                StreamEvent::RetryableError { message, .. } => TuiEvent::AgentError(message),
             };
             if event_tx_stream.send(tui_event).is_err() {
                 break;

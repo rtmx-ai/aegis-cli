@@ -280,21 +280,35 @@ fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &Ap
 fn render_chat_log(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     let mut lines: Vec<Line> = Vec::new();
 
+    /// Push styled content, splitting on newlines so each line renders separately.
+    fn push_styled(lines: &mut Vec<Line>, content: &str, style: Style) {
+        for line_text in content.split('\n') {
+            lines.push(Line::from(Span::styled(line_text.to_string(), style)));
+        }
+    }
+
     for msg in &state.messages {
         match &msg.kind {
             MessageKind::User => {
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        "You: ",
-                        Style::default()
-                            .fg(Color::Green)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::raw(&msg.content),
-                ]));
+                let msg_lines: Vec<&str> = msg.content.split('\n').collect();
+                for (i, line_text) in msg_lines.iter().enumerate() {
+                    if i == 0 {
+                        lines.push(Line::from(vec![
+                            Span::styled(
+                                "You: ",
+                                Style::default()
+                                    .fg(Color::Green)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                            Span::raw(line_text.to_string()),
+                        ]));
+                    } else {
+                        lines.push(Line::from(Span::raw(format!("     {line_text}"))));
+                    }
+                }
             }
             MessageKind::Assistant => {
-                lines.push(Line::from(vec![Span::raw(&msg.content)]));
+                push_styled(&mut lines, &msg.content, Style::default());
             }
             MessageKind::ToolCall { tool_name } => {
                 lines.push(Line::from(vec![
@@ -306,24 +320,27 @@ fn render_chat_log(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppSt
                 ]));
             }
             MessageKind::ToolResult => {
-                lines.push(Line::from(vec![Span::styled(
+                push_styled(
+                    &mut lines,
                     &msg.content,
                     Style::default().fg(Color::DarkGray),
-                )]));
+                );
             }
             MessageKind::Error => {
-                lines.push(Line::from(vec![Span::styled(
+                push_styled(
+                    &mut lines,
                     &msg.content,
                     Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                )]));
+                );
             }
             MessageKind::System => {
-                lines.push(Line::from(vec![Span::styled(
+                push_styled(
+                    &mut lines,
                     &msg.content,
                     Style::default()
                         .fg(Color::DarkGray)
                         .add_modifier(Modifier::ITALIC),
-                )]));
+                );
             }
         }
         lines.push(Line::from(""));

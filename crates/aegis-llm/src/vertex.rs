@@ -127,6 +127,60 @@ impl VertexProvider {
 
 #[async_trait]
 impl LlmProvider for VertexProvider {
+    async fn health_check(&self) -> ProviderHealth {
+        let health_client = match reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                return ProviderHealth::Unhealthy {
+                    message: format!("Failed to create health check client: {e}"),
+                };
+            }
+        };
+
+        // Extract base URL from endpoint_url for the models list endpoint.
+        // endpoint_url is like:
+        //   https://{region}-aiplatform.googleapis.com/v1/projects/{project}/...
+        // We probe the models endpoint at the same base.
+        let models_url = if let Some(pos) = self.endpoint_url.find("/v1/") {
+            format!("{}/v1/models", &self.endpoint_url[..pos])
+        } else {
+            format!("{}/models", self.endpoint_url)
+        };
+
+        let start = std::time::Instant::now();
+
+        match health_client
+            .get(&models_url)
+            .header("Authorization", format!("Bearer {}", self.access_token))
+            .send()
+            .await
+        {
+            Ok(response) => {
+                let latency_ms = start.elapsed().as_millis() as u64;
+                if !response.status().is_success() {
+                    return ProviderHealth::Unhealthy {
+                        message: format!("Health check returned HTTP {}", response.status()),
+                    };
+                }
+                if latency_ms < 1000 {
+                    ProviderHealth::Healthy { latency_ms }
+                } else {
+                    ProviderHealth::Degraded {
+                        latency_ms,
+                        message: format!("Response took {latency_ms}ms (> 1000ms threshold)"),
+                    }
+                }
+            }
+            Err(e) => ProviderHealth::Unhealthy {
+                message: format!("Health check failed: {e}"),
+            },
+        }
+    }
+
     async fn stream(
         &self,
         messages: &[Message],
@@ -465,5 +519,53 @@ mod tests {
         );
         assert!(provider.endpoint_url.contains("aegis-il4-prod"));
         assert!(provider.endpoint_url.contains("/locations/us-east4/"));
+    }
+
+    // rtmx:req REQ-LLM-005
+    #[tokio::test]
+    async fn health_check_returns_healthy_for_responsive_endpoint() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(header("Authorization", "Bearer ya29.health"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"models":[]}"#))
+            .mount(&server)
+            .await;
+
+        let cfg = vertex_config(Some("proj"), Some("us-central1"));
+        let mut provider = VertexProvider::new(&cfg, "ya29.health".to_string()).unwrap();
+        // Override endpoint to point at mock server with /v1/ path
+        provider.endpoint_url = format!(
+            "{}/v1/projects/proj/locations/us-central1/chat",
+            server.uri()
+        );
+
+        let health = provider.health_check().await;
+        match health {
+            ProviderHealth::Healthy { latency_ms } => {
+                assert!(
+                    latency_ms < 1000,
+                    "Expected latency < 1000ms, got {latency_ms}ms"
+                );
+            }
+            other => panic!("Expected Healthy, got {:?}", other),
+        }
+    }
+
+    // rtmx:req REQ-LLM-005
+    #[tokio::test]
+    async fn health_check_returns_unhealthy_for_unreachable_endpoint() {
+        let cfg = vertex_config(Some("proj"), Some("us-central1"));
+        let mut provider = VertexProvider::new(&cfg, "ya29.tok".to_string()).unwrap();
+        provider.endpoint_url =
+            "http://127.0.0.1:1/v1/projects/proj/locations/us-central1/chat".to_string();
+
+        let health = provider.health_check().await;
+        match health {
+            ProviderHealth::Unhealthy { message } => {
+                assert!(!message.is_empty(), "Unhealthy message should not be empty");
+            }
+            other => panic!("Expected Unhealthy, got {:?}", other),
+        }
     }
 }

@@ -98,6 +98,46 @@ impl LocalProvider {
 
 #[async_trait]
 impl LlmProvider for LocalProvider {
+    async fn health_check(&self) -> ProviderHealth {
+        let health_client = match reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                return ProviderHealth::Unhealthy {
+                    message: format!("Failed to create health check client: {e}"),
+                };
+            }
+        };
+
+        let url = format!("{}/models", self.endpoint);
+        let start = std::time::Instant::now();
+
+        match health_client.get(&url).send().await {
+            Ok(response) => {
+                let latency_ms = start.elapsed().as_millis() as u64;
+                if !response.status().is_success() {
+                    return ProviderHealth::Unhealthy {
+                        message: format!("Health check returned HTTP {}", response.status()),
+                    };
+                }
+                if latency_ms < 1000 {
+                    ProviderHealth::Healthy { latency_ms }
+                } else {
+                    ProviderHealth::Degraded {
+                        latency_ms,
+                        message: format!("Response took {latency_ms}ms (> 1000ms threshold)"),
+                    }
+                }
+            }
+            Err(e) => ProviderHealth::Unhealthy {
+                message: format!("Health check failed: {e}"),
+            },
+        }
+    }
+
     async fn stream(
         &self,
         messages: &[Message],
@@ -364,5 +404,108 @@ mod tests {
         let provider = LocalProvider::new(&cfg).unwrap();
         // Trailing slash should be stripped
         assert_eq!(provider.endpoint, "http://localhost:11434/v1");
+    }
+
+    // rtmx:req REQ-LLM-005
+    #[tokio::test]
+    async fn health_check_returns_healthy_for_responsive_endpoint() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(r#"{"data":[{"id":"llama3"}]}"#),
+            )
+            .mount(&server)
+            .await;
+
+        let cfg = ProviderConfig::local(&format!("{}/v1", server.uri()), "llama3");
+        let provider = LocalProvider::new(&cfg).unwrap();
+
+        let health = provider.health_check().await;
+        match health {
+            ProviderHealth::Healthy { latency_ms } => {
+                assert!(
+                    latency_ms < 1000,
+                    "Expected latency < 1000ms, got {latency_ms}ms"
+                );
+            }
+            other => panic!("Expected Healthy, got {:?}", other),
+        }
+    }
+
+    // rtmx:req REQ-LLM-005
+    #[tokio::test]
+    async fn health_check_returns_unhealthy_for_unreachable_endpoint() {
+        let cfg = ProviderConfig::local("http://127.0.0.1:1/v1", "llama3");
+        let provider = LocalProvider::new(&cfg).unwrap();
+
+        let health = provider.health_check().await;
+        match health {
+            ProviderHealth::Unhealthy { message } => {
+                assert!(!message.is_empty(), "Unhealthy message should not be empty");
+            }
+            other => panic!("Expected Unhealthy, got {:?}", other),
+        }
+    }
+
+    // rtmx:req REQ-LLM-005
+    #[tokio::test]
+    async fn health_check_returns_unhealthy_for_http_error() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let cfg = ProviderConfig::local(&format!("{}/v1", server.uri()), "llama3");
+        let provider = LocalProvider::new(&cfg).unwrap();
+
+        let health = provider.health_check().await;
+        match health {
+            ProviderHealth::Unhealthy { message } => {
+                assert!(
+                    message.contains("500"),
+                    "Should mention status code: {message}"
+                );
+            }
+            other => panic!("Expected Unhealthy, got {:?}", other),
+        }
+    }
+
+    // rtmx:req REQ-LLM-005
+    #[tokio::test]
+    async fn health_check_returns_degraded_for_slow_endpoint() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(r#"{"data":[]}"#)
+                    .set_delay(std::time::Duration::from_millis(1500)),
+            )
+            .mount(&server)
+            .await;
+
+        let cfg = ProviderConfig::local(&format!("{}/v1", server.uri()), "llama3");
+        let provider = LocalProvider::new(&cfg).unwrap();
+
+        let health = provider.health_check().await;
+        match health {
+            ProviderHealth::Degraded {
+                latency_ms,
+                message,
+            } => {
+                assert!(
+                    latency_ms >= 1000,
+                    "Expected latency >= 1000ms, got {latency_ms}ms"
+                );
+                assert!(!message.is_empty(), "Degraded message should not be empty");
+            }
+            other => panic!("Expected Degraded, got {:?}", other),
+        }
     }
 }

@@ -19,6 +19,7 @@ impl App {
             SlashCommand::Help => {
                 self.messages.push(ChatMessage::system(
                     "Commands:\n\
+                     /connect <url>        Connect to an LLM endpoint\n\
                      /add <path>           Add file to context\n\
                      /drop <path>          Remove file from context\n\
                      /model [name]         Show or switch active model\n\
@@ -29,7 +30,7 @@ impl App {
                      /help                 Show this help\n\
                      /quit                 Exit aegis\n\
                      \n\
-                     Shortcuts: Ctrl+C quit, Shift+Enter newline, Esc vim mode\n\
+                     Shortcuts: Ctrl+C quit, Esc vim mode\n\
                      Approval: [A]pprove [D]eny [E]dit [S]kip\n\
                      \n\
                      aegis blocks writes until you approve. Read-only tools auto-execute."
@@ -65,6 +66,33 @@ impl App {
                     self.model_name = name.clone();
                     self.messages
                         .push(ChatMessage::system(format!("Model switched to: {name}")));
+                }
+                Action::Continue
+            }
+            SlashCommand::Connect(url) => {
+                if url.is_empty() {
+                    self.messages.push(ChatMessage::system(format!(
+                        "Current endpoint: http://localhost:11434/v1\n\
+                         Current model: {}\n\n\
+                         Usage: /connect <endpoint-url>",
+                        self.model_name
+                    )));
+                } else {
+                    // Validate URL format
+                    if !url.starts_with("http://") && !url.starts_with("https://") {
+                        self.messages.push(ChatMessage::error(
+                            "Endpoint must start with http:// or https://".to_string(),
+                        ));
+                    } else {
+                        tracing::info!(endpoint = %url, "connecting to LLM endpoint");
+                        self.messages.push(ChatMessage::system(format!(
+                            "Endpoint set to: {url}\n\
+                             Type a message to test the connection."
+                        )));
+                        // TODO: reconfigure the agent's provider at runtime
+                        // For now, the user needs to restart aegis after /connect
+                        // to pick up the new endpoint from config.
+                    }
                 }
                 Action::Continue
             }

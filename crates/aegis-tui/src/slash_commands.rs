@@ -26,6 +26,8 @@ pub enum SlashCommand {
     KeyLog,
     /// Switch or display the active LLM model.
     Model(String),
+    /// Connect to an LLM endpoint: /connect <url>
+    Connect(String),
 }
 
 /// Result of attempting to parse a slash command.
@@ -99,6 +101,14 @@ pub fn parse_slash_command(input: &str) -> ParseResult {
                 .collect::<Vec<_>>()
                 .join(" ");
             ParseResult::Command(SlashCommand::Model(raw_arg))
+        }
+        "/connect" => {
+            let raw_arg = trimmed
+                .split_whitespace()
+                .skip(1)
+                .collect::<Vec<_>>()
+                .join(" ");
+            ParseResult::Command(SlashCommand::Connect(raw_arg))
         }
         _ => ParseResult::Unknown(cmd),
     }
