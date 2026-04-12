@@ -122,6 +122,16 @@ pub trait ApprovalGate: Send + Sync {
 pub trait AuditLedger: Send + Sync {
     /// Append an event to the immutable audit ledger.
     async fn record(&self, event: &DomainEvent) -> Result<(), DomainError>;
+
+    /// Append an event linked to a specific RTMX requirement ID (REQ-AUDIT-003).
+    /// Default delegates to `record()` for backward compatibility.
+    async fn record_with_req(
+        &self,
+        event: &DomainEvent,
+        _req_id: Option<&str>,
+    ) -> Result<(), DomainError> {
+        self.record(event).await
+    }
 }
 
 /// Outgoing port: security filter (.aegisignore).

@@ -19,6 +19,9 @@ struct LedgerEntry<'a> {
     os_user: String,
     hostname: String,
     event: &'a DomainEvent,
+    /// Optional RTMX requirement ID for traceability (REQ-AUDIT-003).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    req_id: Option<String>,
 }
 
 /// Report returned by crash recovery describing what was found and repaired.
@@ -229,6 +232,7 @@ impl AuditLedger for JsonlLedger {
             os_user,
             hostname,
             event,
+            req_id: None,
         };
 
         // Serialize before acquiring any lock to minimize hold time.

@@ -131,6 +131,8 @@ pub enum ApprovalDecision {
     Denied,
     Edited,
     Skipped,
+    /// Auto-denied because the HITL timeout expired (REQ-HITL-003).
+    TimedOut,
 }
 
 #[cfg(test)]

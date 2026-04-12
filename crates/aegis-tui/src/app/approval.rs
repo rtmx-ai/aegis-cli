@@ -40,6 +40,7 @@ impl App {
                     ApprovalDecision::Denied => "Denied",
                     ApprovalDecision::Skipped => "Skipped",
                     ApprovalDecision::Edited => "Approved (edited)",
+                    ApprovalDecision::TimedOut => "Timed out (denied)",
                 };
                 self.messages
                     .push(crate::messages::ChatMessage::system(format!(

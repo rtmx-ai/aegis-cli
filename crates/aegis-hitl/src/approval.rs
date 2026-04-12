@@ -7,6 +7,7 @@ use aegis_domain::error::DomainError;
 use aegis_domain::ports::ApprovalGate;
 use aegis_domain::types::*;
 use async_trait::async_trait;
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
 /// A request for human approval, sent from agent to TUI.
@@ -17,6 +18,9 @@ pub struct ApprovalRequest {
     pub response_tx: oneshot::Sender<ApprovalDecision>,
 }
 
+/// Default HITL approval timeout (REQ-HITL-003).
+pub const DEFAULT_APPROVAL_TIMEOUT: Duration = Duration::from_secs(60);
+
 /// Create a linked approval gate and request receiver.
 ///
 /// The gate implements `ApprovalGate` and sends requests to the
@@ -26,13 +30,36 @@ pub fn create_approval_channel(
     buffer: usize,
 ) -> (ChannelApprovalGate, mpsc::Receiver<ApprovalRequest>) {
     let (tx, rx) = mpsc::channel(buffer);
-    (ChannelApprovalGate { tx }, rx)
+    (
+        ChannelApprovalGate {
+            tx,
+            timeout: DEFAULT_APPROVAL_TIMEOUT,
+        },
+        rx,
+    )
 }
 
 /// ApprovalGate implementation that sends requests via a channel.
 #[derive(Clone)]
 pub struct ChannelApprovalGate {
     tx: mpsc::Sender<ApprovalRequest>,
+    timeout: Duration,
+}
+
+impl ChannelApprovalGate {
+    /// Set a custom approval timeout (REQ-HITL-003).
+    ///
+    /// If the user does not respond within this duration, the approval
+    /// is automatically denied with `ApprovalDecision::TimedOut`.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// Returns the configured approval timeout.
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
 }
 
 #[async_trait]
@@ -58,11 +85,23 @@ impl ApprovalGate for ChannelApprovalGate {
             .await
             .map_err(|_| DomainError::PermissionDenied)?;
 
-        let decision = response_rx
-            .await
-            .map_err(|_| DomainError::Other("Approval channel closed".to_string()))?;
+        let decision = match tokio::time::timeout(self.timeout, response_rx).await {
+            Ok(Ok(d)) => {
+                tracing::info!(?d, "HITL decision received");
+                d
+            }
+            Ok(Err(_)) => {
+                return Err(DomainError::Other("Approval channel closed".to_string()));
+            }
+            Err(_) => {
+                tracing::warn!(
+                    timeout_secs = self.timeout.as_secs(),
+                    "HITL approval timed out -- auto-denying (REQ-HITL-003)"
+                );
+                ApprovalDecision::TimedOut
+            }
+        };
 
-        tracing::info!(?decision, "HITL decision received");
         Ok(decision)
     }
 }
@@ -227,5 +266,76 @@ mod tests {
 
         let result = gate_handle.await.unwrap();
         assert!(result.is_err());
+    }
+
+    // rtmx:req REQ-HITL-003
+    #[test]
+    fn default_timeout_is_60_seconds() {
+        let (gate, _rx) = create_approval_channel(1);
+        assert_eq!(gate.timeout(), Duration::from_secs(60));
+    }
+
+    // rtmx:req REQ-HITL-003
+    #[test]
+    fn with_timeout_sets_custom_duration() {
+        let (gate, _rx) = create_approval_channel(1);
+        let gate = gate.with_timeout(Duration::from_secs(120));
+        assert_eq!(gate.timeout(), Duration::from_secs(120));
+    }
+
+    // rtmx:req REQ-HITL-003
+    #[tokio::test]
+    async fn approval_within_timeout_returns_decision() {
+        let (gate, mut rx) = create_approval_channel(1);
+        let gate = gate.with_timeout(Duration::from_secs(5));
+
+        let gate_handle = tokio::spawn(async move {
+            let call = ToolCall::WriteFile {
+                path: FilePath::new_unchecked("test.rs"),
+                content: "code".to_string(),
+            };
+            gate.request_approval(&call).await
+        });
+
+        let request = rx.recv().await.unwrap();
+        request
+            .response_tx
+            .send(ApprovalDecision::Approved)
+            .unwrap();
+
+        let decision = gate_handle.await.unwrap().unwrap();
+        assert_eq!(decision, ApprovalDecision::Approved);
+    }
+
+    // rtmx:req REQ-HITL-003
+    #[tokio::test]
+    async fn approval_after_timeout_returns_timed_out() {
+        tokio::time::pause();
+
+        let (gate, mut rx) = create_approval_channel(1);
+        let gate = gate.with_timeout(Duration::from_millis(100));
+
+        let gate_handle = tokio::spawn(async move {
+            let call = ToolCall::RunCommand {
+                command: "dangerous-cmd".to_string(),
+                timeout_secs: 10,
+            };
+            gate.request_approval(&call).await
+        });
+
+        // Receive the request but never respond
+        let _request = rx.recv().await.unwrap();
+
+        // Advance past the timeout
+        tokio::time::advance(Duration::from_millis(200)).await;
+
+        let decision = gate_handle.await.unwrap().unwrap();
+        assert_eq!(decision, ApprovalDecision::TimedOut);
+    }
+
+    // rtmx:req REQ-HITL-003
+    #[test]
+    fn timed_out_is_distinct_from_denied() {
+        assert_ne!(ApprovalDecision::TimedOut, ApprovalDecision::Denied);
     }
 }

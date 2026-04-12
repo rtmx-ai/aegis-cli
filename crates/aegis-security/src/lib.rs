@@ -5,6 +5,7 @@
 //! Enforces TLS 1.3 with FIPS 140-2 validated cryptography.
 
 pub mod aegisignore;
+pub mod cert_pin;
 pub mod transport;
 
 pub mod sandbox;

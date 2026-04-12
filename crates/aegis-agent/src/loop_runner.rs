@@ -380,6 +380,9 @@ where
                         reason: "User denied tool execution".to_string(),
                     }
                 }
+                ApprovalDecision::TimedOut => ToolResult::PermissionDenied {
+                    reason: "HITL approval timed out".to_string(),
+                },
             }
         } else {
             // Safe tools auto-execute
