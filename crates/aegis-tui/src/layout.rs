@@ -80,8 +80,8 @@ pub struct AppState {
 pub struct FilePickerView {
     /// Current filter query.
     pub query: String,
-    /// Filtered entries to display: (name, is_dir).
-    pub entries: Vec<(String, bool)>,
+    /// Tree entries to display with depth and expanded state.
+    pub entries: Vec<crate::app::file_picker::TreeEntry>,
     /// Index of the currently selected entry.
     pub selected: usize,
 }
@@ -465,7 +465,7 @@ fn render_file_picker_dropdown(frame: &mut Frame, area: Rect, picker: &FilePicke
     ]));
 
     // Entry list
-    for (i, (name, is_dir)) in picker
+    for (i, entry) in picker
         .entries
         .iter()
         .enumerate()
@@ -477,12 +477,21 @@ fn render_file_picker_dropdown(frame: &mut Frame, area: Rect, picker: &FilePicke
                 .bg(Color::DarkGray)
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD)
-        } else if *is_dir {
+        } else if entry.is_dir {
             Style::default().fg(Color::Blue)
         } else {
             Style::default().fg(Color::Reset)
         };
-        lines.push(Line::from(Span::styled(format!("  {name}"), base_style)));
+        let indent = "  ".repeat(entry.depth);
+        let prefix = if entry.is_dir {
+            if entry.expanded { "[-] " } else { "[+] " }
+        } else {
+            "    "
+        };
+        lines.push(Line::from(Span::styled(
+            format!("  {indent}{prefix}{}", entry.name),
+            base_style,
+        )));
     }
 
     // If no entries match, show a hint
@@ -1150,8 +1159,18 @@ mod tests {
             file_picker: Some(FilePickerView {
                 query: "main".to_string(),
                 entries: vec![
-                    ("src/main.rs".to_string(), false),
-                    ("src/lib.rs".to_string(), false),
+                    crate::app::file_picker::TreeEntry {
+                        name: "src/main.rs".to_string(),
+                        is_dir: false,
+                        depth: 0,
+                        expanded: false,
+                    },
+                    crate::app::file_picker::TreeEntry {
+                        name: "src/lib.rs".to_string(),
+                        is_dir: false,
+                        depth: 0,
+                        expanded: false,
+                    },
                 ],
                 selected: 0,
             }),
@@ -1186,7 +1205,12 @@ mod tests {
         let state = AppState {
             file_picker: Some(FilePickerView {
                 query: "cargo".to_string(),
-                entries: vec![("Cargo.toml".to_string(), false)],
+                entries: vec![crate::app::file_picker::TreeEntry {
+                    name: "Cargo.toml".to_string(),
+                    is_dir: false,
+                    depth: 0,
+                    expanded: false,
+                }],
                 selected: 0,
             }),
             ..Default::default()
@@ -1223,7 +1247,20 @@ mod tests {
         let state = AppState {
             file_picker: Some(FilePickerView {
                 query: "".to_string(),
-                entries: vec![("src/".to_string(), true), ("main.rs".to_string(), false)],
+                entries: vec![
+                    crate::app::file_picker::TreeEntry {
+                        name: "src/".to_string(),
+                        is_dir: true,
+                        depth: 0,
+                        expanded: false,
+                    },
+                    crate::app::file_picker::TreeEntry {
+                        name: "main.rs".to_string(),
+                        is_dir: false,
+                        depth: 0,
+                        expanded: false,
+                    },
+                ],
                 selected: 0,
             }),
             ..Default::default()

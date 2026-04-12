@@ -51,6 +51,15 @@ const BANNED_PATTERNS: &[&str] = &[
     "dd of=/dev/hda",
 ];
 
+/// Default maximum file read size: 10 MB.
+const DEFAULT_MAX_FILE_READ_BYTES: usize = 10 * 1024 * 1024;
+
+/// Default maximum process memory: 512 MB.
+const DEFAULT_MAX_PROCESS_MEMORY_BYTES: usize = 512 * 1024 * 1024;
+
+/// Default environment variable allowlist for process isolation.
+const DEFAULT_ENV_ALLOWLIST: &[&str] = &["PATH", "HOME", "USER", "TERM"];
+
 /// Configuration for the sandbox policy.
 #[derive(Debug, Clone)]
 pub struct SandboxConfig {
@@ -62,6 +71,16 @@ pub struct SandboxConfig {
     pub allow_network: bool,
     /// Working directory for command execution.
     pub working_dir: PathBuf,
+    /// Maximum file size in bytes that may be read (REQ-SECURITY-008).
+    pub max_file_read_bytes: usize,
+    /// Maximum process memory in bytes (REQ-SECURITY-008).
+    pub max_process_memory_bytes: Option<usize>,
+    /// Environment variables to pass through when `inherit_env` is false
+    /// (REQ-SECURITY-009).
+    pub env_allowlist: Vec<String>,
+    /// If false, only allowlisted env vars are passed to child processes
+    /// (REQ-SECURITY-009).
+    pub inherit_env: bool,
 }
 
 impl Default for SandboxConfig {
@@ -78,6 +97,13 @@ impl Default for SandboxConfig {
             readonly_paths: readonly,
             allow_network: false,
             working_dir: cwd,
+            max_file_read_bytes: DEFAULT_MAX_FILE_READ_BYTES,
+            max_process_memory_bytes: Some(DEFAULT_MAX_PROCESS_MEMORY_BYTES),
+            env_allowlist: DEFAULT_ENV_ALLOWLIST
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect(),
+            inherit_env: false,
         }
     }
 }
@@ -106,6 +132,13 @@ pub enum SandboxError {
     #[error("command is banned by sandbox policy: {command}")]
     BannedCommand { command: String },
 
+    #[error("file too large: {path} is {size} bytes, limit is {limit} bytes")]
+    FileTooLarge {
+        path: PathBuf,
+        size: u64,
+        limit: usize,
+    },
+
     #[error("command execution failed: {0}")]
     ExecutionError(#[from] io::Error),
 }
@@ -121,10 +154,30 @@ impl Sandbox {
         Self { config }
     }
 
-    /// Execute a command inside the sandbox.
+    /// Check whether a file's size is within the configured limit
+    /// (REQ-SECURITY-008).
     ///
-    /// Validates that the command is not banned, then runs it via
-    /// `std::process::Command` with the configured working directory.
+    /// Returns `Ok(())` if the file size is at or below `max_file_read_bytes`,
+    /// or `Err(SandboxError::FileTooLarge)` otherwise.
+    pub fn check_file_size(&self, path: &Path) -> Result<(), SandboxError> {
+        let metadata = std::fs::metadata(path)?;
+        let size = metadata.len();
+        if size > self.config.max_file_read_bytes as u64 {
+            return Err(SandboxError::FileTooLarge {
+                path: path.to_path_buf(),
+                size,
+                limit: self.config.max_file_read_bytes,
+            });
+        }
+        Ok(())
+    }
+
+    /// Execute a command inside the sandbox (REQ-SECURITY-009).
+    ///
+    /// Validates that the command is not banned, then runs it via a fresh
+    /// `std::process::Command` with the configured working directory. When
+    /// `inherit_env` is false, only allowlisted environment variables are
+    /// passed to the child process.
     pub fn execute(&self, command: &str, args: &[&str]) -> Result<SandboxResult, SandboxError> {
         // Reconstruct the full command string for banned-pattern checking.
         let full_command = if args.is_empty() {
@@ -139,10 +192,23 @@ impl Sandbox {
             });
         }
 
-        let output = Command::new(command)
-            .args(args)
-            .current_dir(&self.config.working_dir)
-            .output()?;
+        // Each execution gets a fresh Command -- no state from previous calls.
+        let mut cmd = Command::new(command);
+        cmd.args(args);
+        cmd.current_dir(&self.config.working_dir);
+
+        // Process isolation: clear environment and only pass allowlisted vars
+        // (REQ-SECURITY-009).
+        if !self.config.inherit_env {
+            cmd.env_clear();
+            for key in &self.config.env_allowlist {
+                if let Ok(val) = std::env::var(key) {
+                    cmd.env(key, val);
+                }
+            }
+        }
+
+        let output = cmd.output()?;
 
         Ok(SandboxResult {
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
@@ -262,16 +328,37 @@ fn normalize_whitespace(s: &str) -> String {
 mod tests {
     use super::*;
     use std::fs;
+    use std::io::Write;
+
+    /// Build a test config with sane defaults for the new fields.
+    fn test_config(
+        allowed_paths: Vec<PathBuf>,
+        readonly_paths: Vec<PathBuf>,
+        working_dir: PathBuf,
+    ) -> SandboxConfig {
+        SandboxConfig {
+            allowed_paths,
+            readonly_paths,
+            allow_network: false,
+            working_dir,
+            max_file_read_bytes: DEFAULT_MAX_FILE_READ_BYTES,
+            max_process_memory_bytes: Some(DEFAULT_MAX_PROCESS_MEMORY_BYTES),
+            env_allowlist: DEFAULT_ENV_ALLOWLIST
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect(),
+            inherit_env: true, // existing tests expect full env inheritance
+        }
+    }
 
     // @req REQ-SECURITY-003
     #[test]
     fn allowed_path_returns_true_for_child() {
-        let config = SandboxConfig {
-            allowed_paths: vec![PathBuf::from("/tmp/sandbox_test")],
-            readonly_paths: vec![],
-            allow_network: false,
-            working_dir: PathBuf::from("/tmp"),
-        };
+        let config = test_config(
+            vec![PathBuf::from("/tmp/sandbox_test")],
+            vec![],
+            PathBuf::from("/tmp"),
+        );
         let sandbox = Sandbox::new(config);
         assert!(sandbox.is_path_allowed(Path::new("/tmp/sandbox_test/foo.txt"), false));
         assert!(sandbox.is_path_allowed(Path::new("/tmp/sandbox_test/foo.txt"), true));
@@ -280,12 +367,11 @@ mod tests {
     // @req REQ-SECURITY-003
     #[test]
     fn disallowed_path_returns_false() {
-        let config = SandboxConfig {
-            allowed_paths: vec![PathBuf::from("/tmp/sandbox_test")],
-            readonly_paths: vec![],
-            allow_network: false,
-            working_dir: PathBuf::from("/tmp"),
-        };
+        let config = test_config(
+            vec![PathBuf::from("/tmp/sandbox_test")],
+            vec![],
+            PathBuf::from("/tmp"),
+        );
         let sandbox = Sandbox::new(config);
         assert!(!sandbox.is_path_allowed(Path::new("/etc/passwd"), false));
         assert!(!sandbox.is_path_allowed(Path::new("/etc/passwd"), true));
@@ -294,12 +380,11 @@ mod tests {
     // @req REQ-SECURITY-003
     #[test]
     fn readonly_path_denies_write() {
-        let config = SandboxConfig {
-            allowed_paths: vec![],
-            readonly_paths: vec![PathBuf::from("/tmp/readonly_area")],
-            allow_network: false,
-            working_dir: PathBuf::from("/tmp"),
-        };
+        let config = test_config(
+            vec![],
+            vec![PathBuf::from("/tmp/readonly_area")],
+            PathBuf::from("/tmp"),
+        );
         let sandbox = Sandbox::new(config);
         // Read access should be allowed.
         assert!(sandbox.is_path_allowed(Path::new("/tmp/readonly_area/data.txt"), false));
@@ -342,12 +427,7 @@ mod tests {
         let tmpdir = std::env::temp_dir().join("aegis_sandbox_test_traversal");
         let _ = fs::create_dir_all(&tmpdir);
 
-        let config = SandboxConfig {
-            allowed_paths: vec![tmpdir.clone()],
-            readonly_paths: vec![],
-            allow_network: false,
-            working_dir: tmpdir.clone(),
-        };
+        let config = test_config(vec![tmpdir.clone()], vec![], tmpdir.clone());
         let sandbox = Sandbox::new(config);
 
         // Attempt to escape via `..`.
@@ -379,12 +459,7 @@ mod tests {
             let _ = symlink("/etc", &link_path);
         }
 
-        let config = SandboxConfig {
-            allowed_paths: vec![tmpdir.clone()],
-            readonly_paths: vec![],
-            allow_network: false,
-            working_dir: tmpdir.clone(),
-        };
+        let config = test_config(vec![tmpdir.clone()], vec![], tmpdir.clone());
         let sandbox = Sandbox::new(config);
 
         // The symlink lives inside the allowed dir, but resolves
@@ -402,12 +477,7 @@ mod tests {
     // @req REQ-SECURITY-003
     #[test]
     fn banned_command_is_rejected() {
-        let config = SandboxConfig {
-            allowed_paths: vec![],
-            readonly_paths: vec![],
-            allow_network: false,
-            working_dir: PathBuf::from("/tmp"),
-        };
+        let config = test_config(vec![], vec![], PathBuf::from("/tmp"));
         let sandbox = Sandbox::new(config);
         let result = sandbox.execute("rm", &["-rf", "/"]);
         assert!(result.is_err());
@@ -418,12 +488,7 @@ mod tests {
     #[test]
     fn safe_command_executes() {
         let dir = std::env::temp_dir();
-        let config = SandboxConfig {
-            allowed_paths: vec![],
-            readonly_paths: vec![],
-            allow_network: false,
-            working_dir: dir,
-        };
+        let config = test_config(vec![], vec![], dir);
         let sandbox = Sandbox::new(config);
         // Use a command that works on both Unix and Windows
         #[cfg(unix)]
@@ -470,5 +535,231 @@ mod tests {
         assert!(!is_command_banned("ls -la"));
         assert!(!is_command_banned("cargo test"));
         assert!(!is_command_banned("echo hello"));
+    }
+
+    // --- REQ-SECURITY-008: File size and memory limits ---
+
+    // @req REQ-SECURITY-008
+    #[test]
+    fn default_max_file_read_bytes_is_10mb() {
+        let config = SandboxConfig::default();
+        assert_eq!(config.max_file_read_bytes, 10 * 1024 * 1024);
+    }
+
+    // @req REQ-SECURITY-008
+    #[test]
+    fn default_max_process_memory_is_512mb() {
+        let config = SandboxConfig::default();
+        assert_eq!(config.max_process_memory_bytes, Some(512 * 1024 * 1024));
+    }
+
+    // @req REQ-SECURITY-008
+    #[test]
+    fn check_file_size_ok_for_small_file() {
+        let tmpdir = std::env::temp_dir().join("aegis_sandbox_filesize");
+        let _ = fs::create_dir_all(&tmpdir);
+        let small_file = tmpdir.join("small.txt");
+        {
+            let mut f = fs::File::create(&small_file).expect("create small file");
+            f.write_all(b"hello world").expect("write small file");
+        }
+
+        let config = SandboxConfig {
+            max_file_read_bytes: 1024,
+            ..SandboxConfig::default()
+        };
+        let sandbox = Sandbox::new(config);
+        assert!(sandbox.check_file_size(&small_file).is_ok());
+
+        let _ = fs::remove_dir_all(&tmpdir);
+    }
+
+    // @req REQ-SECURITY-008
+    #[test]
+    fn check_file_size_returns_file_too_large() {
+        let tmpdir = std::env::temp_dir().join("aegis_sandbox_filesize_large");
+        let _ = fs::create_dir_all(&tmpdir);
+        let large_file = tmpdir.join("large.bin");
+        {
+            let mut f = fs::File::create(&large_file).expect("create large file");
+            // Write 2048 bytes but set limit to 1024.
+            let data = vec![0u8; 2048];
+            f.write_all(&data).expect("write large file");
+        }
+
+        let config = SandboxConfig {
+            max_file_read_bytes: 1024,
+            ..SandboxConfig::default()
+        };
+        let sandbox = Sandbox::new(config);
+        let result = sandbox.check_file_size(&large_file);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SandboxError::FileTooLarge { path, size, limit } => {
+                assert_eq!(path, large_file);
+                assert_eq!(size, 2048);
+                assert_eq!(limit, 1024);
+            }
+            other => {
+                panic!("expected FileTooLarge, got: {:?}", other)
+            }
+        }
+
+        let _ = fs::remove_dir_all(&tmpdir);
+    }
+
+    // @req REQ-SECURITY-008
+    #[test]
+    fn file_too_large_error_includes_path_size_limit() {
+        let err = SandboxError::FileTooLarge {
+            path: PathBuf::from("/some/file.bin"),
+            size: 20_000_000,
+            limit: 10_485_760,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("/some/file.bin"), "error should contain path");
+        assert!(msg.contains("20000000"), "error should contain size");
+        assert!(msg.contains("10485760"), "error should contain limit");
+    }
+
+    // --- REQ-SECURITY-009: Process isolation per tool invocation ---
+
+    // @req REQ-SECURITY-009
+    #[test]
+    fn default_inherit_env_is_false() {
+        let config = SandboxConfig::default();
+        assert!(!config.inherit_env);
+    }
+
+    // @req REQ-SECURITY-009
+    #[test]
+    fn default_env_allowlist_includes_path() {
+        let config = SandboxConfig::default();
+        assert!(
+            config.env_allowlist.contains(&"PATH".to_string()),
+            "default allowlist should include PATH"
+        );
+    }
+
+    // @req REQ-SECURITY-009
+    #[test]
+    fn default_env_allowlist_includes_expected_vars() {
+        let config = SandboxConfig::default();
+        for var in &["PATH", "HOME", "USER", "TERM"] {
+            assert!(
+                config.env_allowlist.contains(&var.to_string()),
+                "default allowlist should include {}",
+                var
+            );
+        }
+    }
+
+    // @req REQ-SECURITY-009
+    #[cfg(unix)]
+    #[test]
+    fn execute_with_inherit_env_false_strips_env_vars() {
+        let dir = std::env::temp_dir();
+        // Set a custom env var that should NOT be passed through.
+        unsafe {
+            std::env::set_var("AEGIS_TEST_SECRET_009", "leaked");
+        }
+
+        let config = SandboxConfig {
+            inherit_env: false,
+            env_allowlist: vec!["PATH".to_string()],
+            working_dir: dir,
+            ..SandboxConfig::default()
+        };
+        let sandbox = Sandbox::new(config);
+
+        // printenv will list all env vars the child process sees.
+        let result = sandbox
+            .execute("printenv", &["AEGIS_TEST_SECRET_009"])
+            .expect("execute printenv");
+
+        // The variable should NOT be visible to the child.
+        assert!(
+            result.stdout.trim().is_empty(),
+            "AEGIS_TEST_SECRET_009 should not be passed to child, \
+             got: {}",
+            result.stdout
+        );
+        assert_ne!(result.exit_code, 0, "printenv should fail for missing var");
+
+        unsafe {
+            std::env::remove_var("AEGIS_TEST_SECRET_009");
+        }
+    }
+
+    // @req REQ-SECURITY-009
+    #[cfg(unix)]
+    #[test]
+    fn execute_with_env_allowlist_passes_only_listed_vars() {
+        let dir = std::env::temp_dir();
+        unsafe {
+            std::env::set_var("AEGIS_ALLOWED_VAR", "visible");
+            std::env::set_var("AEGIS_BLOCKED_VAR", "hidden");
+        }
+
+        let config = SandboxConfig {
+            inherit_env: false,
+            env_allowlist: vec!["PATH".to_string(), "AEGIS_ALLOWED_VAR".to_string()],
+            working_dir: dir,
+            ..SandboxConfig::default()
+        };
+        let sandbox = Sandbox::new(config);
+
+        // Check that the allowed var IS visible.
+        let allowed = sandbox
+            .execute("printenv", &["AEGIS_ALLOWED_VAR"])
+            .expect("execute printenv allowed");
+        assert_eq!(allowed.stdout.trim(), "visible");
+        assert_eq!(allowed.exit_code, 0);
+
+        // Check that the blocked var is NOT visible.
+        let blocked = sandbox
+            .execute("printenv", &["AEGIS_BLOCKED_VAR"])
+            .expect("execute printenv blocked");
+        assert!(
+            blocked.stdout.trim().is_empty(),
+            "AEGIS_BLOCKED_VAR should not be passed"
+        );
+
+        unsafe {
+            std::env::remove_var("AEGIS_ALLOWED_VAR");
+            std::env::remove_var("AEGIS_BLOCKED_VAR");
+        }
+    }
+
+    // @req REQ-SECURITY-009
+    #[cfg(windows)]
+    #[test]
+    fn execute_with_inherit_env_false_strips_env_vars_windows() {
+        let dir = std::env::temp_dir();
+        unsafe {
+            std::env::set_var("AEGIS_TEST_SECRET_009", "leaked");
+        }
+
+        let config = SandboxConfig {
+            inherit_env: false,
+            env_allowlist: vec!["PATH".to_string()],
+            working_dir: dir,
+            ..SandboxConfig::default()
+        };
+        let sandbox = Sandbox::new(config);
+
+        let result = sandbox
+            .execute("cmd", &["/C", "echo", "%AEGIS_TEST_SECRET_009%"])
+            .expect("execute cmd");
+
+        // On Windows, unexpanded %VAR% means the var is not set.
+        assert!(
+            !result.stdout.contains("leaked"),
+            "AEGIS_TEST_SECRET_009 should not be passed to child"
+        );
+
+        unsafe {
+            std::env::remove_var("AEGIS_TEST_SECRET_009");
+        }
     }
 }

@@ -7,10 +7,10 @@ use aegis_domain::error::DomainError;
 use aegis_domain::event::DomainEvent;
 use aegis_domain::ports::AuditLedger;
 use async_trait::async_trait;
+use fs2::FileExt;
 use serde::Serialize;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use tokio::io::AsyncWriteExt;
-use tokio::sync::Mutex;
 
 /// A ledger entry wrapping a domain event with identity metadata.
 #[derive(Debug, Serialize)]
@@ -25,10 +25,12 @@ struct LedgerEntry<'a> {
 const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
 
 /// File-backed JSONL audit ledger with date and size rotation.
+///
+/// Uses OS-level exclusive file locking (flock on Unix, LockFileEx on
+/// Windows) via the `fs2` crate to guarantee concurrent write safety
+/// across threads and processes (REQ-AUDIT-007).
 pub struct JsonlLedger {
     log_dir: PathBuf,
-    writer: Mutex<Option<tokio::fs::File>>,
-    current_path: Mutex<Option<PathBuf>>,
 }
 
 impl JsonlLedger {
@@ -41,24 +43,52 @@ impl JsonlLedger {
                 message: format!("Failed to create log dir {}: {e}", log_dir.display()),
             })?;
 
-        let ledger = Self {
+        Ok(Self {
             log_dir: log_dir.to_path_buf(),
-            writer: Mutex::new(None),
-            current_path: Mutex::new(None),
-        };
-        Ok(ledger)
+        })
     }
 
-    /// Get or create the current log file.
-    async fn ensure_writer(&self) -> Result<tokio::fs::File, DomainError> {
+    /// Build the current log file path based on today's date.
+    fn current_log_path(log_dir: &Path) -> PathBuf {
         let date = chrono::Utc::now().format("%Y-%m-%d");
-        let path = self.log_dir.join(format!("aegis-{date}.jsonl"));
+        log_dir.join(format!("aegis-{date}.jsonl"))
+    }
 
-        tokio::fs::OpenOptions::new()
+    /// Open the log file in append mode. If the current file exceeds
+    /// `MAX_FILE_SIZE`, a new file with a numeric suffix is created.
+    fn open_log_file(log_dir: &Path) -> Result<std::fs::File, DomainError> {
+        let path = Self::current_log_path(log_dir);
+
+        // Check if we need size-based rotation
+        if let Ok(meta) = std::fs::metadata(&path)
+            && meta.len() >= MAX_FILE_SIZE
+        {
+            for i in 1.. {
+                let date = chrono::Utc::now().format("%Y-%m-%d");
+                let rotated = log_dir.join(format!("aegis-{date}.{i}.jsonl"));
+                if !rotated.exists()
+                    || std::fs::metadata(&rotated)
+                        .map(|m| m.len() < MAX_FILE_SIZE)
+                        .unwrap_or(true)
+                {
+                    return std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&rotated)
+                        .map_err(|e| DomainError::AuditError {
+                            message: format!(
+                                "Failed to open rotated log {}: {e}",
+                                rotated.display()
+                            ),
+                        });
+                }
+            }
+        }
+
+        std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&path)
-            .await
             .map_err(|e| DomainError::AuditError {
                 message: format!("Failed to open log file {}: {e}", path.display()),
             })
@@ -87,54 +117,44 @@ impl AuditLedger for JsonlLedger {
             event,
         };
 
+        // Serialize before acquiring any lock to minimize hold time.
         let mut line = serde_json::to_string(&entry).map_err(|e| DomainError::AuditError {
             message: format!("Failed to serialize ledger entry: {e}"),
         })?;
         line.push('\n');
 
-        let mut guard = self.writer.lock().await;
+        let log_dir = self.log_dir.clone();
 
-        // Check if we need to rotate (size or date change)
-        let needs_rotate = if let Some(ref path) = *self.current_path.lock().await {
-            let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-            let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
-            let current_date_in_name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.contains(&date));
-            size >= MAX_FILE_SIZE || !current_date_in_name
-        } else {
-            true
-        };
+        // File I/O with exclusive lock runs in a blocking task so we
+        // do not block the async runtime (REQ-AUDIT-007).
+        tokio::task::spawn_blocking(move || {
+            let mut file = Self::open_log_file(&log_dir)?;
 
-        if needs_rotate {
-            // Close current writer and open new file
-            *guard = None;
-        }
-
-        let file = match guard.as_mut() {
-            Some(f) => f,
-            None => {
-                let new_file = self.ensure_writer().await?;
-                let date = chrono::Utc::now().format("%Y-%m-%d");
-                *self.current_path.lock().await =
-                    Some(self.log_dir.join(format!("aegis-{date}.jsonl")));
-                *guard = Some(new_file);
-                guard.as_mut().unwrap()
-            }
-        };
-
-        file.write_all(line.as_bytes())
-            .await
-            .map_err(|e| DomainError::AuditError {
-                message: format!("Failed to write ledger entry: {e}"),
+            // Acquire OS-level exclusive lock (flock on Unix,
+            // LockFileEx on Windows). Blocks until available.
+            file.lock_exclusive().map_err(|e| DomainError::AuditError {
+                message: format!("Failed to acquire exclusive lock: {e}"),
             })?;
 
-        file.flush().await.map_err(|e| DomainError::AuditError {
-            message: format!("Failed to flush ledger: {e}"),
-        })?;
+            let result = (|| {
+                file.write_all(line.as_bytes())
+                    .map_err(|e| DomainError::AuditError {
+                        message: format!("Failed to write ledger entry: {e}"),
+                    })?;
+                file.flush().map_err(|e| DomainError::AuditError {
+                    message: format!("Failed to flush ledger: {e}"),
+                })
+            })();
 
-        Ok(())
+            // Explicitly unlock; also released on drop.
+            let _ = file.unlock();
+
+            result
+        })
+        .await
+        .map_err(|e| DomainError::AuditError {
+            message: format!("Blocking ledger task panicked: {e}"),
+        })?
     }
 }
 
@@ -144,6 +164,7 @@ mod tests {
     use aegis_domain::event::DomainEvent;
     use aegis_domain::types::*;
     use chrono::Utc;
+    use std::sync::Arc;
     use tempfile::TempDir;
 
     async fn make_ledger(dir: &Path) -> JsonlLedger {
@@ -217,7 +238,6 @@ mod tests {
         for line in read_log_entries(&log_dir) {
             let parsed: serde_json::Value = serde_json::from_str(&line)
                 .unwrap_or_else(|e| panic!("Invalid JSON: {e}\nLine: {line}"));
-            // Every entry has timestamp, os_user, hostname, event
             assert!(parsed.get("timestamp").is_some(), "Missing timestamp");
             assert!(parsed.get("os_user").is_some(), "Missing os_user");
             assert!(parsed.get("hostname").is_some(), "Missing hostname");
@@ -329,6 +349,124 @@ mod tests {
             .filter(|e| e.path().extension().is_some_and(|ext| ext == "jsonl"))
             .collect();
         assert_eq!(files.len(), 1, "Should have exactly one log file");
+    }
+
+    // @req REQ-AUDIT-007
+    #[tokio::test]
+    async fn concurrent_threads_produce_valid_jsonl() {
+        let tmp = TempDir::new().unwrap();
+        let log_dir = tmp.path().join("logs");
+        let ledger = Arc::new(make_ledger(&log_dir).await);
+
+        let num_tasks = 10;
+        let writes_per_task = 20;
+        let mut handles = Vec::new();
+
+        for _ in 0..num_tasks {
+            let ledger = Arc::clone(&ledger);
+            handles.push(tokio::spawn(async move {
+                for _ in 0..writes_per_task {
+                    ledger.record(&session_started_event()).await.unwrap();
+                }
+            }));
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        let entries = read_log_entries(&log_dir);
+        assert_eq!(
+            entries.len(),
+            num_tasks * writes_per_task,
+            "All concurrent writes should be recorded"
+        );
+
+        // Every line must be valid JSON
+        for (i, line) in entries.iter().enumerate() {
+            serde_json::from_str::<serde_json::Value>(line)
+                .unwrap_or_else(|e| panic!("Line {i} is not valid JSON: {e}\nLine: {line}"));
+        }
+    }
+
+    // @req REQ-AUDIT-007
+    #[tokio::test]
+    async fn concurrent_writes_no_partial_lines() {
+        let tmp = TempDir::new().unwrap();
+        let log_dir = tmp.path().join("logs");
+        let ledger = Arc::new(make_ledger(&log_dir).await);
+
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let ledger = Arc::clone(&ledger);
+            handles.push(tokio::spawn(async move {
+                for _ in 0..25 {
+                    ledger.record(&tool_proposed_event()).await.unwrap();
+                }
+            }));
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        let entries = read_log_entries(&log_dir);
+        for (i, line) in entries.iter().enumerate() {
+            let parsed: serde_json::Value = serde_json::from_str(line)
+                .unwrap_or_else(|e| panic!("Partial/corrupted line {i}: {e}\nLine: {line}"));
+            assert!(
+                parsed.get("timestamp").is_some(),
+                "Line {i} missing timestamp"
+            );
+            assert!(parsed.get("event").is_some(), "Line {i} missing event");
+        }
+    }
+
+    // @req REQ-AUDIT-007
+    #[tokio::test]
+    async fn file_lock_does_not_deadlock() {
+        let tmp = TempDir::new().unwrap();
+        let log_dir = tmp.path().join("logs");
+        let ledger = Arc::new(make_ledger(&log_dir).await);
+
+        // If locking deadlocks, this test will time out.
+        let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            let mut handles = Vec::new();
+            for _ in 0..4 {
+                let ledger = Arc::clone(&ledger);
+                handles.push(tokio::spawn(async move {
+                    for _ in 0..10 {
+                        ledger.record(&session_started_event()).await.unwrap();
+                    }
+                }));
+            }
+            for h in handles {
+                h.await.unwrap();
+            }
+        })
+        .await;
+
+        assert!(result.is_ok(), "Concurrent locking should not deadlock");
+    }
+
+    // @req REQ-AUDIT-007
+    #[tokio::test]
+    async fn single_thread_writes_still_work() {
+        let tmp = TempDir::new().unwrap();
+        let log_dir = tmp.path().join("logs");
+        let ledger = make_ledger(&log_dir).await;
+
+        ledger.record(&session_started_event()).await.unwrap();
+        ledger.record(&tool_proposed_event()).await.unwrap();
+        ledger.record(&tool_approved_event()).await.unwrap();
+
+        let entries = read_log_entries(&log_dir);
+        assert_eq!(entries.len(), 3, "Single-thread writes must still work");
+
+        for line in &entries {
+            serde_json::from_str::<serde_json::Value>(line)
+                .expect("Each single-thread entry must be valid JSON");
+        }
     }
 
     /// Read all JSONL entries from all log files in the directory.

@@ -99,11 +99,7 @@ impl TuiHarness {
                     file_picker: app.file_picker.as_ref().map(|fp| {
                         aegis_tui::layout::FilePickerView {
                             query: fp.query.clone(),
-                            entries: fp
-                                .filtered
-                                .iter()
-                                .map(|e| (e.name.clone(), e.is_dir))
-                                .collect(),
+                            entries: fp.tree_entries(),
                             selected: fp.selected,
                         }
                     }),

@@ -12,6 +12,7 @@ pub mod loop_runner;
 pub mod repo_context;
 pub mod retry;
 pub mod session;
+pub mod subagent;
 pub mod system_prompt;
 pub mod token_counter;
 pub mod tools;

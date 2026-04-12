@@ -5,6 +5,7 @@
 //! path-aware: `@` alone scans cwd, `@src/` scans ./src/, `@/tmp/` scans
 //! /tmp/, `@~/` scans $HOME.
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -20,6 +21,19 @@ pub struct DirEntry {
     pub is_dir: bool,
 }
 
+/// A flattened tree entry for rendering the tree view.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeEntry {
+    /// Display name (with trailing `/` for directories).
+    pub name: String,
+    /// Whether this entry is a directory.
+    pub is_dir: bool,
+    /// Nesting depth (0 = root level).
+    pub depth: usize,
+    /// Whether this directory is currently expanded (false for files).
+    pub expanded: bool,
+}
+
 /// Interactive file picker state.
 #[derive(Debug, Clone)]
 pub struct FilePicker {
@@ -33,6 +47,8 @@ pub struct FilePicker {
     pub filtered: Vec<DirEntry>,
     /// Index into `filtered` for the currently selected entry.
     pub selected: usize,
+    /// Set of directory paths (relative to base_dir) that are expanded.
+    pub expanded: HashSet<String>,
 }
 
 impl FilePicker {
@@ -47,6 +63,7 @@ impl FilePicker {
             entries,
             filtered,
             selected: 0,
+            expanded: HashSet::new(),
         }
     }
 
@@ -98,6 +115,69 @@ impl FilePicker {
             } else {
                 self.selected - 1
             };
+        }
+    }
+
+    /// Toggle the expanded state of the currently selected directory.
+    /// If the selected entry is a file, this is a no-op.
+    /// Returns `true` if a directory was toggled (caller should NOT
+    /// treat Enter as "select file").
+    pub fn toggle_expand(&mut self, _cwd: &Path) -> bool {
+        let tree = self.tree_entries();
+        if let Some(entry) = tree.get(self.selected) {
+            if !entry.is_dir {
+                return false;
+            }
+            let key = entry.name.clone();
+            if self.expanded.contains(&key) {
+                self.expanded.remove(&key);
+            } else {
+                self.expanded.insert(key);
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Build a flat list of visible tree entries respecting expanded state.
+    /// Each entry carries its depth for indentation rendering.
+    pub fn tree_entries(&self) -> Vec<TreeEntry> {
+        let mut result = Vec::new();
+        self.collect_tree_entries(&self.filtered, 0, "", &mut result);
+        result
+    }
+
+    /// Recursively collect visible entries for the tree view.
+    fn collect_tree_entries(
+        &self,
+        entries: &[DirEntry],
+        depth: usize,
+        parent_path: &str,
+        result: &mut Vec<TreeEntry>,
+    ) {
+        for entry in entries {
+            let full_path = if parent_path.is_empty() {
+                entry.name.clone()
+            } else {
+                format!("{}{}", parent_path, entry.name)
+            };
+
+            let is_expanded = entry.is_dir && self.expanded.contains(&entry.name);
+
+            result.push(TreeEntry {
+                name: entry.name.clone(),
+                is_dir: entry.is_dir,
+                depth,
+                expanded: is_expanded,
+            });
+
+            // If this directory is expanded, scan and add its children.
+            if is_expanded {
+                let child_dir = self.base_dir.join(entry.name.trim_end_matches('/'));
+                let children = scan_directory(&child_dir);
+                self.collect_tree_entries(&children, depth + 1, &full_path, result);
+            }
         }
     }
 }
@@ -495,5 +575,126 @@ mod tests {
         // Directory should come first even though 'z' > 'a'
         assert!(entries[0].is_dir, "First entry should be a directory");
         assert!(!entries[1].is_dir, "Second entry should be a file");
+    }
+
+    // --- Tree view tests ---
+
+    // @req REQ-TUI-046
+    #[test]
+    fn tree_entries_returns_root_entries_when_nothing_expanded() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("hello.rs"), "").unwrap();
+        fs::create_dir(tmp.path().join("src")).unwrap();
+
+        let picker = FilePicker::open("", tmp.path());
+        let tree = picker.tree_entries();
+
+        assert_eq!(tree.len(), 2);
+        // All at depth 0
+        for entry in &tree {
+            assert_eq!(entry.depth, 0, "Root entries should be depth 0");
+        }
+        // Directory should not be expanded
+        let dir_entry = tree.iter().find(|e| e.is_dir).unwrap();
+        assert!(!dir_entry.expanded);
+    }
+
+    // @req REQ-TUI-046
+    #[test]
+    fn toggle_expand_on_dir_adds_children() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("src")).unwrap();
+        fs::write(tmp.path().join("src").join("main.rs"), "").unwrap();
+        fs::write(tmp.path().join("src").join("lib.rs"), "").unwrap();
+        fs::write(tmp.path().join("hello.rs"), "").unwrap();
+
+        let mut picker = FilePicker::open("", tmp.path());
+        // First entry should be the directory (dirs sort first)
+        assert_eq!(picker.selected, 0);
+        let tree_before = picker.tree_entries();
+        assert_eq!(tree_before.len(), 2); // src/ and hello.rs
+
+        picker.toggle_expand(tmp.path());
+
+        let tree_after = picker.tree_entries();
+        // Should now have src/ + 2 children + hello.rs = 4
+        assert_eq!(tree_after.len(), 4);
+        // First entry is expanded dir
+        assert!(tree_after[0].is_dir);
+        assert!(tree_after[0].expanded);
+        assert_eq!(tree_after[0].depth, 0);
+        // Children at depth 1
+        assert_eq!(tree_after[1].depth, 1);
+        assert_eq!(tree_after[2].depth, 1);
+        // Last entry is the root file at depth 0
+        assert_eq!(tree_after[3].depth, 0);
+        assert_eq!(tree_after[3].name, "hello.rs");
+    }
+
+    // @req REQ-TUI-046
+    #[test]
+    fn toggle_expand_again_collapses_hides_children() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("src")).unwrap();
+        fs::write(tmp.path().join("src").join("main.rs"), "").unwrap();
+        fs::write(tmp.path().join("hello.rs"), "").unwrap();
+
+        let mut picker = FilePicker::open("", tmp.path());
+        // Expand
+        picker.toggle_expand(tmp.path());
+        let tree = picker.tree_entries();
+        assert_eq!(tree.len(), 3); // src/ + main.rs child + hello.rs
+
+        // Collapse
+        picker.toggle_expand(tmp.path());
+        let tree = picker.tree_entries();
+        assert_eq!(tree.len(), 2); // back to src/ + hello.rs
+        assert!(!tree[0].expanded);
+    }
+
+    // @req REQ-TUI-046
+    #[test]
+    fn tree_entries_have_correct_depth_values() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        fs::create_dir(&src).unwrap();
+        let inner = src.join("inner");
+        fs::create_dir(&inner).unwrap();
+        fs::write(inner.join("deep.rs"), "").unwrap();
+        fs::write(src.join("top.rs"), "").unwrap();
+        fs::write(tmp.path().join("root.rs"), "").unwrap();
+
+        let mut picker = FilePicker::open("", tmp.path());
+        // Expand src/
+        picker.toggle_expand(tmp.path());
+
+        let tree = picker.tree_entries();
+        // src/ (d0), inner/ (d1), top.rs (d1), root.rs (d0)
+        assert_eq!(tree[0].depth, 0);
+        assert_eq!(tree[0].name, "src/");
+
+        // Find inner/ at depth 1
+        let inner_entry = tree.iter().find(|e| e.name == "inner/").unwrap();
+        assert_eq!(inner_entry.depth, 1);
+
+        // Find top.rs at depth 1
+        let top = tree.iter().find(|e| e.name == "top.rs").unwrap();
+        assert_eq!(top.depth, 1);
+
+        // root.rs at depth 0
+        let root = tree.iter().find(|e| e.name == "root.rs").unwrap();
+        assert_eq!(root.depth, 0);
+    }
+
+    // @req REQ-TUI-046
+    #[test]
+    fn toggle_expand_on_file_returns_false() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("hello.rs"), "").unwrap();
+
+        let mut picker = FilePicker::open("", tmp.path());
+        // Only entry is a file
+        let toggled = picker.toggle_expand(tmp.path());
+        assert!(!toggled, "toggle_expand on a file should return false");
     }
 }

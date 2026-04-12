@@ -220,7 +220,11 @@ impl App {
                 Action::Continue
             }
             KeyCode::Enter => {
-                // Insert selected path, replacing the @
+                // If selected entry is a directory, toggle expand.
+                if picker.toggle_expand(&cwd) {
+                    return Action::Continue;
+                }
+                // Otherwise insert selected file path, replacing the @.
                 let path = picker.selected_path();
                 self.file_picker = None;
                 if let Some(path) = path {
