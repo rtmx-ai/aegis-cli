@@ -1,8 +1,8 @@
-//! Validates CI runs rtmx-update-from-tests on every push (REQ-TEST-039).
+//! Validates CI uses native rtmx CLI for test marker scanning (REQ-TEST-039).
 
 // @req REQ-TEST-039
 #[test]
-fn test_ci_has_rtmx_update_step() {
+fn test_ci_has_rtmx_from_tests_step() {
     let ci_yml = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
@@ -11,24 +11,23 @@ fn test_ci_has_rtmx_update_step() {
         .join(".github/workflows/ci.yml");
     let content = std::fs::read_to_string(&ci_yml).unwrap();
     assert!(
-        content.contains("rtmx-update-from-tests") || content.contains("from-tests"),
-        "CI must run rtmx-update-from-tests or rtmx from-tests"
+        content.contains("rtmx from-tests"),
+        "CI must run `rtmx from-tests` to scan @req markers"
     );
 }
 
 // @req REQ-TEST-039
 #[test]
-fn test_rtmx_update_script_exists() {
-    let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+fn test_ci_has_rtmx_verify_step() {
+    let ci_yml = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
         .parent()
         .unwrap()
-        .join("scripts/rtmx-update-from-tests.py");
-    assert!(script.exists(), "rtmx-update-from-tests.py must exist");
-    let content = std::fs::read_to_string(&script).unwrap();
+        .join(".github/workflows/ci.yml");
+    let content = std::fs::read_to_string(&ci_yml).unwrap();
     assert!(
-        content.contains("--dry-run"),
-        "script must support --dry-run flag"
+        content.contains("rtmx verify"),
+        "CI must run `rtmx verify` for requirements traceability"
     );
 }
