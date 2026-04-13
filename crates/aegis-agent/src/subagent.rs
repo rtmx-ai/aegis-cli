@@ -4,7 +4,15 @@
 //! in parallel. Each sub-agent has a restricted tool set (read-only by default)
 //! and a configurable iteration limit.
 
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+/// Token usage from a sub-agent execution (REQ-AGENT-021).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SubAgentUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
 
 /// A sub-agent that executes a single task with restricted tools.
 #[derive(Debug)]
@@ -12,6 +20,8 @@ pub struct SubAgent {
     pub id: String,
     pub task: String,
     pub status: SubAgentStatus,
+    /// Token usage recorded on completion (REQ-AGENT-021).
+    pub usage: Option<SubAgentUsage>,
 }
 
 /// The lifecycle status of a sub-agent.
@@ -34,6 +44,29 @@ pub struct SubAgentConfig {
     pub max_iterations: usize,
     /// Whether the sub-agent can spawn its own sub-agents.
     pub allow_nesting: bool,
+}
+
+/// Mutating tool names that sub-agents must not use (REQ-AGENT-020).
+const MUTATING_TOOLS: &[&str] = &["write_file", "run_command"];
+
+impl SubAgentConfig {
+    /// Validate that the allowed tool set contains no mutating tools.
+    /// Sub-agents should default to read-only tools for safety
+    /// (REQ-AGENT-020).
+    pub fn validate_read_only(&self) -> Result<(), SpawnError> {
+        for tool in &self.allowed_tools {
+            if MUTATING_TOOLS.contains(&tool.as_str()) {
+                return Err(SpawnError {
+                    message: format!(
+                        "sub-agent tool set must be read-only, \
+                         but '{}' is mutating",
+                        tool
+                    ),
+                });
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Default for SubAgentConfig {
@@ -97,6 +130,7 @@ impl SubAgentManager {
             id: id.clone(),
             task,
             status: SubAgentStatus::Running,
+            usage: None,
         });
         Ok(id)
     }
@@ -122,6 +156,37 @@ impl SubAgentManager {
         } else {
             false
         }
+    }
+
+    /// Mark a sub-agent as completed with the given result and token
+    /// usage (REQ-AGENT-021).
+    pub fn complete_with_usage(
+        &mut self,
+        id: &str,
+        result: String,
+        usage: SubAgentUsage,
+    ) -> bool {
+        if let Some(agent) = self.agents.iter_mut().find(|a| a.id == id) {
+            agent.status = SubAgentStatus::Completed(result);
+            agent.usage = Some(usage);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Return the total token usage summed across all completed
+    /// sub-agents (REQ-AGENT-021). Running or failed agents without
+    /// usage data are excluded.
+    pub fn total_usage(&self) -> SubAgentUsage {
+        let mut total = SubAgentUsage::default();
+        for agent in &self.agents {
+            if let Some(ref u) = agent.usage {
+                total.input_tokens += u.input_tokens;
+                total.output_tokens += u.output_tokens;
+            }
+        }
+        total
     }
 
     /// Mark a sub-agent as failed with the given error message.
@@ -410,5 +475,144 @@ mod tests {
             message: "limit reached".to_string(),
         };
         assert_eq!(err.to_string(), "SubAgent spawn error: limit reached");
+    }
+
+    // --- REQ-AGENT-020: Tool set restriction validation ---
+
+    // rtmx:req REQ-AGENT-020
+    #[test]
+    fn validate_read_only_rejects_write_file() {
+        let config = SubAgentConfig {
+            allowed_tools: vec!["read_file".to_string(), "write_file".to_string()],
+            ..SubAgentConfig::default()
+        };
+        let err = config.validate_read_only().unwrap_err();
+        assert!(
+            err.message.contains("write_file"),
+            "error should mention write_file: {}",
+            err.message
+        );
+    }
+
+    // rtmx:req REQ-AGENT-020
+    #[test]
+    fn validate_read_only_rejects_run_command() {
+        let config = SubAgentConfig {
+            allowed_tools: vec!["read_file".to_string(), "run_command".to_string()],
+            ..SubAgentConfig::default()
+        };
+        let err = config.validate_read_only().unwrap_err();
+        assert!(
+            err.message.contains("run_command"),
+            "error should mention run_command: {}",
+            err.message
+        );
+    }
+
+    // rtmx:req REQ-AGENT-020
+    #[test]
+    fn validate_read_only_accepts_read_tools() {
+        let config = SubAgentConfig {
+            allowed_tools: vec![
+                "read_file".to_string(),
+                "list_dir".to_string(),
+                "grep".to_string(),
+            ],
+            ..SubAgentConfig::default()
+        };
+        assert!(config.validate_read_only().is_ok());
+    }
+
+    // --- REQ-AGENT-021: Sub-agent cost aggregation ---
+
+    // rtmx:req REQ-AGENT-021
+    #[test]
+    fn complete_with_usage_records_tokens() {
+        let mut mgr = SubAgentManager::new(4);
+        let id = mgr
+            .spawn("task".to_string(), SubAgentConfig::default())
+            .unwrap();
+
+        let usage = SubAgentUsage {
+            input_tokens: 100,
+            output_tokens: 50,
+        };
+        assert!(mgr.complete_with_usage(&id, "done".to_string(), usage));
+
+        let agent = mgr.agents.iter().find(|a| a.id == id).unwrap();
+        let u = agent.usage.as_ref().unwrap();
+        assert_eq!(u.input_tokens, 100);
+        assert_eq!(u.output_tokens, 50);
+    }
+
+    // rtmx:req REQ-AGENT-021
+    #[test]
+    fn total_usage_sums_completed() {
+        let mut mgr = SubAgentManager::new(4);
+        let id1 = mgr
+            .spawn("t1".to_string(), SubAgentConfig::default())
+            .unwrap();
+        let id2 = mgr
+            .spawn("t2".to_string(), SubAgentConfig::default())
+            .unwrap();
+        let id3 = mgr
+            .spawn("t3".to_string(), SubAgentConfig::default())
+            .unwrap();
+
+        mgr.complete_with_usage(
+            &id1,
+            "r1".to_string(),
+            SubAgentUsage {
+                input_tokens: 100,
+                output_tokens: 50,
+            },
+        );
+        mgr.complete_with_usage(
+            &id2,
+            "r2".to_string(),
+            SubAgentUsage {
+                input_tokens: 200,
+                output_tokens: 80,
+            },
+        );
+        mgr.complete_with_usage(
+            &id3,
+            "r3".to_string(),
+            SubAgentUsage {
+                input_tokens: 50,
+                output_tokens: 20,
+            },
+        );
+
+        let total = mgr.total_usage();
+        assert_eq!(total.input_tokens, 350);
+        assert_eq!(total.output_tokens, 150);
+    }
+
+    // rtmx:req REQ-AGENT-021
+    #[test]
+    fn total_usage_ignores_running() {
+        let mut mgr = SubAgentManager::new(4);
+        let id1 = mgr
+            .spawn("t1".to_string(), SubAgentConfig::default())
+            .unwrap();
+        let _id2 = mgr
+            .spawn("t2".to_string(), SubAgentConfig::default())
+            .unwrap();
+
+        // Only complete the first one with usage.
+        mgr.complete_with_usage(
+            &id1,
+            "r1".to_string(),
+            SubAgentUsage {
+                input_tokens: 100,
+                output_tokens: 40,
+            },
+        );
+        // id2 is still running (no usage).
+
+        let total = mgr.total_usage();
+        assert_eq!(total.input_tokens, 100);
+        assert_eq!(total.output_tokens, 40);
     }
 }

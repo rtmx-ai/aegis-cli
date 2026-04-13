@@ -8,6 +8,8 @@
 pub mod banned_commands;
 pub mod cancellation;
 pub mod compaction;
+pub mod dedup;
+pub mod export;
 pub mod loop_runner;
 pub mod repo_context;
 pub mod retry;
