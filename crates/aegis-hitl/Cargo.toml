@@ -10,9 +10,13 @@ aegis-domain = { path = "../aegis-domain" }
 tokio = { workspace = true, features = ["sync", "time"] }
 async-trait = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+globset = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
 mockall = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros", "rt"] }

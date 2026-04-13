@@ -107,6 +107,17 @@ impl RepoContext {
         let output = Command::new("git")
             .args(args)
             .current_dir(working_dir)
+            // Clear inherited git env vars (e.g. from pre-commit hooks or
+            // worktrees) so that git discovers the repo from working_dir,
+            // not from a parent process's GIT_DIR.
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE")
+            // Prevent git from discovering a parent .git above working_dir.
+            .env(
+                "GIT_CEILING_DIRECTORIES",
+                working_dir.parent().unwrap_or(working_dir),
+            )
             .output()
             .ok()?;
         if !output.status.success() {
@@ -131,6 +142,13 @@ impl RepoContext {
         let output = Command::new("git")
             .args(["status", "--porcelain"])
             .current_dir(working_dir)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE")
+            .env(
+                "GIT_CEILING_DIRECTORIES",
+                working_dir.parent().unwrap_or(working_dir),
+            )
             .output()
             .ok()?;
         if !output.status.success() {
@@ -282,21 +300,30 @@ mod tests {
         TempDir::new().expect("failed to create tempdir")
     }
 
+    /// Create a git Command that is isolated from parent repos and
+    /// inherited git env vars (GIT_DIR, GIT_WORK_TREE, etc.).
+    fn isolated_git(dir: &Path) -> Command {
+        let mut cmd = Command::new("git");
+        cmd.current_dir(dir)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE")
+            .env("GIT_CEILING_DIRECTORIES", dir.parent().unwrap_or(dir));
+        cmd
+    }
+
     fn git_init(dir: &Path) {
-        Command::new("git")
-            .args(["init"])
-            .current_dir(dir)
+        isolated_git(dir)
+            .args(["init", "--initial-branch=main"])
             .output()
             .expect("git init failed");
         // Configure user for commits
-        Command::new("git")
+        isolated_git(dir)
             .args(["config", "user.email", "test@test.com"])
-            .current_dir(dir)
             .output()
             .ok();
-        Command::new("git")
+        isolated_git(dir)
             .args(["config", "user.name", "Test"])
-            .current_dir(dir)
             .output()
             .ok();
     }
@@ -318,14 +345,12 @@ mod tests {
         git_init(tmp.path());
         // Create an initial commit so HEAD exists
         fs::write(tmp.path().join("README"), "hello").unwrap();
-        Command::new("git")
+        isolated_git(tmp.path())
             .args(["add", "."])
-            .current_dir(tmp.path())
             .output()
             .unwrap();
-        Command::new("git")
+        isolated_git(tmp.path())
             .args(["commit", "-m", "init"])
-            .current_dir(tmp.path())
             .output()
             .unwrap();
 
@@ -491,14 +516,12 @@ mod tests {
         let tmp = make_tempdir();
         git_init(tmp.path());
         fs::write(tmp.path().join("file.txt"), "hello").unwrap();
-        Command::new("git")
+        isolated_git(tmp.path())
             .args(["add", "."])
-            .current_dir(tmp.path())
             .output()
             .unwrap();
-        Command::new("git")
+        isolated_git(tmp.path())
             .args(["commit", "-m", "init"])
-            .current_dir(tmp.path())
             .output()
             .unwrap();
 
@@ -512,14 +535,12 @@ mod tests {
         let tmp = make_tempdir();
         git_init(tmp.path());
         fs::write(tmp.path().join("tracked.txt"), "hello").unwrap();
-        Command::new("git")
+        isolated_git(tmp.path())
             .args(["add", "."])
-            .current_dir(tmp.path())
             .output()
             .unwrap();
-        Command::new("git")
+        isolated_git(tmp.path())
             .args(["commit", "-m", "init"])
-            .current_dir(tmp.path())
             .output()
             .unwrap();
         // Modify tracked file and add untracked file
@@ -549,14 +570,12 @@ mod tests {
                 format!("content {i}"),
             )
             .unwrap();
-            Command::new("git")
+            isolated_git(tmp.path())
                 .args(["add", "."])
-                .current_dir(tmp.path())
                 .output()
                 .unwrap();
-            Command::new("git")
+            isolated_git(tmp.path())
                 .args(["commit", "-m", &format!("commit {i}")])
-                .current_dir(tmp.path())
                 .output()
                 .unwrap();
         }
