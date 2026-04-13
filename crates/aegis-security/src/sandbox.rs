@@ -950,4 +950,72 @@ mod tests {
         assert!(config.is_egress_allowed("api.example.com"));
         assert!(config.is_egress_allowed("API.EXAMPLE.COM"));
     }
+
+    // -- REQ-TEST-009: Boundary condition tests --
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn max_file_read_bytes_boundary() {
+        let tmpdir = std::env::temp_dir().join("aegis_sandbox_boundary_test");
+        let _ = fs::create_dir_all(&tmpdir);
+
+        let limit: usize = 256;
+
+        // File exactly at limit should pass.
+        let exact_file = tmpdir.join("exact.bin");
+        {
+            let mut f = fs::File::create(&exact_file).expect("create exact file");
+            let data = vec![0u8; limit];
+            f.write_all(&data).expect("write exact file");
+        }
+
+        let config = SandboxConfig {
+            max_file_read_bytes: limit,
+            ..SandboxConfig::default()
+        };
+        let sandbox = Sandbox::new(config);
+        assert!(
+            sandbox.check_file_size(&exact_file).is_ok(),
+            "file exactly at limit should pass"
+        );
+
+        // File 1 byte over limit should fail.
+        let over_file = tmpdir.join("over.bin");
+        {
+            let mut f = fs::File::create(&over_file).expect("create over file");
+            let data = vec![0u8; limit + 1];
+            f.write_all(&data).expect("write over file");
+        }
+
+        assert!(
+            sandbox.check_file_size(&over_file).is_err(),
+            "file 1 byte over limit should fail"
+        );
+
+        let _ = fs::remove_dir_all(&tmpdir);
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn egress_allowlist_nonempty_blocks_unlisted_hosts() {
+        // When allow_network is true and the allowlist is non-empty,
+        // only listed hosts should be permitted. Unlisted hosts are blocked.
+        let config = SandboxConfig {
+            allow_network: true,
+            egress_allowlist: vec!["only-this-host.example.com".to_string()],
+            ..SandboxConfig::default()
+        };
+        assert!(
+            config.is_egress_allowed("only-this-host.example.com"),
+            "listed host should be allowed"
+        );
+        assert!(
+            !config.is_egress_allowed("other.example.com"),
+            "unlisted host should be blocked when allowlist is non-empty"
+        );
+        assert!(
+            !config.is_egress_allowed("evil.com"),
+            "unlisted host should be blocked when allowlist is non-empty"
+        );
+    }
 }
