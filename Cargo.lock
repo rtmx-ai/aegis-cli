@@ -158,6 +158,7 @@ version = "0.1.0"
 dependencies = [
  "aegis-domain",
  "proptest",
+ "regex",
  "reqwest",
  "rstest",
  "serde",

@@ -6,6 +6,7 @@
 
 pub mod aegisignore;
 pub mod cert_pin;
+pub mod injection;
 pub mod transport;
 
 pub mod sandbox;
