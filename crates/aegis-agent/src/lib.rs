@@ -11,6 +11,7 @@ pub mod compaction;
 pub mod dedup;
 pub mod export;
 pub mod loop_runner;
+pub mod rate_limiter;
 pub mod repo_context;
 pub mod retry;
 pub mod session;
