@@ -280,67 +280,124 @@ fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &Ap
 fn render_chat_log(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     let mut lines: Vec<Line> = Vec::new();
 
-    /// Push styled content, splitting on newlines so each line renders separately.
-    fn push_styled(lines: &mut Vec<Line>, content: &str, style: Style) {
-        for line_text in content.split('\n') {
-            lines.push(Line::from(Span::styled(line_text.to_string(), style)));
+    /// Border accent color for each message kind.
+    fn border_color(kind: &MessageKind) -> Color {
+        match kind {
+            MessageKind::User => Color::Green,
+            MessageKind::Assistant => Color::Blue,
+            MessageKind::System => Color::Cyan,
+            MessageKind::Error => Color::Red,
+            MessageKind::ToolCall { .. } | MessageKind::ToolResult => Color::Yellow,
         }
     }
 
+    /// Prepend a colored left border `"| "` to a line's spans.
+    fn with_border(color: Color, spans: Vec<Span<'_>>) -> Line<'_> {
+        let mut result = vec![Span::styled("| ", Style::default().fg(color))];
+        result.extend(spans);
+        Line::from(result)
+    }
+
     for msg in &state.messages {
+        let bc = border_color(&msg.kind);
         match &msg.kind {
             MessageKind::User => {
                 let msg_lines: Vec<&str> = msg.content.split('\n').collect();
                 for (i, line_text) in msg_lines.iter().enumerate() {
                     if i == 0 {
-                        lines.push(Line::from(vec![
-                            Span::styled(
-                                "You: ",
-                                Style::default()
-                                    .fg(Color::Green)
-                                    .add_modifier(Modifier::BOLD),
-                            ),
-                            Span::raw(line_text.to_string()),
-                        ]));
+                        lines.push(with_border(
+                            bc,
+                            vec![
+                                Span::styled(
+                                    "You: ",
+                                    Style::default()
+                                        .fg(Color::Green)
+                                        .add_modifier(Modifier::BOLD),
+                                ),
+                                Span::raw(line_text.to_string()),
+                            ],
+                        ));
                     } else {
-                        lines.push(Line::from(Span::raw(format!("     {line_text}"))));
+                        lines.push(with_border(
+                            bc,
+                            vec![Span::raw(format!("     {line_text}"))],
+                        ));
                     }
                 }
             }
             MessageKind::Assistant => {
-                push_styled(&mut lines, &msg.content, Style::default());
+                for line_text in msg.content.split('\n') {
+                    lines.push(with_border(
+                        bc,
+                        vec![Span::styled(line_text.to_string(), Style::default())],
+                    ));
+                }
             }
             MessageKind::ToolCall { tool_name } => {
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        format!("  > {tool_name}: "),
-                        Style::default().fg(Color::Yellow),
-                    ),
-                    Span::styled(&msg.content, Style::default().fg(Color::DarkGray)),
-                ]));
+                lines.push(with_border(
+                    bc,
+                    vec![
+                        Span::styled(
+                            format!("  > {tool_name}: "),
+                            Style::default().fg(Color::Yellow),
+                        ),
+                        Span::styled(msg.content.clone(), Style::default().fg(Color::DarkGray)),
+                    ],
+                ));
             }
             MessageKind::ToolResult => {
-                push_styled(
-                    &mut lines,
-                    &msg.content,
-                    Style::default().fg(Color::DarkGray),
-                );
+                for line_text in msg.content.split('\n') {
+                    lines.push(with_border(
+                        bc,
+                        vec![Span::styled(
+                            line_text.to_string(),
+                            Style::default().fg(Color::DarkGray),
+                        )],
+                    ));
+                }
             }
             MessageKind::Error => {
-                push_styled(
-                    &mut lines,
-                    &msg.content,
-                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                );
+                for line_text in msg.content.split('\n') {
+                    lines.push(with_border(
+                        bc,
+                        vec![Span::styled(
+                            line_text.to_string(),
+                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                        )],
+                    ));
+                }
             }
             MessageKind::System => {
-                push_styled(
-                    &mut lines,
-                    &msg.content,
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::ITALIC),
-                );
+                // Rich system message: separator above, indented cyan text, separator below
+                let sep_width = area.width.saturating_sub(4) as usize;
+                let thin_sep = "\u{2500}".repeat(sep_width);
+                lines.push(with_border(
+                    bc,
+                    vec![Span::styled(
+                        thin_sep.clone(),
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .add_modifier(Modifier::DIM),
+                    )],
+                ));
+                for line_text in msg.content.split('\n') {
+                    lines.push(with_border(
+                        bc,
+                        vec![Span::styled(
+                            format!("  {line_text}"),
+                            Style::default().fg(Color::Cyan),
+                        )],
+                    ));
+                }
+                lines.push(with_border(
+                    bc,
+                    vec![Span::styled(
+                        thin_sep,
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .add_modifier(Modifier::DIM),
+                    )],
+                ));
             }
         }
         lines.push(Line::from(""));
@@ -625,7 +682,7 @@ fn render_file_picker_preview(frame: &mut Frame, area: Rect, picker: &FilePicker
 }
 
 fn render_separator(frame: &mut Frame, area: Rect) {
-    let sep = "-".repeat(area.width as usize);
+    let sep = "\u{2500}".repeat(area.width as usize);
     let separator = Paragraph::new(Line::from(Span::styled(
         sep,
         Style::default().fg(Color::DarkGray),
@@ -693,9 +750,11 @@ fn render_hint_line(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let hints = match state.input_mode {
         InputModeDisplay::Insert => {
-            format!("Enter send | {} | Esc vim", state.newline_hint)
+            format!("{} | Enter: send | Esc: normal mode", state.newline_hint,)
         }
-        InputModeDisplay::Normal => "i insert | o new line | Esc toggle".to_string(),
+        InputModeDisplay::Normal => {
+            "i: insert | /: command | @: file picker | q: quit".to_string()
+        }
     };
 
     let line = Line::from(vec![
@@ -1093,10 +1152,9 @@ mod tests {
     fn input_no_box_drawing_border() {
         let state = AppState::default();
         let output = render_to_string(&state, 60, 20);
-        // Box-drawing characters from Borders::TOP should not appear
-        let box_chars = [
-            '\u{2500}', '\u{2502}', '\u{250c}', '\u{2510}', '\u{2514}', '\u{2518}',
-        ];
+        // Box-drawing border characters (corners, vertical) should not appear.
+        // U+2500 (horizontal line) IS expected as the separator.
+        let box_chars = ['\u{2502}', '\u{250c}', '\u{2510}', '\u{2514}', '\u{2518}'];
         for ch in &box_chars {
             assert!(
                 !output.contains(*ch),
@@ -1260,14 +1318,23 @@ mod tests {
 
     // rtmx:req REQ-TUI-038
     #[test]
-    fn input_has_separator_line() {
+    fn input_has_separator_not_border() {
         let state = AppState::default();
         let output = render_to_string(&state, 60, 20);
-        // Should have a dash-based separator line
+        // Should have a Unicode horizontal line separator
         assert!(
-            output.contains("----------"),
-            "Should have a dash separator above input: {output}"
+            output.contains("\u{2500}\u{2500}\u{2500}"),
+            "Should have a \u{2500} separator above input: {output}"
         );
+        // Box-drawing characters from Borders::TOP should not appear
+        let box_chars = ['\u{2502}', '\u{250c}', '\u{2510}', '\u{2514}', '\u{2518}'];
+        for ch in &box_chars {
+            assert!(
+                !output.contains(*ch),
+                "Should not contain box-drawing char U+{:04X}: {output}",
+                *ch as u32,
+            );
+        }
     }
 
     // rtmx:req REQ-TUI-049
@@ -1506,5 +1573,95 @@ mod tests {
         // Line numbers should be visible (1, 2, 3).
         assert!(output.contains("1 "), "Should show line number 1: {output}");
         assert!(output.contains("2 "), "Should show line number 2: {output}");
+    }
+
+    // rtmx:req REQ-TUI-037
+    #[test]
+    fn prompt_character_is_visible() {
+        let state = AppState {
+            input: "test input".to_string(),
+            ..Default::default()
+        };
+        let output = render_to_string(&state, 60, 20);
+        let has_prompt = output
+            .lines()
+            .any(|line| line.contains('>') && line.contains("test input"));
+        assert!(
+            has_prompt,
+            "Rendered input area should contain '> ' prompt with text: {output}"
+        );
+    }
+
+    // rtmx:req REQ-TUI-055
+    #[test]
+    fn system_message_has_cyan_style() {
+        let mut state = AppState::default();
+        state.push_message(ChatMessage::system("Session restored"));
+        // We render to a TestBackend, which captures styled cells.
+        // The text content should appear indented with 2-space padding.
+        let output = render_to_string(&state, 80, 20);
+        assert!(
+            output.contains("Session restored"),
+            "System message text should be visible: {output}"
+        );
+        // System messages have separators (thin lines) above and below
+        assert!(
+            output.contains("\u{2500}\u{2500}\u{2500}"),
+            "System message should have separator lines: {output}"
+        );
+        // Verify the cyan border is present (| prefix)
+        let has_border = output
+            .lines()
+            .any(|line| line.contains('|') && line.contains("Session restored"));
+        assert!(
+            has_border,
+            "System message should have left border accent: {output}"
+        );
+    }
+
+    // rtmx:req REQ-TUI-056
+    #[test]
+    fn user_message_has_green_border() {
+        let mut state = AppState::default();
+        state.push_message(ChatMessage::user("Hello"));
+        let output = render_to_string(&state, 60, 20);
+        // User message lines should start with "| " border accent
+        let has_border = output
+            .lines()
+            .any(|line| line.contains("| ") && line.contains("Hello"));
+        assert!(
+            has_border,
+            "User message should have '| ' left border accent: {output}"
+        );
+    }
+
+    // rtmx:req REQ-TUI-056
+    #[test]
+    fn assistant_message_has_blue_border() {
+        let mut state = AppState::default();
+        state.push_message(ChatMessage::assistant("The answer is 42."));
+        let output = render_to_string(&state, 60, 20);
+        let has_border = output
+            .lines()
+            .any(|line| line.contains("| ") && line.contains("42"));
+        assert!(
+            has_border,
+            "Assistant message should have '| ' left border accent: {output}"
+        );
+    }
+
+    // rtmx:req REQ-TUI-056
+    #[test]
+    fn error_message_has_red_border() {
+        let mut state = AppState::default();
+        state.push_message(ChatMessage::error("Connection lost"));
+        let output = render_to_string(&state, 60, 20);
+        let has_border = output
+            .lines()
+            .any(|line| line.contains("| ") && line.contains("Connection lost"));
+        assert!(
+            has_border,
+            "Error message should have '| ' left border accent: {output}"
+        );
     }
 }

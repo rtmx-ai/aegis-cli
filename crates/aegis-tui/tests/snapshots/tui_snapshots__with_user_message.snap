@@ -3,7 +3,7 @@ source: crates/aegis-tui/tests/tui_snapshots.rs
 expression: frame
 ---
 "gemini-2.0-flash                                                                "
-"You: Explain the architecture of this codebase                                  "
+"| You: Explain the architecture of this codebase                                "
 "                                                                                "
 "                                                                                "
 "                                                                                "
@@ -23,6 +23,6 @@ expression: frame
 "                                                                                "
 "                                                                                "
 "                                                                                "
-"--------------------------------------------------------------------------------"
+"────────────────────────────────────────────────────────────────────────────────"
 ">                                                                               "
-" INSERT   Enter send | Ctrl+O newline | Esc vim                                 "
+" INSERT   Ctrl+O newline | Enter: send | Esc: normal mode                       "

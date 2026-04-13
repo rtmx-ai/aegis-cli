@@ -19,6 +19,6 @@ expression: frame
 "                                                                                "
 "                                                                                "
 "                                                                                "
-"--------------------------------------------------------------------------------"
+"────────────────────────────────────────────────────────────────────────────────"
 ">                                                                               "
-" INSERT   Enter send | Ctrl+O newline | Esc vim                                 "
+" INSERT   Ctrl+O newline | Enter: send | Esc: normal mode                       "
