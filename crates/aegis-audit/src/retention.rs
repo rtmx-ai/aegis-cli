@@ -154,4 +154,95 @@ mod tests {
     fn default_retention_is_90_days() {
         assert_eq!(DEFAULT_RETENTION_DAYS, 90);
     }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn enforce_with_malformed_filename() {
+        let tmp = TempDir::new().unwrap();
+        // Filename has no parseable date -- should be skipped, not deleted.
+        let malformed = write_segment(tmp.path(), "aegis-notadate.jsonl");
+
+        let policy = RetentionPolicy::new(90);
+        let count = policy.enforce(tmp.path()).unwrap();
+
+        assert_eq!(count, 0, "malformed filename should not be purged");
+        assert!(
+            malformed.exists(),
+            "file with unparseable name should still exist"
+        );
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn enforce_with_future_dated_file() {
+        let tmp = TempDir::new().unwrap();
+        let future = write_segment(tmp.path(), "aegis-2099-12-31.jsonl");
+
+        let policy = RetentionPolicy::new(90);
+        let count = policy.enforce(tmp.path()).unwrap();
+
+        assert_eq!(count, 0, "future-dated file should not be purged");
+        assert!(future.exists(), "future-dated file should still exist");
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn enforce_on_empty_directory() {
+        let tmp = TempDir::new().unwrap();
+
+        let policy = RetentionPolicy::new(90);
+        let count = policy.enforce(tmp.path()).unwrap();
+
+        assert_eq!(count, 0, "empty directory should purge nothing");
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[cfg(unix)]
+    #[test]
+    fn enforce_with_readonly_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = TempDir::new().unwrap();
+        let old = write_segment(tmp.path(), "aegis-2020-01-01.jsonl");
+
+        // Make the file readonly.
+        std::fs::set_permissions(&old, std::fs::Permissions::from_mode(0o444)).unwrap();
+
+        let policy = RetentionPolicy::new(90);
+        let result = policy.enforce(tmp.path());
+
+        // Depending on platform, remove_file on a readonly file may fail
+        // or succeed. On macOS/Linux the file owner can still delete a
+        // readonly file if the parent directory is writable.
+        match result {
+            Ok(count) => {
+                assert_eq!(count, 1);
+                assert!(!old.exists(), "file should have been removed");
+            }
+            Err(_) => {
+                // Restore permissions so TempDir cleanup succeeds.
+                std::fs::set_permissions(&old, std::fs::Permissions::from_mode(0o644)).unwrap();
+            }
+        }
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn list_expired_matches_enforce() {
+        let tmp = TempDir::new().unwrap();
+        write_segment(tmp.path(), "aegis-2020-01-01.jsonl");
+        write_segment(tmp.path(), "aegis-2020-06-15.jsonl");
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        write_segment(tmp.path(), &format!("aegis-{today}.jsonl"));
+
+        let policy = RetentionPolicy::new(90);
+        let expired = policy.list_expired(tmp.path()).unwrap();
+        let enforced = policy.enforce(tmp.path()).unwrap();
+
+        assert_eq!(
+            expired.len(),
+            enforced,
+            "dry run count should equal actual enforce count"
+        );
+    }
 }
