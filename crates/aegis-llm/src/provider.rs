@@ -4,6 +4,7 @@ use aegis_domain::error::DomainError;
 use aegis_domain::ports::LlmProvider;
 
 use crate::azure::AzureProvider;
+use crate::bedrock::BedrockProvider;
 use crate::config::{ProviderConfig, ProviderKind};
 use crate::local::LocalProvider;
 use crate::vertex::VertexProvider;
@@ -16,9 +17,10 @@ pub fn create_provider(config: &ProviderConfig) -> Result<Box<dyn LlmProvider>, 
             let access_token = crate::auth::resolve_gcp_access_token()?;
             Ok(Box::new(VertexProvider::new(config, access_token)?))
         }
-        ProviderKind::Bedrock => Err(DomainError::ProviderError {
-            message: "Bedrock provider not yet implemented".to_string(),
-        }),
+        ProviderKind::Bedrock => {
+            let auth = crate::auth::resolve_auth(config)?;
+            Ok(Box::new(BedrockProvider::new(config, auth)?))
+        }
         ProviderKind::Azure => {
             let auth = crate::auth::resolve_auth(config)?;
             Ok(Box::new(AzureProvider::new(config, auth)?))
@@ -57,12 +59,20 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // rtmx:req REQ-LLM-023
+    // rtmx:req REQ-LLM-002
     #[test]
-    fn factory_rejects_unimplemented_bedrock() {
+    fn factory_creates_bedrock_provider_when_env_set() {
+        unsafe {
+            std::env::set_var("AWS_ACCESS_KEY_ID", "AKIAIOSFODNN7EXAMPLE");
+            std::env::set_var(
+                "AWS_SECRET_ACCESS_KEY",
+                "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            );
+            std::env::set_var("AWS_REGION", "us-east-1");
+        }
         let cfg = ProviderConfig {
             kind: ProviderKind::Bedrock,
-            model: "claude-3-sonnet-20241022".to_string(),
+            model: "us.anthropic.claude-3-5-sonnet-20241022-v2:0".to_string(),
             endpoint: "https://bedrock.us-east-1.amazonaws.com".to_string(),
             max_tokens: 4096,
             temperature: 0.0,
@@ -72,6 +82,15 @@ mod tests {
             region: None,
         };
         let result = create_provider(&cfg);
-        assert!(result.is_err());
+        unsafe {
+            std::env::remove_var("AWS_ACCESS_KEY_ID");
+            std::env::remove_var("AWS_SECRET_ACCESS_KEY");
+            std::env::remove_var("AWS_REGION");
+        }
+        assert!(
+            result.is_ok(),
+            "Expected Bedrock provider, got {:?}",
+            result.err()
+        );
     }
 }
