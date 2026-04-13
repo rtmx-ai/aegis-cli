@@ -2,6 +2,7 @@
 
 use crate::app::App;
 use crate::messages::ChatMessage;
+use aegis_infra::host::discover_plugins;
 use std::path::PathBuf;
 
 impl App {
@@ -64,10 +65,32 @@ impl App {
         };
         results.push(config_check);
 
-        // Check 3: Plugin discovery
+        // Check 3: Plugin discovery -- scan ~/.aegis/plugins
         total += 1;
-        results.push("[PASS] Plugin discovery: scan deferred (run /infra list)".to_string());
-        passed += 1;
+        let plugins_dir = dirs_check_home().map(|h| h.join(".aegis").join("plugins"));
+        let plugin_count = match plugins_dir {
+            Some(ref dir) if dir.is_dir() => {
+                let rt = tokio::runtime::Runtime::new().ok();
+                rt.and_then(|rt| rt.block_on(discover_plugins(dir)).ok())
+                    .map(|p| p.len())
+                    .unwrap_or(0)
+            }
+            _ => 0,
+        };
+        if plugin_count > 0 {
+            passed += 1;
+            results.push(format!(
+                "[PASS] Plugin discovery: {plugin_count} plugin(s) found"
+            ));
+        } else {
+            // Not a failure -- just informational
+            passed += 1;
+            results.push(
+                "[PASS] Plugin discovery: 0 plugins found \
+                 (install to ~/.aegis/plugins/)"
+                    .to_string(),
+            );
+        }
 
         // Check 4: LLM endpoint reachability
         total += 1;
@@ -104,5 +127,57 @@ pub(crate) fn dirs_check_home() -> Option<PathBuf> {
     #[cfg(not(any(unix, windows)))]
     {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_test_app() -> App {
+        App::new("test-model".to_string())
+    }
+
+    // rtmx:req REQ-TUI-058
+    #[test]
+    fn doctor_checks_home_dir() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let aegis_dir = tmp.path().join(".aegis");
+        std::fs::create_dir_all(&aegis_dir).unwrap();
+        unsafe { std::env::set_var("HOME", tmp.path()) };
+
+        let mut app = make_test_app();
+        app.handle_doctor_command();
+
+        // Should not crash and should produce output
+        assert!(
+            !app.messages.is_empty(),
+            "Doctor should produce at least one message"
+        );
+        let last = app.messages.last().unwrap();
+        assert!(
+            last.content.contains("checks passed"),
+            "Should contain summary, got: {}",
+            last.content
+        );
+    }
+
+    // rtmx:req REQ-TUI-058
+    #[test]
+    fn doctor_reports_plugin_count() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let aegis_dir = tmp.path().join(".aegis");
+        std::fs::create_dir_all(&aegis_dir).unwrap();
+        unsafe { std::env::set_var("HOME", tmp.path()) };
+
+        let mut app = make_test_app();
+        app.handle_doctor_command();
+
+        let last = app.messages.last().unwrap();
+        assert!(
+            last.content.contains("plugin"),
+            "Should mention plugins in output, got: {}",
+            last.content
+        );
     }
 }

@@ -192,6 +192,7 @@ version = "0.1.0"
 dependencies = [
  "aegis-agent",
  "aegis-domain",
+ "aegis-infra",
  "aegis-test-support",
  "arboard",
  "crossterm 0.28.1",
