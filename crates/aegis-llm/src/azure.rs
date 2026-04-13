@@ -481,6 +481,242 @@ mod tests {
         }
     }
 
+    // rtmx:req REQ-TEST-009
+    #[tokio::test]
+    async fn stream_handles_malformed_sse() {
+        let server = MockServer::start().await;
+
+        // Return garbage instead of SSE format
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_raw("this is not SSE data at all\n\n", "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let cfg = azure_config(&server.uri());
+        let auth = azure_auth_with_key("test-key");
+        let mut provider = AzureProvider::new(&cfg, auth).unwrap();
+        provider.endpoint_url = format!("{}/chat/completions", server.uri());
+
+        let messages = vec![Message {
+            role: Role::User,
+            content: "Hi".to_string(),
+        }];
+
+        let mut stream = provider.stream(&messages, &[]).await.unwrap();
+
+        // Malformed data should be skipped; stream ends with Done (no
+        // output_tokens accumulated so not a mid-stream drop).
+        let event = stream.next().await.unwrap();
+        match event {
+            StreamEvent::Done { .. } => { /* expected */ }
+            StreamEvent::RetryableError { .. } => { /* also acceptable */ }
+            StreamEvent::Error(_) => { /* also acceptable */ }
+            other => panic!("Expected Done or error, got {:?}", other),
+        }
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[tokio::test]
+    async fn stream_handles_empty_response_body() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw("", "text/event-stream"))
+            .mount(&server)
+            .await;
+
+        let cfg = azure_config(&server.uri());
+        let auth = azure_auth_with_key("test-key");
+        let mut provider = AzureProvider::new(&cfg, auth).unwrap();
+        provider.endpoint_url = format!("{}/chat/completions", server.uri());
+
+        let messages = vec![Message {
+            role: Role::User,
+            content: "Hi".to_string(),
+        }];
+
+        let mut stream = provider.stream(&messages, &[]).await.unwrap();
+
+        // Empty body means stream ends immediately -> Done with zero tokens
+        let event = stream.next().await.unwrap();
+        match event {
+            StreamEvent::Done {
+                input_tokens,
+                output_tokens,
+            } => {
+                assert_eq!(input_tokens, 0);
+                assert_eq!(output_tokens, 0);
+            }
+            other => panic!("Expected Done, got {:?}", other),
+        }
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[tokio::test]
+    async fn stream_handles_partial_sse_chunk() {
+        let server = MockServer::start().await;
+
+        // Truncated JSON -- opening brace but no close, no trailing newlines
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_raw("data: {\"choices\":[{\"delta\":{", "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let cfg = azure_config(&server.uri());
+        let auth = azure_auth_with_key("test-key");
+        let mut provider = AzureProvider::new(&cfg, auth).unwrap();
+        provider.endpoint_url = format!("{}/chat/completions", server.uri());
+
+        let messages = vec![Message {
+            role: Role::User,
+            content: "Hi".to_string(),
+        }];
+
+        let mut stream = provider.stream(&messages, &[]).await.unwrap();
+
+        // Partial chunk without newline -- stream ends, parser sees incomplete
+        // line in buffer. Should emit Done (no output tokens) not hang.
+        let event = stream.next().await.unwrap();
+        match event {
+            StreamEvent::Done { .. } => { /* no output, clean end */ }
+            StreamEvent::RetryableError { .. } => { /* also acceptable */ }
+            other => panic!("Expected Done or RetryableError, got {:?}", other),
+        }
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[tokio::test]
+    async fn stream_handles_http_403_forbidden() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(403).set_body_string("Forbidden"))
+            .mount(&server)
+            .await;
+
+        let cfg = azure_config(&server.uri());
+        let auth = azure_auth_with_key("bad-key");
+        let mut provider = AzureProvider::new(&cfg, auth).unwrap();
+        provider.endpoint_url = format!("{}/chat/completions", server.uri());
+
+        let messages = vec![Message {
+            role: Role::User,
+            content: "Hi".to_string(),
+        }];
+
+        let result = provider.stream(&messages, &[]).await;
+        match result {
+            Err(e) => {
+                let err = e.to_string();
+                assert!(
+                    err.contains("403"),
+                    "Error should contain 403 status: {err}"
+                );
+            }
+            Ok(_) => panic!("Expected error for 403 response"),
+        }
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[tokio::test]
+    async fn stream_handles_http_429_rate_limit() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(429).set_body_string("Too Many Requests"))
+            .mount(&server)
+            .await;
+
+        let cfg = azure_config(&server.uri());
+        let auth = azure_auth_with_key("test-key");
+        let mut provider = AzureProvider::new(&cfg, auth).unwrap();
+        provider.endpoint_url = format!("{}/chat/completions", server.uri());
+
+        let messages = vec![Message {
+            role: Role::User,
+            content: "Hi".to_string(),
+        }];
+
+        let result = provider.stream(&messages, &[]).await;
+        match result {
+            Err(e) => {
+                let err = e.to_string();
+                assert!(
+                    err.contains("429"),
+                    "Error should contain 429 status: {err}"
+                );
+            }
+            Ok(_) => panic!("Expected error for 429 response"),
+        }
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[tokio::test]
+    async fn stream_handles_http_500_server_error() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+            .mount(&server)
+            .await;
+
+        let cfg = azure_config(&server.uri());
+        let auth = azure_auth_with_key("test-key");
+        let mut provider = AzureProvider::new(&cfg, auth).unwrap();
+        provider.endpoint_url = format!("{}/chat/completions", server.uri());
+
+        let messages = vec![Message {
+            role: Role::User,
+            content: "Hi".to_string(),
+        }];
+
+        let result = provider.stream(&messages, &[]).await;
+        match result {
+            Err(e) => {
+                let err = e.to_string();
+                assert!(
+                    err.contains("500"),
+                    "Error should contain 500 status: {err}"
+                );
+            }
+            Ok(_) => panic!("Expected error for 500 response"),
+        }
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[tokio::test]
+    async fn health_check_returns_unhealthy_on_error() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path_regex(r"/openai/models.*"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+            .mount(&server)
+            .await;
+
+        let cfg = azure_config(&server.uri());
+        let auth = azure_auth_with_key("test-key");
+        let mut provider = AzureProvider::new(&cfg, auth).unwrap();
+        provider.base_url = server.uri().to_string();
+
+        let health = provider.health_check().await;
+        match health {
+            ProviderHealth::Unhealthy { message } => {
+                assert!(
+                    message.contains("500"),
+                    "Unhealthy message should mention 500: {message}"
+                );
+            }
+            other => panic!("Expected Unhealthy, got {:?}", other),
+        }
+    }
+
     // rtmx:req REQ-LLM-003
     #[tokio::test]
     async fn health_check_returns_healthy() {

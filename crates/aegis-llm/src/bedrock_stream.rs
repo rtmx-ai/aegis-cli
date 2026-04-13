@@ -498,6 +498,145 @@ mod tests {
         assert_eq!(result, "contentBlockDelta");
     }
 
+    // rtmx:req REQ-TEST-009
+    #[tokio::test]
+    async fn stream_handles_truncated_frame() {
+        // Build a valid frame, then truncate it so it's shorter than
+        // the declared total_length.
+        let frame = build_test_frame(
+            "contentBlockDelta",
+            &serde_json::json!({"delta": {"text": "Hello"}}),
+        );
+        // Take only the first 8 bytes (partial prelude)
+        let truncated = frame[..8].to_vec();
+
+        let chunks: Vec<Result<bytes::Bytes, reqwest::Error>> =
+            vec![Ok(bytes::Bytes::from(truncated))];
+        let s = stream::iter(chunks);
+        let mut stream = BedrockTokenStream::new(s);
+
+        // Stream should not panic. With incomplete data and no more
+        // chunks, it should emit Done (no output tokens).
+        let event = stream.next().await.unwrap();
+        match event {
+            StreamEvent::Done {
+                input_tokens,
+                output_tokens,
+            } => {
+                assert_eq!(input_tokens, 0);
+                assert_eq!(output_tokens, 0);
+            }
+            StreamEvent::RetryableError { .. } => { /* also acceptable */ }
+            other => panic!("Expected Done or RetryableError, got {:?}", other),
+        }
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[tokio::test]
+    async fn stream_handles_empty_payload() {
+        // Build a frame with empty payload (Null JSON)
+        let frame = build_test_frame("contentBlockDelta", &serde_json::json!(null));
+
+        let chunks: Vec<Result<bytes::Bytes, reqwest::Error>> =
+            vec![Ok(bytes::Bytes::from(frame))];
+        let s = stream::iter(chunks);
+        let mut stream = BedrockTokenStream::new(s);
+
+        // The contentBlockDelta with null payload should be silently
+        // skipped (no text or toolUse delta). Stream ends with Done.
+        let event = stream.next().await.unwrap();
+        match event {
+            StreamEvent::Done { .. } => { /* expected: skipped null delta, then stream ended */ }
+            StreamEvent::Token(_) => panic!("Should not emit token for null payload"),
+            other => panic!("Expected Done, got {:?}", other),
+        }
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[tokio::test]
+    async fn stream_handles_invalid_json_in_payload() {
+        // Manually construct a frame where the payload is "not json"
+        let event_type = "contentBlockDelta";
+
+        // Build headers
+        let mut headers = Vec::new();
+        let name = b":event-type";
+        headers.push(name.len() as u8);
+        headers.extend_from_slice(name);
+        headers.push(7); // string type
+        let et_bytes = event_type.as_bytes();
+        headers.extend_from_slice(&(et_bytes.len() as u16).to_be_bytes());
+        headers.extend_from_slice(et_bytes);
+
+        let mt_name = b":message-type";
+        headers.push(mt_name.len() as u8);
+        headers.extend_from_slice(mt_name);
+        headers.push(7);
+        let mt_val = b"event";
+        headers.extend_from_slice(&(mt_val.len() as u16).to_be_bytes());
+        headers.extend_from_slice(mt_val);
+
+        let payload_bytes = b"not json at all";
+        let headers_length = headers.len() as u32;
+        let total_length = 12 + headers.len() + payload_bytes.len() + 4;
+
+        let mut frame = Vec::with_capacity(total_length);
+        frame.extend_from_slice(&(total_length as u32).to_be_bytes());
+        frame.extend_from_slice(&headers_length.to_be_bytes());
+        frame.extend_from_slice(&[0u8; 4]); // prelude CRC
+        frame.extend_from_slice(&headers);
+        frame.extend_from_slice(payload_bytes);
+        frame.extend_from_slice(&[0u8; 4]); // message CRC
+
+        let chunks: Vec<Result<bytes::Bytes, reqwest::Error>> =
+            vec![Ok(bytes::Bytes::from(frame))];
+        let s = stream::iter(chunks);
+        let mut stream = BedrockTokenStream::new(s);
+
+        // Invalid JSON payload falls through to serde default (Value::Null).
+        // contentBlockDelta with Null is skipped. Stream ends.
+        let event = stream.next().await.unwrap();
+        match event {
+            StreamEvent::Done { .. } => { /* expected */ }
+            StreamEvent::Error(_) => { /* also acceptable */ }
+            other => panic!("Expected Done or Error, got {:?}", other),
+        }
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[tokio::test]
+    async fn stream_handles_unknown_event_type() {
+        let frame = build_test_frame("unknownEvent", &serde_json::json!({"foo": "bar"}));
+
+        let stop_frame = build_test_frame(
+            "messageStop",
+            &serde_json::json!({"stopReason": "end_turn"}),
+        );
+
+        let mut all_bytes = Vec::new();
+        all_bytes.extend_from_slice(&frame);
+        all_bytes.extend_from_slice(&stop_frame);
+
+        let chunks: Vec<Result<bytes::Bytes, reqwest::Error>> =
+            vec![Ok(bytes::Bytes::from(all_bytes))];
+        let s = stream::iter(chunks);
+        let mut stream = BedrockTokenStream::new(s);
+
+        // Unknown event should be silently skipped, then messageStop
+        // should produce Done.
+        let event = stream.next().await.unwrap();
+        match event {
+            StreamEvent::Done {
+                input_tokens,
+                output_tokens,
+            } => {
+                assert_eq!(input_tokens, 0);
+                assert_eq!(output_tokens, 0);
+            }
+            other => panic!("Expected Done, got {:?}", other),
+        }
+    }
+
     // rtmx:req REQ-LLM-002
     #[test]
     fn parse_event_type_returns_empty_for_missing_header() {
