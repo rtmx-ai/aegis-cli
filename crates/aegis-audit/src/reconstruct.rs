@@ -225,4 +225,108 @@ mod tests {
         assert_eq!(started.to_rfc3339(), "2026-04-10T08:00:00+00:00");
         assert_eq!(ended.to_rfc3339(), "2026-04-10T10:00:00+00:00");
     }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn reconstruct_nonexistent_log_dir() {
+        let result =
+            reconstruct_session(Path::new("/tmp/aegis-nonexistent-dir-99999"), "any-session");
+
+        assert!(
+            result.is_err(),
+            "nonexistent log dir should return an error"
+        );
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn reconstruct_with_malformed_entries() {
+        let tmp = TempDir::new().unwrap();
+        let sid = "session-malformed";
+        let valid = make_entry("SessionStarted", sid, "2026-04-10T00:00:00Z", None);
+        // Entry missing session_id -- will not match the session filter.
+        let malformed = serde_json::to_string(&serde_json::json!({
+            "timestamp": "2026-04-10T00:01:00Z",
+            "os_user": "testuser",
+            "hostname": "testhost",
+            "event": {"ToolCallExecuted": {"tool": "ls"}}
+        }))
+        .unwrap();
+        write_segment(tmp.path(), "aegis-2026-04-10.jsonl", &[&valid, &malformed]);
+
+        let timeline = reconstruct_session(tmp.path(), sid).unwrap();
+
+        assert_eq!(
+            timeline.events.len(),
+            1,
+            "only the entry with matching session_id should appear"
+        );
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn reconstruct_with_malformed_timestamps() {
+        let tmp = TempDir::new().unwrap();
+        let sid = "session-badts";
+        // Entry with an invalid timestamp string.
+        let bad_ts = serde_json::to_string(&serde_json::json!({
+            "timestamp": "not-a-timestamp",
+            "os_user": "testuser",
+            "hostname": "testhost",
+            "session_id": sid,
+            "event": {"SessionStarted": {"session_id": sid, "timestamp": "not-a-timestamp"}}
+        }))
+        .unwrap();
+        let good = make_entry("ToolCallExecuted", sid, "2026-04-10T05:00:00Z", None);
+        write_segment(tmp.path(), "aegis-2026-04-10.jsonl", &[&bad_ts, &good]);
+
+        let timeline = reconstruct_session(tmp.path(), sid).unwrap();
+
+        // The bad-timestamp entry is still included (search matches by session_id),
+        // but started/ended should reflect only the parseable timestamp.
+        assert_eq!(timeline.events.len(), 2);
+        assert!(
+            timeline.started.is_some(),
+            "should have a start time from the valid entry"
+        );
+        assert_eq!(
+            timeline.started.unwrap().to_rfc3339(),
+            "2026-04-10T05:00:00+00:00"
+        );
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn reconstruct_counts_are_accurate_with_mixed_events() {
+        let tmp = TempDir::new().unwrap();
+        let sid = "session-mixed";
+        let e1 = make_entry("SessionStarted", sid, "2026-04-10T00:00:00Z", None);
+        let e2 = make_entry("ToolCallExecuted", sid, "2026-04-10T00:01:00Z", None);
+        let e3 = make_entry("ToolCallExecuted", sid, "2026-04-10T00:02:00Z", None);
+        let e4 = make_entry(
+            "ToolCallApproved",
+            sid,
+            "2026-04-10T00:03:00Z",
+            Some(serde_json::json!({"decision": "Approved"})),
+        );
+        let e5 = make_entry(
+            "ToolCallApproved",
+            sid,
+            "2026-04-10T00:04:00Z",
+            Some(serde_json::json!({"decision": "Denied"})),
+        );
+        let e6 = make_entry("SessionEnded", sid, "2026-04-10T00:05:00Z", None);
+        write_segment(
+            tmp.path(),
+            "aegis-2026-04-10.jsonl",
+            &[&e1, &e2, &e3, &e4, &e5, &e6],
+        );
+
+        let timeline = reconstruct_session(tmp.path(), sid).unwrap();
+
+        assert_eq!(timeline.events.len(), 6, "all events should be present");
+        assert_eq!(timeline.tool_calls, 2, "two ToolCallExecuted events");
+        assert_eq!(timeline.approvals, 1, "one Approved decision");
+        assert_eq!(timeline.denials, 1, "one Denied decision");
+    }
 }

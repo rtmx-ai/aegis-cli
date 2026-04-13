@@ -357,4 +357,119 @@ mod tests {
             "should find entries in both plain and compressed segments"
         );
     }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn search_malformed_jsonl_line_skipped() {
+        let tmp = TempDir::new().unwrap();
+        let valid = make_entry("SessionStarted", "s1", "2026-04-10T00:00:00Z");
+        write_segment(
+            tmp.path(),
+            "aegis-2026-04-10.jsonl",
+            &[&valid, "THIS IS NOT JSON {{{", &valid],
+        );
+
+        let query = SearchQuery::default();
+        let result = search_ledger(tmp.path(), &query).unwrap();
+
+        assert_eq!(result.total_matched, 2, "valid lines should be returned");
+        assert_eq!(
+            result.total_scanned, 3,
+            "all non-empty lines are scanned (corrupt ones are skipped after scan count)"
+        );
+        assert_eq!(result.entries.len(), 2, "only valid entries are returned");
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn search_missing_log_dir_returns_error() {
+        let result = search_ledger(
+            Path::new("/tmp/aegis-nonexistent-dir-12345"),
+            &SearchQuery::default(),
+        );
+
+        assert!(result.is_err(), "missing log_dir should return an error");
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn search_empty_directory_returns_empty() {
+        let tmp = TempDir::new().unwrap();
+
+        let query = SearchQuery::default();
+        let result = search_ledger(tmp.path(), &query).unwrap();
+
+        assert_eq!(result.total_matched, 0);
+        assert_eq!(result.total_scanned, 0);
+        assert!(result.entries.is_empty());
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn search_with_limit_zero_returns_at_most_one() {
+        // limit=0 triggers the `total_matched >= limit` guard after the
+        // first match (0 >= 0 is true), so at most one entry is returned.
+        // This tests the edge-case boundary of the limit parameter.
+        let tmp = TempDir::new().unwrap();
+        let e1 = make_entry("SessionStarted", "s1", "2026-04-10T00:00:00Z");
+        let e2 = make_entry("SessionStarted", "s1", "2026-04-10T00:01:00Z");
+        let e3 = make_entry("SessionStarted", "s1", "2026-04-10T00:02:00Z");
+        write_segment(tmp.path(), "aegis-2026-04-10.jsonl", &[&e1, &e2, &e3]);
+
+        let query = SearchQuery {
+            limit: Some(0),
+            ..Default::default()
+        };
+        let result = search_ledger(tmp.path(), &query).unwrap();
+
+        assert!(
+            result.entries.len() <= 1,
+            "limit=0 should return at most 1 entry due to >= check"
+        );
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn search_corrupt_zst_file_returns_error_or_skips() {
+        let tmp = TempDir::new().unwrap();
+        // Write corrupt data to a .zst file.
+        let corrupt_path = tmp.path().join("aegis-2026-04-09.jsonl.zst");
+        std::fs::write(&corrupt_path, b"not valid zstd bytes").unwrap();
+
+        let query = SearchQuery::default();
+        let result = search_ledger(tmp.path(), &query);
+
+        // The function calls read_segment which calls decompress_segment,
+        // which will fail on corrupt zstd. This should return an error.
+        assert!(result.is_err(), "corrupt .zst should produce an error");
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn search_with_since_after_until_returns_empty() {
+        let tmp = TempDir::new().unwrap();
+        let e1 = make_entry("SessionStarted", "s1", "2026-04-10T12:00:00Z");
+        write_segment(tmp.path(), "aegis-2026-04-10.jsonl", &[&e1]);
+
+        // since is AFTER until -- impossible range.
+        let query = SearchQuery {
+            since: Some(
+                "2026-04-11T00:00:00Z"
+                    .parse::<chrono::DateTime<chrono::Utc>>()
+                    .unwrap(),
+            ),
+            until: Some(
+                "2026-04-09T00:00:00Z"
+                    .parse::<chrono::DateTime<chrono::Utc>>()
+                    .unwrap(),
+            ),
+            ..Default::default()
+        };
+        let result = search_ledger(tmp.path(), &query).unwrap();
+
+        assert_eq!(
+            result.total_matched, 0,
+            "impossible time range should match nothing"
+        );
+    }
 }

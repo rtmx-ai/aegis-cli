@@ -203,4 +203,76 @@ mod tests {
         let result = compress_segment(&zst);
         assert!(result.is_err());
     }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn compress_nonexistent_file_returns_error() {
+        let tmp = TempDir::new().unwrap();
+        let bogus = tmp.path().join("does-not-exist.jsonl");
+
+        let result = compress_segment(&bogus);
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::NotFound);
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn decompress_corrupt_zst_returns_error() {
+        let tmp = TempDir::new().unwrap();
+        let corrupt_path = tmp.path().join("aegis-2026-04-10.jsonl.zst");
+        std::fs::write(&corrupt_path, b"this is not valid zstd data at all").unwrap();
+
+        let result = decompress_segment(&corrupt_path);
+
+        assert!(
+            result.is_err(),
+            "corrupt zstd data should produce an error, not a panic"
+        );
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[cfg(unix)]
+    #[test]
+    fn compress_readonly_output_dir_returns_error() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = TempDir::new().unwrap();
+        let subdir = tmp.path().join("readonly");
+        std::fs::create_dir(&subdir).unwrap();
+
+        let path = write_sample_segment(&subdir, "aegis-2026-04-10.jsonl", "{\"e\":1}\n");
+
+        // Make the directory readonly so the .zst file cannot be created.
+        std::fs::set_permissions(&subdir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        let result = compress_segment(&path);
+
+        // Restore permissions so TempDir cleanup succeeds.
+        std::fs::set_permissions(&subdir, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert!(result.is_err(), "should fail when output dir is readonly");
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn compress_empty_file_succeeds() {
+        let tmp = TempDir::new().unwrap();
+        let path = write_sample_segment(tmp.path(), "aegis-2026-04-10.jsonl", "");
+
+        let zst = compress_segment(&path).unwrap();
+
+        assert!(
+            zst.exists(),
+            "compressed file should exist even for empty input"
+        );
+        assert!(!path.exists(), "original should be removed");
+
+        // Decompress and verify empty content roundtrips.
+        let content = decompress_segment(&zst).unwrap();
+        assert!(
+            content.is_empty(),
+            "decompressed empty file should be empty"
+        );
+    }
 }
