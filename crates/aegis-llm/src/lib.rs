@@ -5,6 +5,7 @@
 //! handles auth, streaming, and tool call parsing for its API.
 
 pub mod auth;
+pub mod azure;
 pub mod capabilities;
 pub mod config;
 pub mod discovery;
