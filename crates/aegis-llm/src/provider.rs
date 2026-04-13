@@ -3,6 +3,7 @@
 use aegis_domain::error::DomainError;
 use aegis_domain::ports::LlmProvider;
 
+use crate::azure::AzureProvider;
 use crate::config::{ProviderConfig, ProviderKind};
 use crate::local::LocalProvider;
 use crate::vertex::VertexProvider;
@@ -18,9 +19,10 @@ pub fn create_provider(config: &ProviderConfig) -> Result<Box<dyn LlmProvider>, 
         ProviderKind::Bedrock => Err(DomainError::ProviderError {
             message: "Bedrock provider not yet implemented".to_string(),
         }),
-        ProviderKind::Azure => Err(DomainError::ProviderError {
-            message: "Azure OpenAI provider not yet implemented".to_string(),
-        }),
+        ProviderKind::Azure => {
+            let auth = crate::auth::resolve_auth(config)?;
+            Ok(Box::new(AzureProvider::new(config, auth)?))
+        }
     }
 }
 
