@@ -13,6 +13,7 @@ pub mod export;
 pub mod loop_runner;
 pub mod mcp;
 pub mod mcp_types;
+pub mod rate_limiter;
 pub mod repo_context;
 pub mod retry;
 pub mod session;

@@ -4,6 +4,10 @@
 //! in parallel. Each sub-agent has a restricted tool set (read-only by default)
 //! and a configurable iteration limit.
 
+use std::sync::Arc;
+
+use aegis_domain::error::DomainError;
+use aegis_domain::ports::{LlmProvider, Message, Role, SecurityFilter, StreamEvent, ToolSchema};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -216,11 +220,129 @@ impl SubAgentManager {
         self.agents = remaining;
         completed
     }
+
+    /// Spawn a sub-agent as an async task that runs an agent loop.
+    /// Returns a tuple of (sub-agent ID, JoinHandle) on success.
+    ///
+    /// The sub-agent runs in a background tokio task with restricted
+    /// (read-only) tools and no HITL gate. It communicates results back
+    /// through the JoinHandle.
+    pub async fn spawn_async(
+        &mut self,
+        config: SubAgentConfig,
+        prompt: String,
+        provider: Arc<dyn LlmProvider>,
+        _filter: Arc<dyn SecurityFilter>,
+    ) -> Result<(String, tokio::task::JoinHandle<Result<String, DomainError>>), SpawnError> {
+        // Validate read-only tool set.
+        config.validate_read_only()?;
+
+        // Check concurrency limit (reuse existing spawn logic).
+        if self.active_count() >= self.max_concurrent {
+            return Err(SpawnError {
+                message: format!(
+                    "concurrency limit reached ({}/{})",
+                    self.active_count(),
+                    self.max_concurrent
+                ),
+            });
+        }
+
+        let id = Uuid::new_v4().to_string();
+        self.agents.push(SubAgent {
+            id: id.clone(),
+            task: prompt.clone(),
+            status: SubAgentStatus::Running,
+            usage: None,
+        });
+
+        let handle = tokio::spawn(run_subagent_loop(provider, config, prompt));
+
+        Ok((id, handle))
+    }
+}
+
+/// Run a minimal agent loop for a sub-agent.
+///
+/// Uses restricted tools and has no HITL gate (sub-agents are read-only).
+/// Loops up to `config.max_iterations` times, accumulating text output
+/// from the LLM. Tool calls are not executed (sub-agents only produce
+/// text summaries from the LLM's knowledge and the prompt context).
+async fn run_subagent_loop(
+    provider: Arc<dyn LlmProvider>,
+    config: SubAgentConfig,
+    prompt: String,
+) -> Result<String, DomainError> {
+    let system_msg = Message {
+        role: Role::System,
+        content: format!(
+            "You are a read-only sub-agent. You may only use these tools: {}. \
+             Summarize your findings as text.",
+            config.allowed_tools.join(", ")
+        ),
+    };
+    let user_msg = Message {
+        role: Role::User,
+        content: prompt,
+    };
+
+    let tool_schemas: Vec<ToolSchema> = config
+        .allowed_tools
+        .iter()
+        .map(|name| ToolSchema {
+            name: name.clone(),
+            description: format!("Read-only tool: {name}"),
+            parameters: serde_json::json!({}),
+        })
+        .collect();
+
+    let mut accumulated = String::new();
+    let messages = vec![system_msg, user_msg];
+
+    for _iteration in 0..config.max_iterations {
+        let mut stream = provider.stream(&messages, &tool_schemas).await?;
+
+        let mut got_done = false;
+        while let Some(event) = stream.next().await {
+            match event {
+                StreamEvent::Token(text) => {
+                    accumulated.push_str(&text);
+                }
+                StreamEvent::Done { .. } => {
+                    got_done = true;
+                    break;
+                }
+                StreamEvent::Error(msg) => {
+                    return Err(DomainError::ProviderError { message: msg });
+                }
+                StreamEvent::RetryableError {
+                    message,
+                    retryable: _,
+                } => {
+                    return Err(DomainError::ProviderError { message });
+                }
+                StreamEvent::ToolUse(_) => {
+                    // Sub-agent does not execute tools in this minimal
+                    // loop; the LLM response is treated as text-only.
+                    continue;
+                }
+            }
+        }
+
+        // If we received a Done event, the sub-agent is finished.
+        if got_done {
+            break;
+        }
+    }
+
+    Ok(accumulated)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aegis_test_support::mock_filter::MockSecurityFilter;
+    use aegis_test_support::mock_provider::MockLlmProvider;
 
     // rtmx:req REQ-AGENT-004
     #[test]
@@ -614,5 +736,134 @@ mod tests {
         let total = mgr.total_usage();
         assert_eq!(total.input_tokens, 100);
         assert_eq!(total.output_tokens, 40);
+    }
+
+    // --- REQ-AGENT-004: Async sub-agent spawning ---
+
+    // rtmx:req REQ-AGENT-004
+    #[tokio::test]
+    async fn spawn_async_returns_id_and_handle() {
+        let mut mgr = SubAgentManager::new(4);
+        let provider = Arc::new(MockLlmProvider::new());
+        provider.queue_response(vec![
+            StreamEvent::Token("hello".into()),
+            StreamEvent::Done {
+                input_tokens: 10,
+                output_tokens: 5,
+            },
+        ]);
+        let filter = Arc::new(MockSecurityFilter);
+        let config = SubAgentConfig::default();
+
+        let result = mgr
+            .spawn_async(config, "summarize this".into(), provider, filter)
+            .await;
+        assert!(result.is_ok());
+        let (id, handle) = result.unwrap();
+        assert!(!id.is_empty());
+
+        let output = handle.await.unwrap().unwrap();
+        assert_eq!(output, "hello");
+    }
+
+    // rtmx:req REQ-AGENT-004
+    #[tokio::test]
+    async fn spawn_async_respects_max_concurrent() {
+        let mut mgr = SubAgentManager::new(1);
+        let provider = Arc::new(MockLlmProvider::new());
+        // Queue two responses (only first will be used).
+        provider.queue_response(vec![StreamEvent::Done {
+            input_tokens: 0,
+            output_tokens: 0,
+        }]);
+        provider.queue_response(vec![StreamEvent::Done {
+            input_tokens: 0,
+            output_tokens: 0,
+        }]);
+        let filter = Arc::new(MockSecurityFilter);
+
+        let _ = mgr
+            .spawn_async(
+                SubAgentConfig::default(),
+                "task 1".into(),
+                provider.clone(),
+                filter.clone(),
+            )
+            .await
+            .unwrap();
+
+        let result = mgr
+            .spawn_async(SubAgentConfig::default(), "task 2".into(), provider, filter)
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("concurrency limit"),
+            "error should mention concurrency limit: {}",
+            err.message
+        );
+    }
+
+    // rtmx:req REQ-AGENT-004
+    #[tokio::test]
+    async fn spawn_async_validates_read_only() {
+        let mut mgr = SubAgentManager::new(4);
+        let provider = Arc::new(MockLlmProvider::new());
+        let filter = Arc::new(MockSecurityFilter);
+        let config = SubAgentConfig {
+            allowed_tools: vec!["read_file".into(), "write_file".into()],
+            ..SubAgentConfig::default()
+        };
+
+        let result = mgr
+            .spawn_async(config, "task".into(), provider, filter)
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("write_file"),
+            "error should mention write_file: {}",
+            err.message
+        );
+    }
+
+    // rtmx:req REQ-AGENT-004
+    #[tokio::test]
+    async fn subagent_loop_completes_with_text() {
+        let provider = Arc::new(MockLlmProvider::new());
+        provider.queue_response(vec![
+            StreamEvent::Token("analysis ".into()),
+            StreamEvent::Token("complete".into()),
+            StreamEvent::Done {
+                input_tokens: 20,
+                output_tokens: 10,
+            },
+        ]);
+
+        let config = SubAgentConfig::default();
+        let result = run_subagent_loop(provider, config, "analyze the code".into()).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "analysis complete");
+    }
+
+    // rtmx:req REQ-AGENT-004
+    #[tokio::test]
+    async fn subagent_loop_respects_max_iterations() {
+        let provider = Arc::new(MockLlmProvider::new());
+        // Queue responses that never emit Done -- each iteration will
+        // consume one response that has only tokens (no Done).
+        for _ in 0..3 {
+            provider.queue_response(vec![StreamEvent::Token("partial".into())]);
+        }
+
+        let config = SubAgentConfig {
+            max_iterations: 3,
+            ..SubAgentConfig::default()
+        };
+
+        let result = run_subagent_loop(provider, config, "keep going".into()).await;
+        // Should succeed with accumulated text from all iterations.
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "partialpartialpartial");
     }
 }
