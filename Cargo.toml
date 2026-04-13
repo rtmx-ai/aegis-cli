@@ -78,6 +78,7 @@ tempfile = "3"
 cargo-nextest = "0.9"
 sha2 = "0.10"
 fs2 = "0.4"
+zstd = "0.13"
 globset = "0.4"
 
 [profile.release]
