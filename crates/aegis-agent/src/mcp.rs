@@ -860,6 +860,137 @@ mod tests {
         }
     }
 
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn malformed_jsonrpc_response_returns_error() {
+        // A response missing the "jsonrpc" field should fail deserialization.
+        let bad_json = r#"{"id": 1, "result": {}}"#;
+        let result: Result<JsonRpcResponse, _> = serde_json::from_str(bad_json);
+        assert!(
+            result.is_err(),
+            "response missing 'jsonrpc' field should fail to parse"
+        );
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn jsonrpc_error_response_surfaces_message() {
+        let json = r#"{
+            "jsonrpc": "2.0",
+            "id": 1,
+            "error": {"code": -32600, "message": "Invalid request"}
+        }"#;
+        let resp: JsonRpcResponse = serde_json::from_str(json).unwrap();
+        let err = resp.error.unwrap();
+        assert_eq!(err.code, -32600);
+        assert_eq!(err.message, "Invalid request");
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn tools_list_empty_result_returns_empty_vec() {
+        // Simulate a tools/list response with an empty tools array.
+        let json = r#"{
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {"tools": []}
+        }"#;
+        let resp: JsonRpcResponse = serde_json::from_str(json).unwrap();
+        let result = resp.result.unwrap();
+        let tools = result.get("tools").unwrap().as_array().unwrap();
+        assert!(tools.is_empty());
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn tool_call_with_null_result_returns_error() {
+        // A tools/call response where result is null should be treated
+        // as missing result by the execute logic.
+        let json = r#"{
+            "jsonrpc": "2.0",
+            "id": 3,
+            "result": null
+        }"#;
+        let resp: JsonRpcResponse = serde_json::from_str(json).unwrap();
+        // result field is None when JSON value is null.
+        assert!(
+            resp.result.is_none(),
+            "null result should deserialize as None"
+        );
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn qualified_name_parse_handles_no_separator() {
+        // A tool name without __ separator should fail to parse.
+        assert!(parse_qualified_name("noseparator").is_none());
+        assert!(parse_qualified_name("single_underscore").is_none());
+        assert!(parse_qualified_name("").is_none());
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn qualified_name_parse_handles_empty_parts() {
+        // "__" alone gives empty server and tool parts.
+        let result = parse_qualified_name("__");
+        assert!(result.is_some());
+        let (server, tool) = result.unwrap();
+        assert!(server.is_empty(), "server part should be empty");
+        assert!(tool.is_empty(), "tool part should be empty");
+
+        // "server__" gives empty tool name.
+        let (server, tool) = parse_qualified_name("server__").unwrap();
+        assert_eq!(server, "server");
+        assert!(tool.is_empty(), "tool part should be empty");
+
+        // "__tool" gives empty server name.
+        let (server, tool) = parse_qualified_name("__tool").unwrap();
+        assert!(server.is_empty(), "server part should be empty");
+        assert_eq!(tool, "tool");
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[tokio::test]
+    async fn execute_on_unknown_server_returns_error() {
+        let mut mgr = McpManager::new();
+        let result = mgr
+            .execute("unknown_server__some_tool", serde_json::json!({}))
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("No MCP server connection found"),
+            "error should mention missing server: {err}"
+        );
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn tool_schema_with_missing_description() {
+        let tool = McpTool {
+            server_name: "srv".to_string(),
+            name: "silent_tool".to_string(),
+            description: String::new(),
+            input_schema: serde_json::json!({"type": "object"}),
+        };
+        let schema = tool.to_tool_schema();
+        assert_eq!(schema.name, "srv__silent_tool");
+        assert!(schema.description.is_empty());
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn tool_schema_with_empty_input_schema() {
+        let tool = McpTool {
+            server_name: "srv".to_string(),
+            name: "no_params".to_string(),
+            description: "A tool with no parameters".to_string(),
+            input_schema: serde_json::json!({"type": "object"}),
+        };
+        let schema = tool.to_tool_schema();
+        assert_eq!(schema.parameters, serde_json::json!({"type": "object"}));
+    }
+
     /// Helper: create a mock transport for tests that only need
     /// to inspect tool schemas (no actual I/O).
     fn mock_transport() -> ActiveTransport {

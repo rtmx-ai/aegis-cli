@@ -176,6 +176,67 @@ mod tests {
         assert_eq!(json["jsonrpc"], "2.0");
     }
 
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn deserialize_response_missing_id() {
+        // JSON-RPC notifications have no id field.
+        let json = r#"{
+            "jsonrpc": "2.0",
+            "result": {"status": "ok"}
+        }"#;
+        let resp: JsonRpcResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.id.is_none(), "id should be None for notifications");
+        assert!(resp.result.is_some());
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn deserialize_response_with_both_result_and_error() {
+        // Ambiguous response: per JSON-RPC spec this should not happen,
+        // but we should handle it. Our struct allows both to be present;
+        // callers check error first.
+        let json = r#"{
+            "jsonrpc": "2.0",
+            "id": 5,
+            "result": {"data": "something"},
+            "error": {"code": -1, "message": "partial failure"}
+        }"#;
+        let resp: JsonRpcResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.error.is_some(), "error should take precedence");
+        assert!(resp.result.is_some(), "result should also be present");
+        // Callers should check error first.
+        assert!(!resp.is_success());
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn deserialize_response_null_result() {
+        // result: null is valid JSON-RPC (e.g., void methods).
+        let json = r#"{
+            "jsonrpc": "2.0",
+            "id": 6,
+            "result": null
+        }"#;
+        let resp: JsonRpcResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.id, Some(6));
+        assert!(
+            resp.result.is_none(),
+            "null result should deserialize as None"
+        );
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn serialize_request_with_null_params() {
+        // A notification has params: None which should be omitted.
+        let notif = JsonRpcRequest::notification("test/method");
+        let json = serde_json::to_value(&notif).unwrap();
+        assert!(
+            json.get("params").is_none(),
+            "null params should be omitted from serialization"
+        );
+    }
+
     // rtmx:req REQ-AGENT-022
     #[test]
     fn tools_call_request_format() {

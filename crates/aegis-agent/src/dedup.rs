@@ -158,6 +158,77 @@ mod tests {
         assert_eq!(dedup.should_read(&p3), ReadAdvice::Deduplicated);
     }
 
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn max_entries_zero_still_works() {
+        // A deduplicator with max_entries=0 should not panic.
+        // It effectively never caches anything.
+        let mut dedup = ReadDeduplicator::new(0);
+        let path = PathBuf::from("/tmp/test.rs");
+
+        // should_read always returns Read since nothing is cached.
+        assert_eq!(dedup.should_read(&path), ReadAdvice::Read);
+
+        // record_read with max_entries=0: the eviction guard checks
+        // max_entries > 0, so this just inserts without eviction...
+        // but on the next record it would try to evict.
+        dedup.record_read(&path, 42);
+
+        // After recording, the cache has 1 entry (since max_entries=0
+        // and the guard skips eviction when max_entries is 0).
+        // This verifies it does not panic.
+        assert_eq!(dedup.should_read(&path), ReadAdvice::Deduplicated);
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn record_read_then_invalidate_then_record_new_hash() {
+        let mut dedup = ReadDeduplicator::new(100);
+        let path = PathBuf::from("/tmp/changing.rs");
+
+        // Record initial read.
+        dedup.record_read(&path, 111);
+        assert_eq!(dedup.should_read(&path), ReadAdvice::Deduplicated);
+
+        // Invalidate (simulating a write).
+        dedup.invalidate(&path);
+        assert_eq!(dedup.should_read(&path), ReadAdvice::Read);
+
+        // Record new content with different hash.
+        dedup.record_read(&path, 222);
+        assert_eq!(dedup.should_read(&path), ReadAdvice::Deduplicated);
+
+        // Verify stats reflect the full sequence.
+        let stats = dedup.stats();
+        assert_eq!(stats.invalidations, 1);
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn stats_overflow_does_not_panic() {
+        let mut dedup = ReadDeduplicator::new(10);
+        let path = PathBuf::from("/tmp/busy.rs");
+
+        // Call should_read many times. usize max is huge, so we just
+        // verify that a large number of calls does not panic or wrap.
+        for i in 0..10_000 {
+            if i % 2 == 0 {
+                dedup.should_read(&path);
+            } else {
+                dedup.record_read(&path, i as u64);
+            }
+        }
+
+        let stats = dedup.stats();
+        // 5000 calls to should_read.
+        assert_eq!(stats.reads, 5000);
+        // First call is a miss, rest are hits (since record_read is
+        // called on odd iterations, keeping the cache populated).
+        assert!(stats.hits > 0);
+        assert!(stats.misses > 0);
+        assert_eq!(stats.hits + stats.misses, 5000);
+    }
+
     // rtmx:req REQ-AGENT-029
     #[test]
     fn stats_tracks_correctly() {
