@@ -555,6 +555,81 @@ mod tests {
         );
     }
 
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn new_fails_with_empty_model() {
+        let mut cfg = bedrock_config();
+        cfg.model = "".to_string();
+        let auth = test_aws_auth("us-east-1");
+        // An empty model produces a malformed endpoint URL. The provider
+        // constructor succeeds but the endpoint is useless. Verify it does
+        // not panic and the endpoint contains the empty model segment.
+        let provider = BedrockProvider::new(&cfg, auth).unwrap();
+        assert!(
+            provider.endpoint_url.contains("/model//converse-stream"),
+            "Endpoint should contain empty model segment: {}",
+            provider.endpoint_url
+        );
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn new_fails_with_empty_region() {
+        let cfg = bedrock_config();
+        let auth = ProviderAuth::Aws {
+            access_key_id: "AKIA".to_string(),
+            secret_access_key: "secret".to_string(),
+            session_token: None,
+            region: "   ".to_string(), // whitespace-only, not just ""
+        };
+        let result = BedrockProvider::new(&cfg, auth);
+        assert!(result.is_err(), "Whitespace-only region should be rejected");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("region"), "Error should mention region: {err}");
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn converse_body_handles_empty_messages() {
+        let cfg = bedrock_config();
+        let auth = test_aws_auth("us-east-1");
+        let provider = BedrockProvider::new(&cfg, auth).unwrap();
+
+        let body = provider.build_converse_body(&[], &[]);
+
+        // Should produce valid JSON with empty messages array
+        let msgs = body["messages"].as_array().unwrap();
+        assert!(msgs.is_empty(), "messages should be empty");
+        assert!(
+            body.get("system").is_none(),
+            "system field should be absent"
+        );
+        assert!(
+            body.get("toolConfig").is_none(),
+            "toolConfig should be absent"
+        );
+    }
+
+    // rtmx:req REQ-TEST-009
+    #[test]
+    fn converse_body_handles_empty_tools() {
+        let cfg = bedrock_config();
+        let auth = test_aws_auth("us-east-1");
+        let provider = BedrockProvider::new(&cfg, auth).unwrap();
+
+        let messages = vec![Message {
+            role: Role::User,
+            content: "Hello".to_string(),
+        }];
+
+        let body = provider.build_converse_body(&messages, &[]);
+
+        assert!(
+            body.get("toolConfig").is_none(),
+            "toolConfig should be omitted when tools is empty"
+        );
+    }
+
     // rtmx:req REQ-LLM-002
     #[test]
     fn sign_request_adds_auth_headers() {
