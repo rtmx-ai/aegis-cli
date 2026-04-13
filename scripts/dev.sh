@@ -11,8 +11,9 @@
 #   AEGIS_DEV_AGENT=codex ./scripts/dev.sh   # use OpenAI Codex CLI
 #
 # Usage:
-#   ./scripts/dev.sh [--agent <name>]   # launch dev session
-#   ./scripts/dev.sh attach             # reattach
+#   ./scripts/dev.sh [--agent <name>]   # launch new session with default prompt
+#   ./scripts/dev.sh --resume           # resume latest Claude Code session
+#   ./scripts/dev.sh attach             # reattach to tmux
 #   ./scripts/dev.sh kill               # tear down
 
 set -euo pipefail
@@ -24,6 +25,7 @@ CLAUDE_PROMPT='Describe the critical path. Propose a plan to accomplish the next
 
 # Parse args
 AGENT="${AEGIS_DEV_AGENT:-claude}"
+RESUME=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
         attach)
@@ -39,8 +41,12 @@ while [[ $# -gt 0 ]]; do
             AGENT="$2"
             shift 2
             ;;
+        --resume)
+            RESUME=true
+            shift
+            ;;
         *)
-            echo "Usage: dev.sh [--agent <name>] | attach | kill"
+            echo "Usage: dev.sh [--agent <name>] [--resume] | attach | kill"
             exit 1
             ;;
     esac
@@ -79,9 +85,16 @@ tmux set-option -t "$SESSION" -g status-right "#[fg=white,dim] C-b arrows:pane |
 tmux set-option -t "$SESSION" -g status-right-length 60
 tmux set-option -t "$SESSION" -g status-style "bg=black,fg=white"
 
-# Left pane: AI coding agent (interactive session with critical path prompt)
-tmux send-keys -t "$SESSION:0.0" \
-  "cd $PROJECT_DIR && $AGENT \"$CLAUDE_PROMPT\"" Enter
+# Left pane: AI coding agent
+if [ "$RESUME" = true ]; then
+    # Resume the latest Claude Code session (--continue flag)
+    tmux send-keys -t "$SESSION:0.0" \
+      "cd $PROJECT_DIR && $AGENT --continue" Enter
+else
+    # New session with the default critical path prompt
+    tmux send-keys -t "$SESSION:0.0" \
+      "cd $PROJECT_DIR && $AGENT \"$CLAUDE_PROMPT\"" Enter
+fi
 
 # Right pane: aegis-cli with auto-rebuild on source changes
 tmux split-window -h -t "$SESSION" -c "$PROJECT_DIR"
