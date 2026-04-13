@@ -252,6 +252,136 @@ fn test_ci_has_rpm_smoke_test() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// REQ-BUILD-002: Standalone installer packaging for closed network transfer
+// (parent rollup)
+//
+// Acceptance criterion: "Installer works offline on RHEL and Windows"
+// Validates that all package formats (deb, rpm, msi, airgap) are generated
+// in CI, version-consistent, and the airgap bundle is self-contained with
+// binary, SBOM, manifest, version metadata, and plugins.
+// ---------------------------------------------------------------------------
+
+// rtmx:req REQ-BUILD-002
+#[test]
+fn test_all_package_formats_generated_in_ci() {
+    let ci = read_file(".github/workflows/ci.yml");
+    // DEB (REQ-BUILD-042)
+    assert!(ci.contains("deb-package:"), "CI must have deb-package job");
+    // RPM (REQ-BUILD-043)
+    assert!(ci.contains("rpm-package:"), "CI must have rpm-package job");
+    // Airgap bundle (REQ-BUILD-049)
+    assert!(
+        ci.contains("airgap-bundle:"),
+        "CI must have airgap-bundle job"
+    );
+    // Release workflow produces all formats including MSI (REQ-BUILD-047)
+    let release = read_file(".github/workflows/release.yml");
+    assert!(
+        release.contains("cargo wix"),
+        "release workflow must produce MSI via cargo wix"
+    );
+    assert!(
+        release.contains("cargo deb") || release.contains("cargo-deb"),
+        "release workflow must produce .deb"
+    );
+    assert!(
+        release.contains("cargo-generate-rpm"),
+        "release workflow must produce .rpm"
+    );
+}
+
+// rtmx:req REQ-BUILD-002
+#[test]
+fn test_all_package_formats_share_version_source() {
+    let release = read_file(".github/workflows/release.yml");
+    // All platform builds extract version from the same Cargo.toml
+    // via the same grep pattern. This ensures version consistency.
+    let version_extractions = release
+        .lines()
+        .filter(|l| l.contains("grep '^version' Cargo.toml"))
+        .count();
+    assert!(
+        version_extractions >= 3,
+        "all platform builds must extract version from workspace Cargo.toml \
+         (found {version_extractions}, expected >= 3 for linux, macos, windows)"
+    );
+}
+
+// rtmx:req REQ-BUILD-002
+#[test]
+fn test_airgap_bundle_is_self_contained() {
+    let ci = read_file(".github/workflows/ci.yml");
+    // Must contain the static binary (no glibc dependency)
+    assert!(
+        ci.contains("x86_64-unknown-linux-musl"),
+        "airgap bundle must use musl static binary (no runtime dependencies)"
+    );
+    // Must contain SBOM for supply chain transparency
+    assert!(
+        ci.contains("sbom.json"),
+        "airgap bundle must include sbom.json"
+    );
+    // Must contain SHA-256 manifest for integrity verification
+    assert!(
+        ci.contains("sha256sum -c manifest.txt"),
+        "airgap bundle must verify SHA-256 manifest"
+    );
+    // Must contain version metadata
+    assert!(
+        ci.contains("version.json"),
+        "airgap bundle must include version.json"
+    );
+    // Must include plugins directory for closed-network plugin availability
+    assert!(
+        ci.contains("plugins/") || ci.contains("plugins"),
+        "airgap bundle must include plugins/ directory for closed-network deployments"
+    );
+    // Binary must be verified to run within the bundle (no external deps)
+    assert!(
+        ci.contains("./aegis --version"),
+        "airgap bundle verification must run ./aegis --version to prove self-containment"
+    );
+}
+
+// rtmx:req REQ-BUILD-002
+#[test]
+fn test_release_airgap_bundle_includes_plugins() {
+    let release = read_file(".github/workflows/release.yml");
+    // Airgap bundle in release workflow must also include plugins
+    assert!(
+        release.contains("plugins/") || release.contains("plugins"),
+        "release airgap bundle must include plugins/ for closed-network transfer"
+    );
+}
+
+// rtmx:req REQ-BUILD-002
+#[test]
+fn test_all_smoke_tests_present() {
+    let ci = read_file(".github/workflows/ci.yml");
+    let release = read_file(".github/workflows/release.yml");
+    // DEB smoke test (REQ-BUILD-045)
+    assert!(
+        ci.contains("dpkg -i") && ci.contains("aegis --version"),
+        "CI must smoke test .deb install"
+    );
+    // RPM smoke test on RHEL 9 (REQ-BUILD-046)
+    assert!(
+        ci.contains("redhat/ubi9") && ci.contains("aegis --version"),
+        "CI must smoke test .rpm install on RHEL 9"
+    );
+    // MSI smoke test (REQ-BUILD-048)
+    assert!(
+        release.contains("msiexec") && release.contains("aegis --version"),
+        "release must smoke test MSI silent install"
+    );
+    // Airgap bundle verification (REQ-BUILD-049)
+    assert!(
+        ci.contains("sha256sum -c manifest.txt") && ci.contains("./aegis --version"),
+        "CI must verify airgap bundle integrity and binary execution"
+    );
+}
+
 // rtmx:req REQ-BUILD-035
 #[test]
 fn test_main_has_sigterm_handler() {

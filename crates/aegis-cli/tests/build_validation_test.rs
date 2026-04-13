@@ -217,6 +217,267 @@ fn test_release_sets_source_date_epoch() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// REQ-BUILD-003: Binary signing and SBOM generation (parent rollup)
+//
+// Acceptance criterion: "Binary is code-signed with SBOM attached"
+// Validates that all three sub-requirements (039 SBOM, 040 GPG, 041
+// Authenticode) are wired into the release workflow such that every
+// platform's artifacts are signed and Linux artifacts include an SBOM.
+// ---------------------------------------------------------------------------
+
+// rtmx:req REQ-BUILD-003
+#[test]
+fn test_every_release_platform_has_signing() {
+    let release = read_release_yml();
+    // Linux: GPG detached signatures on all artifacts
+    assert!(
+        release.contains("gpg") && release.contains("detach-sign"),
+        "release workflow must GPG-sign Linux artifacts (REQ-BUILD-040)"
+    );
+    // Windows: Authenticode embedded signature
+    assert!(
+        release.contains("Set-AuthenticodeSignature"),
+        "release workflow must Authenticode-sign Windows artifacts (REQ-BUILD-041)"
+    );
+    // Sign job depends on all three platform builds
+    assert!(
+        release.contains("needs: [build-linux, build-macos, build-windows]"),
+        "sign job must depend on all platform builds to sign everything"
+    );
+}
+
+// rtmx:req REQ-BUILD-003
+#[test]
+fn test_sbom_generated_and_included_in_release() {
+    let release = read_release_yml();
+    // SBOM generated via cargo-cyclonedx in Linux build
+    assert!(
+        release.contains("cargo-cyclonedx") || release.contains("cargo cyclonedx"),
+        "release workflow must generate CycloneDX SBOM"
+    );
+    // SBOM copied into release artifacts for signing
+    assert!(
+        release.contains("aegis-cli.cdx.json") && release.contains("release-artifacts"),
+        "SBOM must be collected into release-artifacts for GPG signing"
+    );
+    // SBOM included in airgap bundle
+    assert!(
+        release.contains("sbom.json"),
+        "SBOM must be included in airgap bundle as sbom.json"
+    );
+}
+
+// rtmx:req REQ-BUILD-003
+#[test]
+fn test_signing_verification_runs_before_release() {
+    let release = read_release_yml();
+    // Sign job verifies every signature before upload
+    assert!(
+        release.contains("gpg --verify"),
+        "sign job must verify all GPG signatures"
+    );
+    assert!(
+        release.contains("Get-AuthenticodeSignature"),
+        "Windows build must verify Authenticode signature"
+    );
+    // Release job depends on sign job (signatures verified before publish)
+    assert!(
+        release.contains("needs: [sign]"),
+        "release job must depend on sign job -- no unsigned artifacts published"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// REQ-BUILD-009: Windows MSI installer via WiX for enterprise push
+// deployment (parent rollup)
+//
+// Acceptance criterion: "MSI installs silently via msiexec /qn"
+// Validates the complete enterprise deployment chain: WiX source defines
+// correct installer semantics, release workflow generates + signs + smoke
+// tests the MSI, and the installer supports SCCM/Intune push deployment.
+// ---------------------------------------------------------------------------
+
+// rtmx:req REQ-BUILD-009
+#[test]
+fn test_msi_enterprise_deployment_chain() {
+    let release = read_release_yml();
+    // Full chain: generate -> smoke test -> sign -> publish
+    assert!(
+        release.contains("cargo wix"),
+        "release must generate MSI via cargo wix (REQ-BUILD-047)"
+    );
+    assert!(
+        release.contains("msiexec") && release.contains("/qn"),
+        "release must smoke test silent install via msiexec /qn (REQ-BUILD-048)"
+    );
+    assert!(
+        release.contains("Set-AuthenticodeSignature"),
+        "release must Authenticode-sign the MSI (REQ-BUILD-041)"
+    );
+    // MSI uploaded as release artifact
+    assert!(
+        release.contains("*.msi") && release.contains("release-artifacts"),
+        "signed MSI must be collected into release-artifacts"
+    );
+}
+
+// rtmx:req REQ-BUILD-009
+#[test]
+fn test_wix_supports_enterprise_deployment() {
+    let wxs_path = workspace_root().join("crates/aegis-cli/wix/main.wxs");
+    let wxs = std::fs::read_to_string(&wxs_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", wxs_path.display()));
+    // Per-machine install (required for SCCM push)
+    assert!(
+        wxs.contains("perMachine"),
+        "MSI must use InstallScope='perMachine' for enterprise deployment"
+    );
+    // Stable UpgradeCode (required for Intune detection rules)
+    assert!(
+        wxs.contains("UpgradeCode"),
+        "MSI must define a stable UpgradeCode for upgrade/detection"
+    );
+    // MajorUpgrade element (in-place upgrade support)
+    assert!(
+        wxs.contains("MajorUpgrade"),
+        "MSI must define MajorUpgrade for in-place upgrades"
+    );
+    // Downgrade prevention
+    assert!(
+        wxs.contains("DowngradeErrorMessage"),
+        "MSI must prevent downgrades with DowngradeErrorMessage"
+    );
+    // PATH integration (aegis available from cmd/powershell after install)
+    assert!(
+        wxs.contains("Environment") && wxs.contains("PATH"),
+        "MSI must add install directory to system PATH"
+    );
+    // Installs to Program Files (not user profile)
+    assert!(
+        wxs.contains("ProgramFiles64Folder"),
+        "MSI must install to 64-bit Program Files"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// REQ-BUILD-010: Linux RPM/DEB with correct ownership and SELinux labels
+// (parent rollup)
+//
+// Acceptance criterion: "RPM installs on RHEL 8/9 with correct SELinux type"
+// Validates the complete Linux packaging chain: deb + rpm generation with
+// correct file modes, SELinux context labeling, GPG signing, and smoke
+// tests on real RHEL 9 containers.
+// ---------------------------------------------------------------------------
+
+// rtmx:req REQ-BUILD-010
+#[test]
+fn test_linux_packaging_chain() {
+    let ci = read_ci_yml();
+    let release = read_release_yml();
+    // DEB generation (REQ-BUILD-042)
+    assert!(
+        ci.contains("cargo deb") || ci.contains("cargo-deb"),
+        "CI must generate .deb package (REQ-BUILD-042)"
+    );
+    // RPM generation (REQ-BUILD-043)
+    assert!(
+        ci.contains("cargo generate-rpm") || ci.contains("cargo-generate-rpm"),
+        "CI must generate .rpm package (REQ-BUILD-043)"
+    );
+    // Both packages generated in release workflow too
+    assert!(
+        release.contains("cargo deb") || release.contains("cargo-deb"),
+        "release workflow must generate .deb package"
+    );
+    assert!(
+        release.contains("cargo-generate-rpm"),
+        "release workflow must generate .rpm package"
+    );
+    // GPG signing covers deb and rpm (REQ-BUILD-040)
+    assert!(
+        release.contains("*.deb") || release.contains("aegis-cli_"),
+        "release must include .deb in signed artifacts"
+    );
+    assert!(
+        release.contains("*.rpm") || release.contains("aegis-cli-"),
+        "release must include .rpm in signed artifacts"
+    );
+}
+
+// rtmx:req REQ-BUILD-010
+#[test]
+fn test_rpm_file_modes_and_selinux() {
+    let toml =
+        std::fs::read_to_string(workspace_root().join("crates/aegis-cli/Cargo.toml")).unwrap();
+    // Binary installed with mode 755 (rwxr-xr-x)
+    assert!(
+        toml.contains("mode = \"755\"") && toml.contains("/usr/bin/aegis"),
+        "RPM must install /usr/bin/aegis with mode 755"
+    );
+    // Documentation installed with mode 644 (rw-r--r--)
+    assert!(
+        toml.contains("mode = \"644\""),
+        "RPM must install documentation with mode 644"
+    );
+    // SELinux post-install script (REQ-BUILD-044)
+    assert!(
+        toml.contains("semanage fcontext") && toml.contains("bin_t"),
+        "RPM post-install must set SELinux type bin_t on /usr/bin/aegis"
+    );
+    assert!(
+        toml.contains("restorecon"),
+        "RPM post-install must run restorecon to apply SELinux context"
+    );
+}
+
+// rtmx:req REQ-BUILD-010
+#[test]
+fn test_deb_file_modes() {
+    let toml =
+        std::fs::read_to_string(workspace_root().join("crates/aegis-cli/Cargo.toml")).unwrap();
+    // Binary to /usr/bin/ with mode 755
+    assert!(
+        toml.contains("\"usr/bin/\", \"755\""),
+        "DEB must install binary to /usr/bin/ with mode 755"
+    );
+    // License and README with mode 644
+    assert!(
+        toml.contains("\"644\""),
+        "DEB must install docs with mode 644"
+    );
+}
+
+// rtmx:req REQ-BUILD-010
+#[test]
+fn test_rpm_smoke_test_on_rhel9() {
+    let ci = read_ci_yml();
+    // Must test on real RHEL 9 image (not generic Ubuntu)
+    assert!(
+        ci.contains("redhat/ubi9"),
+        "RPM smoke test must run in redhat/ubi9 container for RHEL 9 validation"
+    );
+    // Must install and run the binary
+    assert!(
+        ci.contains("rpm -i") && ci.contains("aegis --version"),
+        "RPM smoke test must install via rpm and verify aegis --version"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn read_release_yml() -> String {
+    let path = workspace_root().join(".github/workflows/release.yml");
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+}
+
+fn read_ci_yml() -> String {
+    let path = workspace_root().join(".github/workflows/ci.yml");
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+}
+
 // rtmx:req REQ-BUILD-027
 #[test]
 fn test_homebrew_formula_exists() {

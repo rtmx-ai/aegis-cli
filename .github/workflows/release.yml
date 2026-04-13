@@ -93,6 +93,18 @@ jobs:
           cp LICENSE "$STAGING/LICENSE"
           cp README.md "$STAGING/README.md"
 
+          # plugins/ directory for closed-network deployments.
+          mkdir -p "$STAGING/plugins"
+          cat > "$STAGING/plugins/PLUGINS.md" <<'PLUGINEOF'
+          # Bundled Plugins
+          #
+          # Place plugin binaries in this directory before installation.
+          # aegis discovers plugins on PATH or in ~/.aegis/plugins/.
+          #
+          # Required plugins by mode:
+          #   gcp-assured-workloads  -- GCP Assured Workloads IL4/IL5
+          PLUGINEOF
+
           cat > "$STAGING/version.json" <<JSON
           {
             "version": "${VERSION}",
@@ -103,7 +115,7 @@ jobs:
           JSON
 
           cd "$STAGING"
-          sha256sum aegis sbom.json LICENSE README.md version.json > manifest.txt
+          sha256sum aegis sbom.json LICENSE README.md version.json plugins/PLUGINS.md > manifest.txt
           cat manifest.txt
 
           cd ..

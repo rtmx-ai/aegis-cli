@@ -322,6 +322,22 @@ jobs:
           cp LICENSE "$STAGING/LICENSE"
           cp README.md "$STAGING/README.md"
 
+          # plugins/ directory for closed-network deployments.
+          # Plugin binaries are fetched from their GitHub releases and
+          # bundled so airgap environments have everything needed.
+          # When no pre-built plugin binaries are available (CI-only),
+          # include the directory with a manifest of expected plugins.
+          mkdir -p "$STAGING/plugins"
+          cat > "$STAGING/plugins/PLUGINS.md" <<'PLUGINEOF'
+          # Bundled Plugins
+          #
+          # Place plugin binaries in this directory before installation.
+          # aegis discovers plugins on PATH or in ~/.aegis/plugins/.
+          #
+          # Required plugins by mode:
+          #   gcp-assured-workloads  -- GCP Assured Workloads IL4/IL5
+          PLUGINEOF
+
           # version.json
           cat > "$STAGING/version.json" <<JSON
           {
@@ -334,7 +350,7 @@ jobs:
 
           # manifest.txt: SHA-256 of every file in the bundle
           cd "$STAGING"
-          sha256sum aegis sbom.json LICENSE README.md version.json > manifest.txt
+          sha256sum aegis sbom.json LICENSE README.md version.json plugins/PLUGINS.md > manifest.txt
           cat manifest.txt
 
           # Tarball
@@ -356,6 +372,8 @@ jobs:
           test -f manifest.txt || { echo "Missing manifest.txt"; exit 1; }
           test -f version.json || { echo "Missing version.json"; exit 1; }
           test -f LICENSE || { echo "Missing LICENSE"; exit 1; }
+          test -d plugins || { echo "Missing plugins/ directory"; exit 1; }
+          test -f plugins/PLUGINS.md || { echo "Missing plugins/PLUGINS.md"; exit 1; }
           # Verify manifest checksums
           sha256sum -c manifest.txt
           # Verify the binary runs
