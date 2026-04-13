@@ -4,7 +4,14 @@
 //! determines the color depth available, so the TUI can fall back to
 //! 256-color or 16-color palettes when true color is not supported.
 
+use crossterm::cursor::SetCursorStyle;
 use std::env;
+
+/// The cursor style used when the TUI is active (REQ-TUI-039).
+///
+/// Steady block cursor provides clear visibility in terminal environments,
+/// consistent with CUI operator expectations.
+pub const CURSOR_STYLE: SetCursorStyle = SetCursorStyle::SteadyBlock;
 
 /// Supported color depths, from richest to most constrained.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -414,5 +421,14 @@ mod tests {
     // rtmx:req REQ-TUI-013
     fn plain_text_term_dumb_case_insensitive() {
         assert!(should_use_plain_text_from(false, "DUMB", None));
+    }
+
+    #[test]
+    // rtmx:req REQ-TUI-039
+    fn cursor_style_is_steady_block() {
+        assert!(
+            matches!(CURSOR_STYLE, SetCursorStyle::SteadyBlock),
+            "TUI cursor must be steady block style"
+        );
     }
 }

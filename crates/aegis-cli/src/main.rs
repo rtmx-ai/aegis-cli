@@ -589,7 +589,7 @@ async fn run_interactive_chat(
         EnterAlternateScreen,
         crossterm::event::EnableBracketedPaste,
         crossterm::event::EnableMouseCapture,
-        crossterm::cursor::SetCursorStyle::SteadyBlock
+        aegis_tui::terminal::CURSOR_STYLE
     )
     .map_err(|e| format!("Terminal error: {e}"))?;
 

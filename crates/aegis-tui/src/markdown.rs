@@ -19,6 +19,9 @@ const CODE_BLOCK_BG: Color = Color::Rgb(30, 30, 30);
 /// Style applied to language labels (REQ-TUI-043).
 const LANG_LABEL_STYLE: Style = Style::new().fg(Color::DarkGray).bg(CODE_BLOCK_BG);
 
+/// Style applied to line number gutters (REQ-TUI-044).
+const LINE_NUMBER_STYLE: Style = Style::new().fg(Color::DarkGray).bg(CODE_BLOCK_BG);
+
 /// Render a markdown string into styled ratatui Lines.
 pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
     if text.is_empty() {
@@ -57,20 +60,25 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
                 lines_out.push(Line::from(label_span));
             }
 
+            // REQ-TUI-044: compute gutter width from total line count
+            let gutter_width = line_number_width(code_lines.len());
+
             if let Some(syn) = syntax {
                 let mut h = HighlightLines::new(syn, theme);
-                for code_line in &code_lines {
+                for (i, code_line) in code_lines.iter().enumerate() {
                     let regions = h.highlight_line(code_line, &ss).unwrap_or_default();
-                    let spans = syntect_regions_to_spans(&regions, code_line);
+                    let mut spans = Vec::new();
+                    spans.push(line_number_span(i + 1, gutter_width));
+                    spans.extend(syntect_regions_to_spans(&regions, code_line));
                     lines_out.push(Line::from(spans));
                 }
             } else {
                 // Unknown language -- plain text with dark bg
-                for code_line in &code_lines {
-                    lines_out.push(Line::from(Span::styled(
-                        code_line.clone(),
-                        Style::default().bg(CODE_BLOCK_BG),
-                    )));
+                for (i, code_line) in code_lines.iter().enumerate() {
+                    lines_out.push(Line::from(vec![
+                        line_number_span(i + 1, gutter_width),
+                        Span::styled(code_line.clone(), Style::default().bg(CODE_BLOCK_BG)),
+                    ]));
                 }
             }
 
@@ -198,6 +206,23 @@ fn syntect_regions_to_spans(
         ));
     }
     spans
+}
+
+/// Compute the character width needed for the largest line number.
+fn line_number_width(total_lines: usize) -> usize {
+    if total_lines == 0 {
+        1
+    } else {
+        total_lines.to_string().len()
+    }
+}
+
+/// Create a right-aligned, dim line number span with separator.
+fn line_number_span(line_num: usize, width: usize) -> Span<'static> {
+    Span::styled(
+        format!("{line_num:>width$} | ", width = width),
+        LINE_NUMBER_STYLE,
+    )
 }
 
 fn render_line(line: &str) -> Line<'static> {
@@ -426,8 +451,8 @@ mod tests {
         // before, code line, after = 3 lines
         assert_eq!(lines.len(), 3);
         assert_eq!(lines[0].spans[0].content, "before");
-        // The code line should have dark background
-        let code_span = &lines[1].spans[0];
+        // spans[0] is line number gutter, spans[1] is the code content
+        let code_span = &lines[1].spans[1];
         assert_eq!(code_span.content, "hello world");
         assert_eq!(code_span.style.bg, Some(CODE_BLOCK_BG));
         assert_eq!(lines[2].spans[0].content, "after");
@@ -439,8 +464,9 @@ mod tests {
         let input = "```\n  indented\n    more indented\n```";
         let lines = render_markdown(input);
         assert_eq!(lines.len(), 2);
-        assert_eq!(lines[0].spans[0].content, "  indented");
-        assert_eq!(lines[1].spans[0].content, "    more indented");
+        // spans[0] is line number gutter, spans[1] is code content
+        assert_eq!(lines[0].spans[1].content, "  indented");
+        assert_eq!(lines[1].spans[1].content, "    more indented");
     }
 
     // rtmx:req REQ-TUI-041
@@ -474,6 +500,7 @@ mod tests {
         let lines = render_markdown(input);
         // block one line, text between, block two line = 3
         assert_eq!(lines.len(), 3);
+        // Line number gutter has code block bg
         assert_eq!(lines[0].spans[0].style.bg, Some(CODE_BLOCK_BG));
         assert_eq!(lines[1].spans[0].style, Style::default());
         assert_eq!(lines[2].spans[0].style.bg, Some(CODE_BLOCK_BG));
@@ -506,11 +533,14 @@ mod tests {
         let lines = render_markdown(input);
         assert_eq!(lines.len(), 3);
         for line in &lines {
-            assert_eq!(
-                line.spans[0].style.bg,
-                Some(CODE_BLOCK_BG),
-                "All code block lines must have dark background"
-            );
+            // All spans (gutter + code) should have the dark bg
+            for span in &line.spans {
+                assert_eq!(
+                    span.style.bg,
+                    Some(CODE_BLOCK_BG),
+                    "All code block spans must have dark background"
+                );
+            }
         }
     }
 
@@ -559,10 +589,11 @@ mod tests {
         let lines = render_markdown(input);
         // lang label + 1 code line
         assert!(lines.len() >= 2);
-        // The code line should have dark bg but no syntax coloring
+        // The code line: spans[0]=gutter, spans[1]=plain code
         let code_line = &lines[1];
-        assert_eq!(code_line.spans.len(), 1);
-        assert_eq!(code_line.spans[0].style.bg, Some(CODE_BLOCK_BG));
+        assert_eq!(code_line.spans.len(), 2);
+        assert_eq!(code_line.spans[0].style.bg, Some(CODE_BLOCK_BG)); // gutter
+        assert_eq!(code_line.spans[1].style.bg, Some(CODE_BLOCK_BG)); // code
     }
 
     // rtmx:req REQ-TUI-042
@@ -641,11 +672,10 @@ mod tests {
     fn no_language_label_for_untagged_blocks() {
         let input = "```\nsome code\n```";
         let lines = render_markdown(input);
-        // No language label -- just the code line
+        // No language label -- just the code line (with line number gutter)
         assert_eq!(lines.len(), 1);
-        // The first (and only) line should be the code, not a label
-        let full: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
-        assert_eq!(full, "some code");
+        // spans[0] is gutter, spans[1] is the code content
+        assert_eq!(lines[0].spans[1].content, "some code");
     }
 
     // rtmx:req REQ-TUI-043
@@ -726,5 +756,77 @@ mod tests {
             resolve_syntax(&ss, "unknownlang123").is_none(),
             "Unknown language should return None"
         );
+    }
+
+    // ---- REQ-TUI-044: Line numbers ----
+
+    // rtmx:req REQ-TUI-044
+    #[test]
+    fn line_numbers_sequential() {
+        let input = "```\nalpha\nbeta\ngamma\n```";
+        let lines = render_markdown(input);
+        assert_eq!(lines.len(), 3);
+        assert!(lines[0].spans[0].content.contains("1"));
+        assert!(lines[1].spans[0].content.contains("2"));
+        assert!(lines[2].spans[0].content.contains("3"));
+    }
+
+    // rtmx:req REQ-TUI-044
+    #[test]
+    fn line_numbers_right_aligned() {
+        // Build a code block with 12 lines so single digits get padded
+        let mut input = String::from("```\n");
+        for i in 1..=12 {
+            input.push_str(&format!("line{i}\n"));
+        }
+        input.push_str("```");
+        let lines = render_markdown(&input);
+        assert_eq!(lines.len(), 12);
+        // Line 1 gutter should be right-aligned: " 1 | "
+        assert_eq!(lines[0].spans[0].content, " 1 | ");
+        // Line 12 gutter should be: "12 | "
+        assert_eq!(lines[11].spans[0].content, "12 | ");
+    }
+
+    // rtmx:req REQ-TUI-044
+    #[test]
+    fn line_numbers_have_dim_style() {
+        let input = "```\ncode\n```";
+        let lines = render_markdown(input);
+        assert_eq!(lines.len(), 1);
+        let gutter = &lines[0].spans[0];
+        assert_eq!(gutter.style, LINE_NUMBER_STYLE);
+    }
+
+    // rtmx:req REQ-TUI-044
+    #[test]
+    fn line_number_width_helper() {
+        assert_eq!(line_number_width(0), 1);
+        assert_eq!(line_number_width(1), 1);
+        assert_eq!(line_number_width(9), 1);
+        assert_eq!(line_number_width(10), 2);
+        assert_eq!(line_number_width(99), 2);
+        assert_eq!(line_number_width(100), 3);
+    }
+
+    // rtmx:req REQ-TUI-044
+    #[test]
+    fn line_number_span_format() {
+        let span = line_number_span(1, 1);
+        assert_eq!(span.content, "1 | ");
+        let span = line_number_span(5, 3);
+        assert_eq!(span.content, "  5 | ");
+    }
+
+    // rtmx:req REQ-TUI-044
+    #[test]
+    fn highlighted_code_block_has_line_numbers() {
+        let input = "```rust\nlet x = 1;\nlet y = 2;\n```";
+        let lines = render_markdown(input);
+        // lang label + 2 code lines
+        assert_eq!(lines.len(), 3);
+        // Code lines (index 1, 2) should have gutter as first span
+        assert!(lines[1].spans[0].content.contains("1"));
+        assert!(lines[2].spans[0].content.contains("2"));
     }
 }
