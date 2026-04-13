@@ -100,6 +100,18 @@ enum Commands {
         /// Override LLM endpoint (for testing)
         #[arg(long)]
         local_endpoint: Option<String>,
+        /// LLM provider: local, vertex, bedrock, azure
+        #[arg(long)]
+        provider: Option<String>,
+        /// Model name or deployment ID
+        #[arg(long)]
+        model: Option<String>,
+        /// Cloud region (required for Bedrock, optional for Vertex)
+        #[arg(long)]
+        region: Option<String>,
+        /// Provider endpoint URL (overrides default)
+        #[arg(long)]
+        endpoint: Option<String>,
     },
     /// Check infrastructure health via plugin status
     Doctor,
@@ -136,7 +148,20 @@ fn main() {
             headless,
             no_tui,
             local_endpoint,
-        }) => run_chat(prompt, headless, no_tui, local_endpoint),
+            provider,
+            model,
+            region,
+            endpoint,
+        }) => run_chat(
+            prompt,
+            headless,
+            no_tui,
+            local_endpoint,
+            provider,
+            model,
+            region,
+            endpoint,
+        ),
         Some(Commands::Doctor) => {
             eprintln!("aegis doctor: not yet implemented");
             std::process::exit(1);
@@ -147,7 +172,7 @@ fn main() {
                 run_init(true)
             } else {
                 // Config exists: launch interactive chat
-                run_chat(None, false, false, None)
+                run_chat(None, false, false, None, None, None, None, None)
             }
         }
     };
@@ -194,13 +219,19 @@ fn run_init(local: bool) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_chat(
     prompt: Option<String>,
     headless: bool,
     no_tui: bool,
     local_endpoint: Option<String>,
+    provider: Option<String>,
+    model: Option<String>,
+    region: Option<String>,
+    endpoint: Option<String>,
 ) -> Result<(), String> {
-    let provider_result = resolve_provider_config(local_endpoint);
+    let provider_result =
+        resolve_provider_config(local_endpoint, provider, model, region, endpoint);
 
     // For headless/plaintext modes, a provider is required upfront.
     // For interactive TUI, we allow starting without a provider and
@@ -245,11 +276,64 @@ fn run_chat(
 
 fn resolve_provider_config(
     local_endpoint: Option<String>,
+    provider: Option<String>,
+    model: Option<String>,
+    region: Option<String>,
+    endpoint: Option<String>,
 ) -> Result<aegis_llm::config::ProviderConfig, String> {
     use aegis_llm::config::{ProviderConfig, ProviderKind};
 
+    // CLI --local-endpoint shortcut (backwards compatible)
     if let Some(ep) = local_endpoint {
         return Ok(ProviderConfig::local(&ep, "default"));
+    }
+
+    // CLI --provider flag overrides config file
+    if let Some(ref p) = provider {
+        let kind = match p.to_lowercase().as_str() {
+            "local" => ProviderKind::Local,
+            "vertex" => ProviderKind::Vertex,
+            "bedrock" => ProviderKind::Bedrock,
+            "azure" => ProviderKind::Azure,
+            other => {
+                return Err(format!(
+                    "Unknown provider '{}'. Options: local, vertex, bedrock, azure",
+                    other
+                ));
+            }
+        };
+        let model = model.unwrap_or_else(|| match kind {
+            ProviderKind::Local => "llama3".to_string(),
+            ProviderKind::Vertex => "gemini-2.5-pro-001".to_string(),
+            ProviderKind::Bedrock => "us.anthropic.claude-3-5-sonnet-20241022-v2:0".to_string(),
+            ProviderKind::Azure => "gpt-4o".to_string(),
+        });
+        let endpoint = endpoint.unwrap_or_else(|| match kind {
+            ProviderKind::Local => "http://localhost:11434/v1".to_string(),
+            ProviderKind::Vertex => "https://us-central1-aiplatform.googleapis.com".to_string(),
+            ProviderKind::Bedrock => format!(
+                "https://bedrock-runtime.{}.amazonaws.com",
+                region.as_deref().unwrap_or("us-east-1")
+            ),
+            ProviderKind::Azure => String::new(),
+        });
+        if kind == ProviderKind::Azure && endpoint.is_empty() {
+            return Err(
+                "Azure provider requires --endpoint (e.g.,                  https://myresource.openai.azure.com)"
+                    .to_string(),
+            );
+        }
+        return Ok(ProviderConfig {
+            kind,
+            model,
+            endpoint,
+            max_tokens: 4096,
+            temperature: 0.0,
+            connect_timeout_secs: 10,
+            read_timeout_secs: 300,
+            project_id: None,
+            region: region.clone(),
+        });
     }
 
     // Try loading from saved config first.
