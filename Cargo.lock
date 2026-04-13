@@ -94,9 +94,13 @@ version = "0.1.0"
 dependencies = [
  "aegis-domain",
  "async-trait",
+ "chrono",
+ "globset",
  "mockall",
  "rstest",
  "serde",
+ "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
 ]

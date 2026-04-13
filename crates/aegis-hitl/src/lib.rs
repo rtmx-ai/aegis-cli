@@ -6,4 +6,5 @@
 
 pub mod approval;
 pub mod gate;
+pub mod grants;
 pub mod rules;

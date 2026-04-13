@@ -321,6 +321,10 @@ fn collect_git_entries(cwd: &Path) -> Vec<DirEntry> {
     if let Ok(output) = Command::new("git")
         .args(["status", "--porcelain"])
         .current_dir(cwd)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .env("GIT_CEILING_DIRECTORIES", cwd.parent().unwrap_or(cwd))
         .output()
         && output.status.success()
     {
@@ -351,6 +355,10 @@ fn collect_git_entries(cwd: &Path) -> Vec<DirEntry> {
     if let Ok(output) = Command::new("git")
         .args(["log", "--name-only", "--pretty=format:", "-5"])
         .current_dir(cwd)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .env("GIT_CEILING_DIRECTORIES", cwd.parent().unwrap_or(cwd))
         .output()
         && output.status.success()
     {
@@ -998,22 +1006,30 @@ mod tests {
 
     // --- Git-aware picker tests ---
 
+    /// Create a git Command isolated from parent repos and env vars.
+    fn isolated_git(dir: &Path) -> Command {
+        let mut cmd = Command::new("git");
+        cmd.current_dir(dir)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE")
+            .env("GIT_CEILING_DIRECTORIES", dir.parent().unwrap_or(dir));
+        cmd
+    }
+
     /// Helper: initialise a throwaway git repo in the given directory and
     /// make an initial commit so that `git log` has something to show.
     fn git_init(dir: &Path) {
-        Command::new("git")
-            .args(["init"])
-            .current_dir(dir)
+        isolated_git(dir)
+            .args(["init", "--initial-branch=main"])
             .output()
             .expect("git init");
-        Command::new("git")
+        isolated_git(dir)
             .args(["config", "user.email", "test@test.com"])
-            .current_dir(dir)
             .output()
             .expect("git config email");
-        Command::new("git")
+        isolated_git(dir)
             .args(["config", "user.name", "Test"])
-            .current_dir(dir)
             .output()
             .expect("git config name");
     }
@@ -1027,14 +1043,12 @@ mod tests {
         // Create and commit a file, then modify it.
         let f = tmp.path().join("hello.rs");
         fs::write(&f, "fn main() {}").unwrap();
-        Command::new("git")
+        isolated_git(tmp.path())
             .args(["add", "hello.rs"])
-            .current_dir(tmp.path())
             .output()
             .unwrap();
-        Command::new("git")
+        isolated_git(tmp.path())
             .args(["commit", "-m", "init"])
-            .current_dir(tmp.path())
             .output()
             .unwrap();
         fs::write(&f, "fn main() { changed }").unwrap();
@@ -1072,14 +1086,12 @@ mod tests {
         // in both `git status` (modified) and `git log` (committed).
         let f = tmp.path().join("shared.rs");
         fs::write(&f, "v1").unwrap();
-        Command::new("git")
+        isolated_git(tmp.path())
             .args(["add", "shared.rs"])
-            .current_dir(tmp.path())
             .output()
             .unwrap();
-        Command::new("git")
+        isolated_git(tmp.path())
             .args(["commit", "-m", "add shared"])
-            .current_dir(tmp.path())
             .output()
             .unwrap();
         fs::write(&f, "v2").unwrap();
@@ -1105,14 +1117,12 @@ mod tests {
 
         fs::write(tmp.path().join("alpha.rs"), "").unwrap();
         fs::write(tmp.path().join("beta.rs"), "").unwrap();
-        Command::new("git")
+        isolated_git(tmp.path())
             .args(["add", "."])
-            .current_dir(tmp.path())
             .output()
             .unwrap();
-        Command::new("git")
+        isolated_git(tmp.path())
             .args(["commit", "-m", "init"])
-            .current_dir(tmp.path())
             .output()
             .unwrap();
         fs::write(tmp.path().join("alpha.rs"), "changed").unwrap();
@@ -1135,14 +1145,12 @@ mod tests {
 
         // Create initial commit.
         fs::write(tmp.path().join("committed.rs"), "v1").unwrap();
-        Command::new("git")
+        isolated_git(tmp.path())
             .args(["add", "."])
-            .current_dir(tmp.path())
             .output()
             .unwrap();
-        Command::new("git")
+        isolated_git(tmp.path())
             .args(["commit", "-m", "init"])
-            .current_dir(tmp.path())
             .output()
             .unwrap();
 
