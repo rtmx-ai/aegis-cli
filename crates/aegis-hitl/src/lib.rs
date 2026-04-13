@@ -7,4 +7,6 @@
 pub mod approval;
 pub mod gate;
 pub mod grants;
+pub mod kill_switch;
+pub mod rollback;
 pub mod rules;
