@@ -866,4 +866,295 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "partialpartialpartial");
     }
+
+    // --- REQ-AGENT-019: Sub-agent process spawning with async execution ---
+
+    // rtmx:req REQ-AGENT-019
+    #[tokio::test]
+    async fn spawn_async_creates_task() {
+        let mut mgr = SubAgentManager::new(4);
+        let provider = Arc::new(MockLlmProvider::new());
+        provider.queue_response(vec![
+            StreamEvent::Token("working".into()),
+            StreamEvent::Done {
+                input_tokens: 10,
+                output_tokens: 5,
+            },
+        ]);
+        let filter = Arc::new(MockSecurityFilter);
+
+        let (id, _handle) = mgr
+            .spawn_async(
+                SubAgentConfig::default(),
+                "analyze code".into(),
+                provider,
+                filter,
+            )
+            .await
+            .unwrap();
+
+        // The sub-agent should be registered as Running in the manager.
+        assert_eq!(mgr.status(&id), Some(&SubAgentStatus::Running));
+        assert_eq!(mgr.active_count(), 1);
+    }
+
+    // rtmx:req REQ-AGENT-019
+    #[tokio::test]
+    async fn spawn_async_task_completes_with_text() {
+        let mut mgr = SubAgentManager::new(4);
+        let provider = Arc::new(MockLlmProvider::new());
+        provider.queue_response(vec![
+            StreamEvent::Token("The analysis ".into()),
+            StreamEvent::Token("is complete.".into()),
+            StreamEvent::Done {
+                input_tokens: 25,
+                output_tokens: 12,
+            },
+        ]);
+        let filter = Arc::new(MockSecurityFilter);
+
+        let (id, handle) = mgr
+            .spawn_async(
+                SubAgentConfig::default(),
+                "summarize findings".into(),
+                provider,
+                filter,
+            )
+            .await
+            .unwrap();
+
+        let result = handle.await.unwrap().unwrap();
+        assert_eq!(result, "The analysis is complete.");
+
+        // After the handle resolves, integrate result back into manager.
+        mgr.complete(&id, result);
+        assert_eq!(
+            mgr.status(&id),
+            Some(&SubAgentStatus::Completed(
+                "The analysis is complete.".to_string()
+            ))
+        );
+    }
+
+    // rtmx:req REQ-AGENT-019
+    #[tokio::test]
+    async fn spawn_async_respects_max_iterations() {
+        let mut mgr = SubAgentManager::new(4);
+        let provider = Arc::new(MockLlmProvider::new());
+        // Queue responses with ToolUse on every call (no Done event),
+        // forcing iteration until max_iterations is reached.
+        let tool_call = aegis_domain::types::ToolCall::ReadFile {
+            path: aegis_domain::types::FilePath::new_unchecked("src/main.rs"),
+        };
+        for _ in 0..2 {
+            provider.queue_response(vec![
+                StreamEvent::Token("reading...".into()),
+                StreamEvent::ToolUse(tool_call.clone()),
+            ]);
+        }
+        let filter = Arc::new(MockSecurityFilter);
+
+        let config = SubAgentConfig {
+            max_iterations: 2,
+            ..SubAgentConfig::default()
+        };
+
+        let (_id, handle) = mgr
+            .spawn_async(config, "keep iterating".into(), provider, filter)
+            .await
+            .unwrap();
+
+        let result = handle.await.unwrap().unwrap();
+        // Should have accumulated text from both iterations.
+        assert_eq!(result, "reading...reading...");
+    }
+
+    // rtmx:req REQ-AGENT-019
+    #[tokio::test]
+    async fn spawn_async_restricts_tools() {
+        let provider = Arc::new(MockLlmProvider::new());
+        provider.queue_response(vec![
+            StreamEvent::Token("done".into()),
+            StreamEvent::Done {
+                input_tokens: 5,
+                output_tokens: 3,
+            },
+        ]);
+
+        let config = SubAgentConfig {
+            allowed_tools: vec![
+                "read_file".to_string(),
+                "list_dir".to_string(),
+                "grep".to_string(),
+            ],
+            ..SubAgentConfig::default()
+        };
+
+        let _ = run_subagent_loop(provider.clone(), config, "test".into()).await;
+
+        // Verify the tool schemas passed to the LLM contain only read-only tools.
+        let captured = provider.captured_tool_schemas.lock().unwrap();
+        assert_eq!(captured.len(), 1, "stream() should have been called once");
+        let schemas = &captured[0];
+        assert_eq!(schemas.len(), 3);
+        let names: Vec<&str> = schemas.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"read_file"));
+        assert!(names.contains(&"list_dir"));
+        assert!(names.contains(&"grep"));
+        // Mutating tools must not be present.
+        assert!(!names.contains(&"write_file"));
+        assert!(!names.contains(&"run_command"));
+    }
+
+    // rtmx:req REQ-AGENT-019
+    #[tokio::test]
+    async fn spawn_async_rejects_mutating_config() {
+        let mut mgr = SubAgentManager::new(4);
+        let provider = Arc::new(MockLlmProvider::new());
+        let filter = Arc::new(MockSecurityFilter);
+
+        // Config with write_file in allowed_tools should be rejected.
+        let config = SubAgentConfig {
+            allowed_tools: vec!["read_file".to_string(), "write_file".to_string()],
+            ..SubAgentConfig::default()
+        };
+
+        let result = mgr
+            .spawn_async(config, "should fail".into(), provider, filter)
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("write_file"),
+            "error should mention the mutating tool: {}",
+            err.message
+        );
+        // No agent should have been registered.
+        assert_eq!(mgr.active_count(), 0);
+    }
+
+    // rtmx:req REQ-AGENT-019
+    #[tokio::test]
+    async fn spawn_async_concurrent_limit() {
+        let mut mgr = SubAgentManager::new(2);
+        let provider = Arc::new(MockLlmProvider::new());
+        // Queue enough responses for all attempts.
+        for _ in 0..3 {
+            provider.queue_response(vec![StreamEvent::Done {
+                input_tokens: 0,
+                output_tokens: 0,
+            }]);
+        }
+        let filter = Arc::new(MockSecurityFilter);
+
+        let _ = mgr
+            .spawn_async(
+                SubAgentConfig::default(),
+                "task 1".into(),
+                provider.clone(),
+                filter.clone(),
+            )
+            .await
+            .unwrap();
+        let _ = mgr
+            .spawn_async(
+                SubAgentConfig::default(),
+                "task 2".into(),
+                provider.clone(),
+                filter.clone(),
+            )
+            .await
+            .unwrap();
+
+        // Third spawn should fail -- max_concurrent is 2.
+        let result = mgr
+            .spawn_async(SubAgentConfig::default(), "task 3".into(), provider, filter)
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("concurrency limit"),
+            "error should mention concurrency limit: {}",
+            err.message
+        );
+    }
+
+    // rtmx:req REQ-AGENT-019
+    #[tokio::test]
+    async fn spawn_async_usage_tracked() {
+        let mut mgr = SubAgentManager::new(4);
+        let provider = Arc::new(MockLlmProvider::new());
+        provider.queue_response(vec![
+            StreamEvent::Token("result".into()),
+            StreamEvent::Done {
+                input_tokens: 150,
+                output_tokens: 75,
+            },
+        ]);
+        let filter = Arc::new(MockSecurityFilter);
+
+        let (id, handle) = mgr
+            .spawn_async(
+                SubAgentConfig::default(),
+                "analyze".into(),
+                provider,
+                filter,
+            )
+            .await
+            .unwrap();
+
+        let result = handle.await.unwrap().unwrap();
+
+        // Record usage via complete_with_usage.
+        let usage = SubAgentUsage {
+            input_tokens: 150,
+            output_tokens: 75,
+        };
+        mgr.complete_with_usage(&id, result, usage);
+
+        let total = mgr.total_usage();
+        assert_eq!(total.input_tokens, 150);
+        assert_eq!(total.output_tokens, 75);
+    }
+
+    // rtmx:req REQ-AGENT-019
+    #[tokio::test]
+    async fn spawn_async_error_propagates() {
+        let mut mgr = SubAgentManager::new(4);
+        let provider = Arc::new(MockLlmProvider::new());
+        // Queue a response that contains an error event.
+        provider.queue_response(vec![StreamEvent::Error("provider unavailable".to_string())]);
+        let filter = Arc::new(MockSecurityFilter);
+
+        let (id, handle) = mgr
+            .spawn_async(
+                SubAgentConfig::default(),
+                "will fail".into(),
+                provider,
+                filter,
+            )
+            .await
+            .unwrap();
+
+        let result = handle.await.unwrap();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            DomainError::ProviderError { message } => {
+                assert_eq!(message, "provider unavailable");
+            }
+            other => panic!("expected ProviderError, got: {:?}", other),
+        }
+
+        // Manager should still show Running since we haven't
+        // called fail() yet -- the async result carries the error.
+        assert_eq!(mgr.status(&id), Some(&SubAgentStatus::Running));
+
+        // Mark it as failed after observing the error.
+        mgr.fail(&id, "provider unavailable".to_string());
+        assert_eq!(
+            mgr.status(&id),
+            Some(&SubAgentStatus::Failed("provider unavailable".to_string()))
+        );
+    }
 }

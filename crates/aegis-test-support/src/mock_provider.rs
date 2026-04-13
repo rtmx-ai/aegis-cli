@@ -13,12 +13,15 @@ use std::collections::VecDeque;
 /// A mock provider that returns pre-configured responses in sequence.
 pub struct MockLlmProvider {
     responses: std::sync::Mutex<VecDeque<Vec<StreamEvent>>>,
+    /// Tool schemas received on each `stream()` call, for test assertions.
+    pub captured_tool_schemas: std::sync::Mutex<Vec<Vec<ToolSchema>>>,
 }
 
 impl Default for MockLlmProvider {
     fn default() -> Self {
         Self {
             responses: std::sync::Mutex::new(VecDeque::new()),
+            captured_tool_schemas: std::sync::Mutex::new(Vec::new()),
         }
     }
 }
@@ -39,8 +42,12 @@ impl LlmProvider for MockLlmProvider {
     async fn stream(
         &self,
         _messages: &[Message],
-        _tools: &[ToolSchema],
+        tools: &[ToolSchema],
     ) -> Result<Box<dyn TokenStream>, DomainError> {
+        self.captured_tool_schemas
+            .lock()
+            .unwrap()
+            .push(tools.to_vec());
         let events = self.responses.lock().unwrap().pop_front().ok_or_else(|| {
             DomainError::ProviderError {
                 message: "MockLlmProvider: no more queued responses".into(),
