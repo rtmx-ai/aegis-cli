@@ -7,4 +7,8 @@
 pub mod cloud; // rtmx:req REQ-AUDIT-002
 pub mod hash_chain; // rtmx:req REQ-AUDIT-005
 pub mod ledger; // rtmx:req REQ-AUDIT-001
+pub mod reconstruct; // rtmx:req REQ-AUDIT-017
+pub mod retention; // rtmx:req REQ-AUDIT-010
+pub mod rotation; // rtmx:req REQ-AUDIT-009
+pub mod search; // rtmx:req REQ-AUDIT-013
 // pub mod evidence;  // rtmx:req REQ-AUDIT-003
