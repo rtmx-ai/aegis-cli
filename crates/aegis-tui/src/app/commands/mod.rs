@@ -96,18 +96,45 @@ impl App {
                         ));
                     }
                     "local" => {
-                        let endpoint =
-                            parts.get(1).copied().unwrap_or("http://localhost:11434/v1");
+                        let model = parts.get(1).copied().unwrap_or("llama3");
                         self.messages.push(ChatMessage::system(format!(
-                            "Connecting to local model at {endpoint}...\n\
-                             \n\
-                             If Ollama is not running:\n\
-                               brew install ollama\n\
-                               ollama serve\n\
-                               ollama pull llama3\n\
-                             \n\
-                             Then restart aegis or run: /connect local"
+                            "Setting up local model '{model}'..."
                         )));
+                        match detect_and_setup_local(model) {
+                            LocalSetupResult::Ready(endpoint) => {
+                                self.messages.push(ChatMessage::system(format!(
+                                    "Connected to {endpoint} with model '{model}'.\n\
+                                     Restart aegis to use: aegis chat --provider local --model {model}"
+                                )));
+                            }
+                            LocalSetupResult::PullingModel(model_name) => {
+                                self.messages.push(ChatMessage::system(format!(
+                                    "Ollama is running but model '{model_name}' is not pulled.\n\
+                                     Run in another terminal: ollama pull {model_name}\n\
+                                     Then: /connect local {model_name}"
+                                )));
+                            }
+                            LocalSetupResult::StartingServer => {
+                                self.messages.push(ChatMessage::system(
+                                    "Ollama is installed but not running.\n\
+                                     Run in another terminal: ollama serve\n\
+                                     Then: /connect local"
+                                        .to_string(),
+                                ));
+                            }
+                            LocalSetupResult::NeedInstall => {
+                                self.messages.push(ChatMessage::system(
+                                    "Ollama is not installed.\n\
+                                     \n\
+                                     Install with:\n\
+                                       macOS:  brew install ollama\n\
+                                       Linux:  curl -fsSL https://ollama.com/install.sh | sh\n\
+                                     \n\
+                                     Then: ollama serve && /connect local"
+                                        .to_string(),
+                                ));
+                            }
+                        }
                     }
                     "vertex" => {
                         self.messages.push(ChatMessage::system(
@@ -171,4 +198,69 @@ impl App {
             }
         }
     }
+}
+
+/// Result of detecting local model setup state.
+enum LocalSetupResult {
+    /// Ollama is running and model is available.
+    Ready(String),
+    /// Ollama is running but model needs to be pulled.
+    PullingModel(String),
+    /// Ollama is installed but the server is not running.
+    StartingServer,
+    /// Ollama is not installed.
+    NeedInstall,
+}
+
+/// Detect the state of the local model setup and return the appropriate action.
+fn detect_and_setup_local(model: &str) -> LocalSetupResult {
+    // Check 1: Is ollama on PATH?
+    let ollama_path = std::process::Command::new("which")
+        .arg("ollama")
+        .output()
+        .ok()
+        .filter(|o| o.status.success());
+
+    if ollama_path.is_none() {
+        return LocalSetupResult::NeedInstall;
+    }
+
+    // Check 2: Is ollama serve running? (probe the API)
+    let endpoint = "http://localhost:11434";
+    let probe = std::process::Command::new("curl")
+        .args([
+            "-s",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            &format!("{endpoint}/api/tags"),
+        ])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok());
+
+    let server_up = probe
+        .as_deref()
+        .map(|code| code.starts_with('2'))
+        .unwrap_or(false);
+
+    if !server_up {
+        return LocalSetupResult::StartingServer;
+    }
+
+    // Check 3: Is the requested model already pulled?
+    let tags = std::process::Command::new("curl")
+        .args(["-s", &format!("{endpoint}/api/tags")])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .unwrap_or_default();
+
+    if tags.contains(model) {
+        return LocalSetupResult::Ready(format!("{endpoint}/v1"));
+    }
+
+    // Model not pulled yet
+    LocalSetupResult::PullingModel(model.to_string())
 }
