@@ -109,15 +109,15 @@ impl App {
                             }
                             LocalSetupResult::PullingModel(model_name) => {
                                 self.messages.push(ChatMessage::system(format!(
-                                    "Ollama is running but model '{model_name}' is not pulled.\n\
-                                     Run in another terminal: ollama pull {model_name}\n\
+                                    "Failed to pull model '{model_name}' automatically.\n\
+                                     Try manually: ollama pull {model_name}\n\
                                      Then: /connect local {model_name}"
                                 )));
                             }
                             LocalSetupResult::StartingServer => {
                                 self.messages.push(ChatMessage::system(
-                                    "Ollama is installed but not running.\n\
-                                     Run in another terminal: ollama serve\n\
+                                    "Ollama is installed but failed to start automatically.\n\
+                                     Try manually: ollama serve\n\
                                      Then: /connect local"
                                         .to_string(),
                                 ));
@@ -213,40 +213,43 @@ enum LocalSetupResult {
 }
 
 /// Detect the state of the local model setup and return the appropriate action.
+/// Detect the state of the local model setup and take action to fix it.
 fn detect_and_setup_local(model: &str) -> LocalSetupResult {
     // Check 1: Is ollama on PATH?
-    let ollama_path = std::process::Command::new("which")
+    let has_ollama = std::process::Command::new("which")
         .arg("ollama")
         .output()
         .ok()
-        .filter(|o| o.status.success());
+        .map(|o| o.status.success())
+        .unwrap_or(false);
 
-    if ollama_path.is_none() {
+    if !has_ollama {
         return LocalSetupResult::NeedInstall;
     }
 
-    // Check 2: Is ollama serve running? (probe the API)
+    // Check 2: Is ollama serve running?
     let endpoint = "http://localhost:11434";
-    let probe = std::process::Command::new("curl")
-        .args([
-            "-s",
-            "-o",
-            "/dev/null",
-            "-w",
-            "%{http_code}",
-            &format!("{endpoint}/api/tags"),
-        ])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok());
+    if !is_ollama_running(endpoint) {
+        // ACT: Start ollama serve in the background
+        tracing::info!("Starting ollama serve in background");
+        let _ = std::process::Command::new("ollama")
+            .arg("serve")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
 
-    let server_up = probe
-        .as_deref()
-        .map(|code| code.starts_with('2'))
-        .unwrap_or(false);
+        // Wait up to 5 seconds for it to come up
+        for _ in 0..10 {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            if is_ollama_running(endpoint) {
+                break;
+            }
+        }
 
-    if !server_up {
-        return LocalSetupResult::StartingServer;
+        if !is_ollama_running(endpoint) {
+            return LocalSetupResult::StartingServer;
+        }
     }
 
     // Check 3: Is the requested model already pulled?
@@ -261,6 +264,36 @@ fn detect_and_setup_local(model: &str) -> LocalSetupResult {
         return LocalSetupResult::Ready(format!("{endpoint}/v1"));
     }
 
-    // Model not pulled yet
-    LocalSetupResult::PullingModel(model.to_string())
+    // ACT: Pull the model
+    tracing::info!(model = model, "Pulling model via ollama pull");
+    let pull_result = std::process::Command::new("ollama")
+        .args(["pull", model])
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status();
+
+    match pull_result {
+        Ok(status) if status.success() => LocalSetupResult::Ready(format!("{endpoint}/v1")),
+        _ => LocalSetupResult::PullingModel(model.to_string()),
+    }
+}
+
+/// Check if Ollama API is responding.
+fn is_ollama_running(endpoint: &str) -> bool {
+    std::process::Command::new("curl")
+        .args([
+            "-s",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            "--connect-timeout",
+            "2",
+            &format!("{endpoint}/api/tags"),
+        ])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|code| code.starts_with('2'))
+        .unwrap_or(false)
 }
