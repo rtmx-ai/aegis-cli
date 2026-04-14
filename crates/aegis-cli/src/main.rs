@@ -264,7 +264,7 @@ fn run_chat(
             // Use a dummy local config so the TUI can start.
             // Agent requests will fail, but the user can see the error and fix it.
             (
-                aegis_llm::config::ProviderConfig::local("http://localhost:11434/v1", "none"),
+                aegis_llm::config::ProviderConfig::local("http://localhost:11434/v1", "llama3"),
                 Some(e),
             )
         }
