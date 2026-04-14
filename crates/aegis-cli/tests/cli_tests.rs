@@ -152,20 +152,24 @@ fn chat_no_tui_flag_appears_in_help() {
 
 // rtmx:req REQ-TUI-013
 #[test]
-#[ignore] // flaky: succeeds when local Ollama is running (auto-discovery)
 fn chat_no_tui_without_config_errors_gracefully() {
     // --no-tui without a config or available backend should fail gracefully.
+    // AEGIS_NO_DISCOVERY prevents auto-discovery from finding a running Ollama.
+    // Empty PATH prevents the auto-start code from spawning ollama serve.
     let tmp = tempfile::TempDir::new().unwrap();
     Command::cargo_bin("aegis")
         .unwrap()
         .arg("chat")
         .arg("--no-tui")
         .env("HOME", tmp.path())
+        .env("AEGIS_NO_DISCOVERY", "1")
+        .env("PATH", "")
         .assert()
         .failure()
         .stderr(
-            predicate::str::contains("No config found")
-                .or(predicate::str::contains("No LLM backend found"))
+            predicate::str::contains("No LLM backend found")
+                .or(predicate::str::contains("No config found"))
+                .or(predicate::str::contains("not installed"))
                 .or(predicate::str::contains("ollama")),
         );
 }

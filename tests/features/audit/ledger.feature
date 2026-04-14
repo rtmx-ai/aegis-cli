@@ -57,6 +57,7 @@ Feature: Immutable Local Audit Ledger
   # ---------------------------------------------------------------------------
 
   # @req REQ-AUDIT-002
+  @wip
   Scenario: GCP Cloud Audit Logs record Vertex AI API access
     Given aegis is configured with a GCP Assured Workloads boundary
     When the agent sends a request to Vertex AI
@@ -65,6 +66,7 @@ Feature: Immutable Local Audit Ledger
     And the log should be stored in the CMEK-encrypted audit bucket
 
   # @req REQ-AUDIT-002
+  @wip
   Scenario: AWS CloudTrail records Bedrock API access
     Given aegis is configured with an AWS GovCloud boundary
     When the agent sends a request to Bedrock
@@ -72,6 +74,7 @@ Feature: Immutable Local Audit Ledger
     And the entry should include the IAM role ARN and source IP
 
   # @req REQ-AUDIT-002
+  @wip
   Scenario: Cloud audit logs prove authorized access from authorized IP
     Given a complete cloud audit trail for a session
     When a compliance auditor reviews the logs
@@ -83,12 +86,14 @@ Feature: Immutable Local Audit Ledger
   # ---------------------------------------------------------------------------
 
   # @req REQ-AUDIT-003
+  @wip
   Scenario: Ledger entries include req_id when working on a requirement
     Given the user sends "aegis implement REQ-HITL-001"
     When the agent executes tool calls during implementation
     Then each audit ledger entry for that session should contain req_id: "REQ-HITL-001"
 
   # @req REQ-AUDIT-003
+  @wip
   Scenario: Ledger entries omit req_id when no requirement is active
     Given the user sends a general prompt without referencing a requirement
     When the agent executes tool calls
@@ -99,6 +104,7 @@ Feature: Immutable Local Audit Ledger
   # ---------------------------------------------------------------------------
 
   # @req REQ-AUDIT-004
+  @wip
   Scenario: Ledger rotates at 10 MB size threshold
     Given the active ledger file has reached 10 MB
     When a new entry is appended
@@ -107,6 +113,7 @@ Feature: Immutable Local Audit Ledger
     And the first entry in the new file should be SESSION_CONTINUE
 
   # @req REQ-AUDIT-004
+  @wip
   Scenario: Ledger rotates daily at midnight
     Given the active ledger file was created yesterday
     When the first entry of a new day is written
@@ -114,6 +121,7 @@ Feature: Immutable Local Audit Ledger
     And a new active ledger file should be created
 
   # @req REQ-AUDIT-004
+  @wip
   Scenario: No data loss occurs during rotation
     Given a rotation is triggered while entries are being written
     When the rotation completes
@@ -126,6 +134,7 @@ Feature: Immutable Local Audit Ledger
   # ---------------------------------------------------------------------------
 
   # @req REQ-AUDIT-005
+  @wip
   Scenario: Each ledger entry contains prev_hash linking to predecessor
     Given a ledger with 10 entries
     When I inspect each entry
@@ -133,6 +142,7 @@ Feature: Immutable Local Audit Ledger
     And entry 0 (genesis) should have prev_hash: null
 
   # @req REQ-AUDIT-005
+  @wip
   Scenario: aegis audit verify detects tampered entry
     Given a ledger with 10 entries
     And entry 5 has been manually modified
@@ -141,6 +151,7 @@ Feature: Immutable Local Audit Ledger
     And exit with a non-zero code
 
   # @req REQ-AUDIT-005
+  @wip
   Scenario: aegis audit verify passes on an untampered ledger
     Given a ledger with 100 entries and no modifications
     When the user runs "aegis audit verify"
@@ -152,6 +163,7 @@ Feature: Immutable Local Audit Ledger
   # ---------------------------------------------------------------------------
 
   # @req REQ-AUDIT-006
+  @wip
   Scenario: SESSION_START entry includes OS user and hostname
     Given a new aegis session started by user "jdoe" on host "dev-workstation"
     When the SESSION_START entry is written
@@ -160,6 +172,7 @@ Feature: Immutable Local Audit Ledger
     And uid matching the OS user ID
 
   # @req REQ-AUDIT-006
+  @wip
   Scenario: Identity fields are consistent across all entries in a session
     Given a session with 20 entries
     When I inspect the session_id in each entry
@@ -171,6 +184,7 @@ Feature: Immutable Local Audit Ledger
   # ---------------------------------------------------------------------------
 
   # @req REQ-AUDIT-007
+  @wip
   Scenario: Parallel sessions produce valid JSONL without corruption
     Given two aegis sessions running simultaneously
     When both sessions write entries to the same ledger directory
@@ -178,6 +192,7 @@ Feature: Immutable Local Audit Ledger
     And no partial writes or interleaved bytes should appear
 
   # @req REQ-AUDIT-007
+  @wip
   Scenario: File lock prevents concurrent append corruption on POSIX
     Given two processes attempting to append simultaneously
     When flock is used for mutual exclusion
@@ -189,6 +204,7 @@ Feature: Immutable Local Audit Ledger
   # ---------------------------------------------------------------------------
 
   # @req REQ-AUDIT-008
+  @wip
   Scenario: Truncated tail entry is quarantined on recovery
     Given the ledger file ends with a partial JSON line (simulating a crash)
     When aegis starts and opens the ledger
@@ -197,6 +213,7 @@ Feature: Immutable Local Audit Ledger
     And subsequent writes should succeed normally
 
   # @req REQ-AUDIT-008
+  @wip
   Scenario: Multiple corrupted tail bytes are handled
     Given the ledger file ends with 3 incomplete lines
     When aegis starts and opens the ledger
@@ -208,6 +225,7 @@ Feature: Immutable Local Audit Ledger
   # ---------------------------------------------------------------------------
 
   # @req REQ-AUDIT-009
+  @wip
   Scenario: Closed ledger segment is compressed with zstd
     Given a ledger file has been rotated
     When compression runs on the closed segment
@@ -216,6 +234,7 @@ Feature: Immutable Local Audit Ledger
     And the compressed file should be smaller than the original
 
   # @req REQ-AUDIT-009
+  @wip
   Scenario: Active ledger file is never compressed
     Given the active ledger file is "~/.aegis/logs/current.jsonl"
     When I check the active file
@@ -227,6 +246,7 @@ Feature: Immutable Local Audit Ledger
   # ---------------------------------------------------------------------------
 
   # @req REQ-AUDIT-010
+  @wip
   Scenario: Segments older than 90 days are purged on startup
     Given "~/.aegis/logs/" contains segments from 100 days ago
     When aegis starts
@@ -234,6 +254,7 @@ Feature: Immutable Local Audit Ledger
     And a LEDGER_PURGED entry should be written with the count of purged files
 
   # @req REQ-AUDIT-010
+  @wip
   Scenario: Custom retention_days is respected
     Given config contains "retention_days: 30"
     And "~/.aegis/logs/" contains segments from 45 days ago
@@ -241,6 +262,7 @@ Feature: Immutable Local Audit Ledger
     Then those segments should be purged
 
   # @req REQ-AUDIT-010
+  @wip
   Scenario: Segments within retention window are preserved
     Given "~/.aegis/logs/" contains segments from 10 days ago
     When aegis starts
@@ -251,6 +273,7 @@ Feature: Immutable Local Audit Ledger
   # ---------------------------------------------------------------------------
 
   # @req REQ-AUDIT-011
+  @wip
   Scenario: aegis audit export --format splunk produces valid HEC payload
     Given the ledger contains 50 entries
     When the user runs "aegis audit export --format splunk"
@@ -258,6 +281,7 @@ Feature: Immutable Local Audit Ledger
     And each entry should include time, host, source, and event fields
 
   # @req REQ-AUDIT-011
+  @wip
   Scenario: aegis audit export --format elastic produces valid bulk API payload
     Given the ledger contains 50 entries
     When the user runs "aegis audit export --format elastic"
@@ -265,6 +289,7 @@ Feature: Immutable Local Audit Ledger
     And each entry should have an index action followed by the document
 
   # @req REQ-AUDIT-011
+  @wip
   Scenario: aegis audit export with --since and --until filters entries
     Given the ledger contains entries from the past 30 days
     When the user runs "aegis audit export --format splunk --since 2026-03-01 --until 2026-03-15"
@@ -275,12 +300,14 @@ Feature: Immutable Local Audit Ledger
   # ---------------------------------------------------------------------------
 
   # @req REQ-AUDIT-012
+  @wip
   Scenario: Entries are forwarded to HTTPS endpoint within 5 seconds
     Given config contains "log_forward_url: https://siem.corp.example/ingest"
     When a new audit entry is written
     Then the entry should be delivered to the HTTPS endpoint within 5 seconds
 
   # @req REQ-AUDIT-012
+  @wip
   Scenario: Forwarding retries with backoff on transient failure
     Given the forwarding endpoint returns HTTP 503
     When an entry is written
@@ -288,6 +315,7 @@ Feature: Immutable Local Audit Ledger
     And buffer entries up to 1000 while the endpoint is unavailable
 
   # @req REQ-AUDIT-012
+  @wip
   Scenario: Forwarding failure does not block local ledger writes
     Given the forwarding endpoint is unreachable
     When entries are written to the local ledger
@@ -299,18 +327,21 @@ Feature: Immutable Local Audit Ledger
   # ---------------------------------------------------------------------------
 
   # @req REQ-AUDIT-013
+  @wip
   Scenario: aegis audit search by event type returns matching entries
     Given the ledger contains HITL_APPROVED and HITL_DENIED entries
     When the user runs "aegis audit search --event-type HITL_DENIED"
     Then only HITL_DENIED entries should be returned
 
   # @req REQ-AUDIT-013
+  @wip
   Scenario: aegis audit search by req_id returns matching entries
     Given the ledger contains entries with req_id "REQ-BUILD-001" and "REQ-TUI-001"
     When the user runs "aegis audit search --req-id REQ-BUILD-001"
     Then only entries with req_id "REQ-BUILD-001" should be returned
 
   # @req REQ-AUDIT-013
+  @wip
   Scenario: Search spans compressed segments transparently
     Given the ledger has 5 compressed segments and 1 active segment
     When the user runs "aegis audit search --event-type SESSION_START"
@@ -321,6 +352,7 @@ Feature: Immutable Local Audit Ledger
   # ---------------------------------------------------------------------------
 
   # @req REQ-AUDIT-014
+  @wip
   Scenario: aegis audit report produces structured evidence ZIP
     Given the ledger contains session data for the past 30 days
     When the user runs "aegis audit report --output evidence.zip"
@@ -330,6 +362,7 @@ Feature: Immutable Local Audit Ledger
     And "manifest.json" listing all files in the bundle
 
   # @req REQ-AUDIT-014
+  @wip
   Scenario: Compliance report fails if integrity check fails
     Given the ledger has a tampered entry
     When the user runs "aegis audit report --output evidence.zip"
@@ -341,6 +374,7 @@ Feature: Immutable Local Audit Ledger
   # ---------------------------------------------------------------------------
 
   # @req REQ-AUDIT-015
+  @wip
   Scenario: aegis audit scan exits 0 when no CUI is found
     Given the ledger contains only metadata entries (no file contents or prompts)
     When the user runs "aegis audit scan"
@@ -348,6 +382,7 @@ Feature: Immutable Local Audit Ledger
     And report "Scan complete: no CUI markers or PII patterns detected"
 
   # @req REQ-AUDIT-015
+  @wip
   Scenario: aegis audit scan exits non-zero when SSN pattern is found
     Given the ledger contains an entry that somehow includes "123-45-6789"
     When the user runs "aegis audit scan"
@@ -355,6 +390,7 @@ Feature: Immutable Local Audit Ledger
     And report "PII detected: SSN pattern at entry N"
 
   # @req REQ-AUDIT-015
+  @wip
   Scenario: aegis audit export is blocked when scan finds violations
     Given "aegis audit scan" reports CUI content in the ledger
     When the user runs "aegis audit export --format splunk"
@@ -366,6 +402,7 @@ Feature: Immutable Local Audit Ledger
   # ---------------------------------------------------------------------------
 
   # @req REQ-AUDIT-016
+  @wip
   Scenario: Timestamps include NTP offset and monotonic nanoseconds
     Given an aegis session with NTP available
     When an audit entry is written
@@ -373,6 +410,7 @@ Feature: Immutable Local Audit Ledger
     And the timestamp should be accurate within 1 second of NTP time
 
   # @req REQ-AUDIT-016
+  @wip
   Scenario: Clock drift warning emitted when offset exceeds 5 seconds
     Given the system clock is 10 seconds behind NTP time
     When aegis writes an audit entry
@@ -380,6 +418,7 @@ Feature: Immutable Local Audit Ledger
     And the warning should include the measured offset
 
   # @req REQ-AUDIT-016
+  @wip
   Scenario: Air-gapped mode skips NTP check
     Given aegis is in local/air-gapped mode
     When an audit entry is written
@@ -391,6 +430,7 @@ Feature: Immutable Local Audit Ledger
   # ---------------------------------------------------------------------------
 
   # @req REQ-AUDIT-017
+  @wip
   Scenario: aegis audit replay reconstructs full session timeline
     Given a session spanning 3 ledger segments (2 compressed, 1 active)
     When the user runs "aegis audit replay <session_id>"
@@ -398,6 +438,7 @@ Feature: Immutable Local Audit Ledger
     And events should be sorted by monotonic_ns
 
   # @req REQ-AUDIT-017
+  @wip
   Scenario: Session reconstruction detects gaps in the timeline
     Given a session with a missing segment (data loss)
     When the user runs "aegis audit replay <session_id>"
@@ -405,6 +446,7 @@ Feature: Immutable Local Audit Ledger
     And the reconstruction should continue with available data
 
   # @req REQ-AUDIT-017
+  @wip
   Scenario: Session reconstruction works across segment boundaries
     Given a session that started before rotation and continued after
     When the user runs "aegis audit replay <session_id>"

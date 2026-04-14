@@ -5,3 +5,6 @@
 //! cucumber.rs via `mod steps;` (already done).
 
 pub mod agent_steps;
+pub mod audit_steps;
+pub mod hitl_steps;
+pub mod security_steps;

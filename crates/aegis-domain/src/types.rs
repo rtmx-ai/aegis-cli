@@ -91,11 +91,29 @@ impl fmt::Display for FilePath {
 /// A tool call the agent wants to execute.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ToolCall {
-    ReadFile { path: FilePath },
-    WriteFile { path: FilePath, content: String },
-    RunCommand { command: String, timeout_secs: u64 },
-    ListDir { path: FilePath },
-    Grep { pattern: String, path: FilePath },
+    ReadFile {
+        path: FilePath,
+    },
+    WriteFile {
+        path: FilePath,
+        content: String,
+    },
+    RunCommand {
+        command: String,
+        timeout_secs: u64,
+    },
+    ListDir {
+        path: FilePath,
+    },
+    Grep {
+        pattern: String,
+        path: FilePath,
+    },
+    /// MCP tool call routed to an external server (REQ-AGENT-014).
+    McpTool {
+        qualified_name: String,
+        arguments: serde_json::Value,
+    },
 }
 
 /// Risk classification for tool calls.
@@ -111,7 +129,9 @@ impl ToolCall {
             Self::ReadFile { .. } | Self::ListDir { .. } | Self::Grep { .. } => {
                 ToolRisk::ReadOnly
             }
-            Self::WriteFile { .. } | Self::RunCommand { .. } => ToolRisk::StateMutating,
+            Self::WriteFile { .. } | Self::RunCommand { .. } | Self::McpTool { .. } => {
+                ToolRisk::StateMutating
+            }
         }
     }
 }
@@ -133,6 +153,37 @@ pub enum ApprovalDecision {
     Skipped,
     /// Auto-denied because the HITL timeout expired (REQ-HITL-003).
     TimedOut,
+}
+
+// ---------------------------------------------------------------------------
+// MCP server configuration (REQ-AGENT-022)
+// ---------------------------------------------------------------------------
+
+/// Configuration for an MCP server connection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServerConfig {
+    /// Human-readable name for this server.
+    pub name: String,
+    /// Transport configuration.
+    pub transport: McpTransport,
+}
+
+/// Transport type for connecting to an MCP server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum McpTransport {
+    /// Spawn a subprocess, communicate via stdin/stdout JSON-RPC (NDJSON).
+    Stdio {
+        command: String,
+        args: Vec<String>,
+        #[serde(default)]
+        env: std::collections::HashMap<String, String>,
+    },
+    /// Connect via HTTP+SSE (not yet implemented).
+    Sse {
+        url: String,
+        #[serde(default)]
+        headers: std::collections::HashMap<String, String>,
+    },
 }
 
 #[cfg(test)]

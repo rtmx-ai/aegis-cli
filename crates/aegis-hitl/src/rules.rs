@@ -137,6 +137,7 @@ fn tool_name(tool_call: &ToolCall) -> &str {
         ToolCall::RunCommand { .. } => "run_command",
         ToolCall::ListDir { .. } => "list_dir",
         ToolCall::Grep { .. } => "grep",
+        ToolCall::McpTool { qualified_name, .. } => qualified_name.as_str(),
     }
 }
 
@@ -147,7 +148,7 @@ fn tool_path(tool_call: &ToolCall) -> Option<&str> {
         ToolCall::WriteFile { path, .. } => Some(path.as_path().to_str().unwrap_or("")),
         ToolCall::ListDir { path } => Some(path.as_path().to_str().unwrap_or("")),
         ToolCall::Grep { path, .. } => Some(path.as_path().to_str().unwrap_or("")),
-        ToolCall::RunCommand { .. } => None,
+        ToolCall::RunCommand { .. } | ToolCall::McpTool { .. } => None,
     }
 }
 

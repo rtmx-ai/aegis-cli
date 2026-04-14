@@ -37,13 +37,14 @@ impl MockToolExecutor {
             .insert(tool_name.to_string(), result);
     }
 
-    fn tool_name(call: &ToolCall) -> &'static str {
+    fn tool_name(call: &ToolCall) -> String {
         match call {
-            ToolCall::ReadFile { .. } => "read_file",
-            ToolCall::WriteFile { .. } => "write_file",
-            ToolCall::RunCommand { .. } => "run_command",
-            ToolCall::ListDir { .. } => "list_dir",
-            ToolCall::Grep { .. } => "grep",
+            ToolCall::ReadFile { .. } => "read_file".to_string(),
+            ToolCall::WriteFile { .. } => "write_file".to_string(),
+            ToolCall::RunCommand { .. } => "run_command".to_string(),
+            ToolCall::ListDir { .. } => "list_dir".to_string(),
+            ToolCall::Grep { .. } => "grep".to_string(),
+            ToolCall::McpTool { qualified_name, .. } => qualified_name.clone(),
         }
     }
 }
@@ -54,7 +55,7 @@ impl ToolExecutor for MockToolExecutor {
         let name = Self::tool_name(tool_call);
         let results = self.results.lock().unwrap();
         Ok(results
-            .get(name)
+            .get(&name)
             .cloned()
             .unwrap_or_else(|| self.default_result.clone()))
     }

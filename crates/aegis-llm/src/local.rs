@@ -9,6 +9,7 @@ use aegis_domain::ports::*;
 use async_trait::async_trait;
 use reqwest::Client;
 
+use crate::capabilities::needs_tool_shim;
 use crate::config::ProviderConfig;
 use crate::sse::SseTokenStream;
 
@@ -76,24 +77,60 @@ impl LocalProvider {
         });
 
         if !tools.is_empty() {
-            let tool_defs: Vec<serde_json::Value> = tools
-                .iter()
-                .map(|t| {
+            if needs_tool_shim(&self.model) {
+                // Model lacks native tool calling -- inject tool
+                // descriptions into the system prompt instead of
+                // sending the `tools` field (which would be rejected).
+                let shim_prompt = build_toolshim_system_prompt(tools);
+                let msgs_arr = body["messages"].as_array_mut().unwrap();
+                msgs_arr.insert(
+                    0,
                     serde_json::json!({
-                        "type": "function",
-                        "function": {
-                            "name": t.name,
-                            "description": t.description,
-                            "parameters": t.parameters,
-                        }
+                        "role": "system",
+                        "content": shim_prompt,
+                    }),
+                );
+            } else {
+                let tool_defs: Vec<serde_json::Value> = tools
+                    .iter()
+                    .map(|t| {
+                        serde_json::json!({
+                            "type": "function",
+                            "function": {
+                                "name": t.name,
+                                "description": t.description,
+                                "parameters": t.parameters,
+                            }
+                        })
                     })
-                })
-                .collect();
-            body["tools"] = serde_json::Value::Array(tool_defs);
+                    .collect();
+                body["tools"] = serde_json::Value::Array(tool_defs);
+            }
         }
 
         body
     }
+}
+
+/// Build a system prompt that describes available tools for models
+/// without native tool/function calling support.
+fn build_toolshim_system_prompt(tools: &[ToolSchema]) -> String {
+    let mut prompt = String::from(
+        "You have access to the following tools. To use a tool, respond with a JSON \
+         object in the following format:\n\n\
+         ```json\n{\"tool\": \"tool_name\", \"arguments\": {\"arg1\": \"value1\"}}\n```\n\n\
+         If you do not need to use a tool, respond with plain text.\n\n\
+         Available tools:\n",
+    );
+
+    for tool in tools {
+        prompt.push_str(&format!(
+            "\n- **{}**: {}\n  Parameters: {}\n",
+            tool.name, tool.description, tool.parameters
+        ));
+    }
+
+    prompt
 }
 
 #[async_trait]
@@ -370,8 +407,9 @@ mod tests {
 
     // rtmx:req REQ-LLM-001
     #[test]
-    fn request_body_includes_tools_when_provided() {
-        let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
+    fn request_body_includes_tools_for_capable_model() {
+        // gemini-2.5 supports native tool calling
+        let cfg = ProviderConfig::local("http://localhost:11434/v1", "gemini-2.5-pro");
         let provider = LocalProvider::new(&cfg).unwrap();
 
         let tools = vec![ToolSchema {
@@ -395,6 +433,48 @@ mod tests {
         let tools_arr = body["tools"].as_array().unwrap();
         assert_eq!(tools_arr.len(), 1);
         assert_eq!(tools_arr[0]["function"]["name"], "read_file");
+    }
+
+    // rtmx:req REQ-AGENT-003
+    #[test]
+    fn request_body_uses_shim_for_llama3() {
+        // llama3 does not support native tool calling -- tools should
+        // be injected as a system prompt, not in the `tools` field.
+        let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
+        let provider = LocalProvider::new(&cfg).unwrap();
+
+        let tools = vec![ToolSchema {
+            name: "read_file".to_string(),
+            description: "Read a file".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"}
+                }
+            }),
+        }];
+
+        let messages = vec![Message {
+            role: Role::User,
+            content: "Read foo.rs".to_string(),
+        }];
+
+        let body = provider.build_request_body(&messages, &tools);
+
+        // tools field should NOT be present
+        assert!(
+            body.get("tools").is_none(),
+            "llama3 should not have a tools field"
+        );
+
+        // A system message with tool descriptions should be injected
+        let msgs = body["messages"].as_array().unwrap();
+        assert_eq!(msgs[0]["role"], "system");
+        let sys_content = msgs[0]["content"].as_str().unwrap();
+        assert!(
+            sys_content.contains("read_file"),
+            "Shim prompt should describe available tools"
+        );
     }
 
     // rtmx:req REQ-LLM-016

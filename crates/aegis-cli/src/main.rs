@@ -419,12 +419,122 @@ fn resolve_provider_config(
         }
     };
 
-    match discovered {
+    if let Ok(dp) = discovered {
+        eprintln!("aegis: auto-discovered provider: {}", dp.name);
+        return Ok(dp.config);
+    }
+
+    // Discovery failed -- try to auto-start Ollama if it's installed.
+    let has_ollama = std::process::Command::new("which")
+        .arg("ollama")
+        .output()
+        .ok()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !has_ollama {
+        return Err("No LLM backend found and Ollama is not installed.\n  \
+             Local:  brew install ollama  (macOS)\n          \
+             curl -fsSL https://ollama.com/install.sh | sh  (Linux)\n  \
+             Cloud:  aegis init (configure Vertex AI / Bedrock)"
+            .to_string());
+    }
+
+    eprintln!("aegis: starting ollama serve...");
+    let _ = std::process::Command::new("ollama")
+        .arg("serve")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+
+    // Wait up to 5 seconds for Ollama to come up
+    let ollama_endpoint = "http://localhost:11434/v1";
+    let mut started = false;
+    for _ in 0..10 {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let probe = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => std::thread::scope(|s| {
+                s.spawn(|| handle.block_on(aegis_llm::discovery::probe_endpoint(ollama_endpoint)))
+                    .join()
+                    .unwrap_or(false)
+            }),
+            Err(_) => {
+                if let Ok(rt) = tokio::runtime::Runtime::new() {
+                    rt.block_on(aegis_llm::discovery::probe_endpoint(ollama_endpoint))
+                } else {
+                    false
+                }
+            }
+        };
+        if probe {
+            started = true;
+            break;
+        }
+    }
+
+    if !started {
+        // Ollama is installed but failed to start. Try pulling the model
+        // anyway -- `ollama pull` starts the server implicitly on some
+        // platforms.
+        eprintln!("aegis: ollama serve did not respond, pulling llama3...");
+        let pull = std::process::Command::new("ollama")
+            .args(["pull", "llama3"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output();
+        match pull {
+            Ok(o) if o.status.success() => {}
+            _ => {
+                return Err("Ollama is installed but failed to start.\n  \
+                     Try manually: ollama serve\n  \
+                     Then: aegis chat"
+                    .to_string());
+            }
+        }
+    }
+
+    // Re-run discovery now that Ollama is running
+    let rediscovered = match tokio::runtime::Handle::try_current() {
+        Ok(handle) => std::thread::scope(|s| {
+            s.spawn(|| handle.block_on(aegis_llm::discovery::discover_provider()))
+                .join()
+                .unwrap()
+        }),
+        Err(_) => {
+            let tmp_rt =
+                tokio::runtime::Runtime::new().map_err(|e| format!("Runtime error: {e}"))?;
+            tmp_rt.block_on(aegis_llm::discovery::discover_provider())
+        }
+    };
+
+    match rediscovered {
         Ok(dp) => {
-            eprintln!("aegis: auto-discovered provider: {}", dp.name);
+            eprintln!("aegis: auto-started Ollama, using {}", dp.name);
             Ok(dp.config)
         }
-        Err(e) => Err(e.to_string()),
+        Err(_) => {
+            // Ollama is running but has no models -- pull llama3
+            eprintln!("aegis: pulling llama3...");
+            let pull = std::process::Command::new("ollama")
+                .args(["pull", "llama3"])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output();
+            match pull {
+                Ok(o) if o.status.success() => {
+                    eprintln!("aegis: llama3 ready");
+                    Ok(aegis_llm::config::ProviderConfig::local(
+                        "http://localhost:11434/v1",
+                        "llama3",
+                    ))
+                }
+                _ => Err("Ollama started but failed to pull llama3.\n  \
+                     Try manually: ollama pull llama3\n  \
+                     Then: aegis chat"
+                    .to_string()),
+            }
+        }
     }
 }
 
@@ -490,6 +600,10 @@ fn format_tool_call_plain(call: &ToolCall) -> String {
         ToolCall::Grep { pattern, path } => {
             format!("grep: {pattern} in {path}")
         }
+        ToolCall::McpTool {
+            qualified_name,
+            arguments,
+        } => format!("mcp: {qualified_name}({arguments})"),
     }
 }
 
@@ -1032,10 +1146,39 @@ async fn run_agent_for_tui(
         }
     });
 
-    let agent = aegis_agent::loop_runner::AgentLoop::new(
+    let mut agent = aegis_agent::loop_runner::AgentLoop::new(
         provider, gate, executor, ledger, filter, config,
     )
     .with_event_sink(stream_tx);
+
+    // REQ-AGENT-022: Connect MCP servers from config (if any).
+    let aegis_config = aegis_onboard::config::AegisConfig::default_path()
+        .ok()
+        .and_then(|p| aegis_onboard::config::AegisConfig::load(&p).ok());
+    if let Some(aegis_config) = aegis_config
+        && !aegis_config.mcp_servers.is_empty()
+    {
+        let mut mcp_mgr = aegis_agent::mcp::McpManager::new();
+        for srv in &aegis_config.mcp_servers {
+            match mcp_mgr.connect(srv.clone()).await {
+                Ok(tools) => {
+                    tracing::info!(
+                        server = %srv.name,
+                        tools = tools.len(),
+                        "MCP server connected"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        server = %srv.name,
+                        %e,
+                        "MCP server connection failed"
+                    );
+                }
+            }
+        }
+        agent = agent.with_mcp_manager(mcp_mgr);
+    }
 
     agent.run(prompt).await.map_err(|e| e.to_string())?;
     Ok(())

@@ -58,6 +58,7 @@ pub fn create_byoc_config(
             max_tokens: 4096,
         },
         infra: Default::default(),
+        mcp_servers: Vec::new(),
     }
 }
 

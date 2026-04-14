@@ -2,11 +2,15 @@
 
 use crate::banned_commands;
 use crate::cancellation::CancellationToken;
+use crate::compaction::{self, CompactionConfig};
+use crate::mcp::McpManager;
 use crate::truncation::truncate_output;
+use crate::working_memory::{self, WorkingMemory};
 use aegis_domain::error::DomainError;
 use aegis_domain::ports::*;
 use aegis_domain::types::*;
-use tokio::sync::mpsc;
+use std::sync::Arc;
+use tokio::sync::{Mutex, mpsc};
 use tracing::{debug, info, warn};
 
 /// Configuration for the agent loop.
@@ -141,6 +145,8 @@ where
     cancel_token: CancellationToken,
     /// Optional sink for forwarding stream events to the TUI.
     event_sink: Option<mpsc::UnboundedSender<StreamEvent>>,
+    /// Optional MCP manager for third-party tool integration (REQ-AGENT-014).
+    mcp_manager: Option<Arc<Mutex<McpManager>>>,
 }
 
 impl<P, G, E, A, S> AgentLoop<P, G, E, A, S>
@@ -168,6 +174,7 @@ where
             config,
             cancel_token: CancellationToken::new(),
             event_sink: None,
+            mcp_manager: None,
         }
     }
 
@@ -190,7 +197,14 @@ where
             config,
             cancel_token,
             event_sink: None,
+            mcp_manager: None,
         }
+    }
+
+    /// Attach an MCP manager for third-party tool integration (REQ-AGENT-014).
+    pub fn with_mcp_manager(mut self, mgr: McpManager) -> Self {
+        self.mcp_manager = Some(Arc::new(Mutex::new(mgr)));
+        self
     }
 
     /// Attach an event sink for forwarding stream events to the TUI.
@@ -202,12 +216,22 @@ where
     /// Run the agent loop to completion for a given user prompt.
     pub async fn run(&self, prompt: &str) -> Result<AgentResult, DomainError> {
         info!(prompt_len = prompt.len(), "agent session starting");
-        let tools = builtin_tool_schemas();
+        let mut tools = builtin_tool_schemas();
+        // REQ-AGENT-022: Merge MCP tool schemas so the LLM can call them.
+        if let Some(ref mgr) = self.mcp_manager {
+            let mcp_schemas = mgr.lock().await.tool_schemas();
+            info!(mcp_tools = mcp_schemas.len(), "merged MCP tool schemas");
+            tools.extend(mcp_schemas);
+        }
+        // REQ-AGENT-027: Initialize working memory from the user prompt.
+        let mut working_mem = WorkingMemory::new(prompt);
+
         let mut history = vec![
             Message {
                 role: Role::System,
                 content: self.config.system_prompt.clone(),
             },
+            working_mem.render(),
             Message {
                 role: Role::User,
                 content: prompt.to_string(),
@@ -216,6 +240,7 @@ where
 
         let mut total_input_tokens = 0u64;
         let mut total_output_tokens = 0u64;
+        let compaction_config = CompactionConfig::default();
 
         for iteration in 0..self.config.max_iterations {
             // REQ-AGENT-009: Check cancellation before each iteration
@@ -223,6 +248,20 @@ where
                 warn!(iteration, "agent cancelled");
                 return Err(DomainError::Other("Cancelled".to_string()));
             }
+
+            // REQ-AGENT-006: Compact history if approaching token limit.
+            if compaction::needs_compaction(&history, &compaction_config) {
+                let result = compaction::compact(&history, &compaction_config);
+                info!(
+                    freed = result.tokens_freed,
+                    dropped = result.messages_dropped,
+                    "context compacted"
+                );
+                history = result.messages;
+            }
+
+            // REQ-AGENT-027: Update working memory before LLM call.
+            working_memory::upsert_memory(&mut history, &working_mem);
 
             info!(
                 iteration,
@@ -254,6 +293,8 @@ where
                         output_tokens,
                     } => {
                         total_input_tokens += input_tokens;
+                        // REQ-AGENT-027: Track cumulative tokens.
+                        working_mem.accumulate_tokens(input_tokens, output_tokens);
                         total_output_tokens += output_tokens;
                     }
                     StreamEvent::Error(msg) => {
@@ -322,6 +363,9 @@ where
                     }
                 };
 
+                // REQ-AGENT-027: Track files from this tool call.
+                working_mem.track_tool_call(call);
+
                 // INJECT: Add tool result to history
                 history.push(Message {
                     role: Role::Tool,
@@ -349,6 +393,7 @@ where
             ToolCall::RunCommand { .. } => "run_command",
             ToolCall::ListDir { .. } => "list_dir",
             ToolCall::Grep { .. } => "grep",
+            ToolCall::McpTool { qualified_name, .. } => qualified_name.as_str(),
         };
         let risk = call.risk();
         debug!(tool_name, ?risk, "executing tool");
@@ -368,6 +413,34 @@ where
             info!(tool_name, ?decision, "HITL decision received");
             match decision {
                 ApprovalDecision::Approved | ApprovalDecision::Edited => {
+                    // REQ-AGENT-014: Route MCP tools to McpManager.
+                    if let ToolCall::McpTool {
+                        qualified_name,
+                        arguments,
+                    } = call
+                    {
+                        if let Some(ref mgr) = self.mcp_manager {
+                            match mgr
+                                .lock()
+                                .await
+                                .execute(qualified_name, arguments.clone())
+                                .await
+                            {
+                                Ok(output) => {
+                                    return ToolResult::Success { output };
+                                }
+                                Err(e) => {
+                                    return ToolResult::Error {
+                                        message: format!("MCP tool execution failed: {e}"),
+                                    };
+                                }
+                            }
+                        } else {
+                            return ToolResult::Error {
+                                message: "No MCP manager configured".to_string(),
+                            };
+                        }
+                    }
                     match self.executor.execute(call).await {
                         Ok(r) => r,
                         Err(e) => ToolResult::Error {

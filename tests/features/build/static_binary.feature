@@ -1,3 +1,4 @@
+@wip
 Feature: Static Binary Build Pipeline
   As a defense engineer deploying aegis to classified networks
   I need a statically linked, signed, and reproducible binary

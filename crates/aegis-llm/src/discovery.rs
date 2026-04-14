@@ -59,6 +59,26 @@ struct ModelEntry {
 /// Each probe uses a 2-second timeout. Total worst-case latency is
 /// approximately 6 seconds when all probes fail.
 pub async fn discover_provider() -> Result<DiscoveredProvider, DomainError> {
+    // Allow tests and CI to disable discovery entirely.
+    if std::env::var("AEGIS_NO_DISCOVERY").is_ok() {
+        return Err(DomainError::ProviderError {
+            message: "No LLM backend found (discovery disabled via \
+                      AEGIS_NO_DISCOVERY). To get started:\n  \
+                      Local:  ollama serve && ollama pull llama3\n  \
+                      Cloud:  aegis init (configure Vertex AI / Bedrock)"
+                .to_string(),
+        });
+    }
+
+    discover_provider_with_urls("http://localhost:11434/v1", "http://localhost:8080/v1").await
+}
+
+/// Discover providers by probing the given URLs. Testable variant of
+/// `discover_provider` that accepts injectable probe endpoints.
+pub async fn discover_provider_with_urls(
+    ollama_url: &str,
+    vllm_url: &str,
+) -> Result<DiscoveredProvider, DomainError> {
     let client = reqwest::Client::builder()
         .timeout(PROBE_TIMEOUT)
         .connect_timeout(PROBE_TIMEOUT)
@@ -68,9 +88,7 @@ pub async fn discover_provider() -> Result<DiscoveredProvider, DomainError> {
         })?;
 
     // 1. Ollama
-    if let Some(discovered) =
-        probe_openai_compatible(&client, "http://localhost:11434/v1", "Ollama").await
-    {
+    if let Some(discovered) = probe_openai_compatible(&client, ollama_url, "Ollama").await {
         tracing::info!(
             provider = %discovered.name,
             model = %discovered.config.model,
@@ -80,9 +98,7 @@ pub async fn discover_provider() -> Result<DiscoveredProvider, DomainError> {
     }
 
     // 2. vLLM / TGI
-    if let Some(discovered) =
-        probe_openai_compatible(&client, "http://localhost:8080/v1", "vLLM/TGI").await
-    {
+    if let Some(discovered) = probe_openai_compatible(&client, vllm_url, "vLLM/TGI").await {
         tracing::info!(
             provider = %discovered.name,
             model = %discovered.config.model,
@@ -335,13 +351,11 @@ mod tests {
 
     // rtmx:req REQ-LLM-026
     #[tokio::test]
-    #[ignore] // flaky: fails when local Ollama is running
     async fn discover_returns_helpful_error_when_nothing_available() {
-        // No mock servers running, so all probes will fail.
-        // We call discover_provider directly -- it will try real ports
-        // 11434 and 8080 which should be unoccupied in test, plus
-        // gcloud which is likely not authenticated in CI.
-        let result = discover_provider().await;
+        // Probe unreachable URLs (port 1 is privileged, never listening)
+        // so discovery fails deterministically regardless of dev environment.
+        let result =
+            discover_provider_with_urls("http://127.0.0.1:1/v1", "http://127.0.0.1:1/v1").await;
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(

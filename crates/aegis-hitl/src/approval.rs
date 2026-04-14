@@ -132,6 +132,12 @@ pub fn describe_tool_call(tool_call: &ToolCall) -> String {
         ToolCall::Grep { pattern, path } => {
             format!("Search for '{pattern}' in {path}")
         }
+        ToolCall::McpTool {
+            qualified_name,
+            arguments,
+        } => {
+            format!("MCP: {qualified_name}({arguments})")
+        }
     }
 }
 

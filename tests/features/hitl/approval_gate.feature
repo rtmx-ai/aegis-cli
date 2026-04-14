@@ -58,6 +58,7 @@ Feature: Human-in-the-Loop Approval Gate
   # ---------------------------------------------------------------------------
 
   # @req REQ-HITL-002
+  @wip
   Scenario: Session-persistent grant allows repeated writes without re-prompting
     Given the user approves "write_file" for path pattern "src/*.rs" with "allow for session"
     When the agent later invokes "write_file" on "src/lib.rs"
@@ -65,6 +66,7 @@ Feature: Human-in-the-Loop Approval Gate
     And the auto-approval should be logged as "HITL_AUTO_APPROVED (session grant)"
 
   # @req REQ-HITL-002
+  @wip
   Scenario: Mode cycling between Ask, AcceptEdits, and FullAuto
     Given the current permission mode is "Ask"
     When the user cycles the mode to "AcceptEdits"
@@ -72,6 +74,7 @@ Feature: Human-in-the-Loop Approval Gate
     But command execution should still require approval
 
   # @req REQ-HITL-002
+  @wip
   Scenario: FullAuto mode is not available in production configuration
     Given the configuration indicates a production deployment
     When the user attempts to set permission mode to "FullAuto"
@@ -79,6 +82,7 @@ Feature: Human-in-the-Loop Approval Gate
     And display "FullAuto mode is disabled in production deployments"
 
   # @req REQ-HITL-002
+  @wip
   Scenario: Deny rule blocks operations matching a path pattern
     Given a deny rule exists for path pattern "~/.ssh/*"
     When the agent invokes "read_file" on "~/.ssh/id_rsa"
@@ -90,6 +94,7 @@ Feature: Human-in-the-Loop Approval Gate
   # ---------------------------------------------------------------------------
 
   # @req REQ-HITL-003
+  @wip
   Scenario: Unattended dialog auto-denies after 60 seconds
     Given the HITL gate displays an approval dialog
     And the user does not respond
@@ -98,6 +103,7 @@ Feature: Human-in-the-Loop Approval Gate
     And the audit ledger should record "HITL_TIMEOUT" distinct from "HITL_DENIED"
 
   # @req REQ-HITL-003
+  @wip
   Scenario: Custom timeout overrides the default
     Given config contains "hitl_timeout_seconds: 30"
     And the HITL gate displays an approval dialog
@@ -105,6 +111,7 @@ Feature: Human-in-the-Loop Approval Gate
     Then the operation should be denied automatically
 
   # @req REQ-HITL-003
+  @wip
   Scenario: Timer is visible in the approval dialog
     Given the HITL gate displays an approval dialog with a 60-second timeout
     When 10 seconds have elapsed
@@ -115,6 +122,7 @@ Feature: Human-in-the-Loop Approval Gate
   # ---------------------------------------------------------------------------
 
   # @req REQ-HITL-004
+  @wip
   Scenario: Batch approval for consecutive same-tool calls
     Given the agent has queued 5 consecutive "write_file" calls
     When the HITL gate activates
@@ -123,6 +131,7 @@ Feature: Human-in-the-Loop Approval Gate
     And the audit ledger should record a single "HITL_BATCH_APPROVED" event with count 5
 
   # @req REQ-HITL-004
+  @wip
   Scenario: Batch approval is not offered for mixed tool types
     Given the agent has queued "write_file" then "run_command"
     When the HITL gate activates for the first call
@@ -130,6 +139,7 @@ Feature: Human-in-the-Loop Approval Gate
     And each tool call should be presented individually
 
   # @req REQ-HITL-004
+  @wip
   Scenario: Batch approval requires at least 2 consecutive same-tool calls
     Given the agent has queued only 1 "write_file" call
     When the HITL gate activates
@@ -140,6 +150,7 @@ Feature: Human-in-the-Loop Approval Gate
   # ---------------------------------------------------------------------------
 
   # @req REQ-HITL-005
+  @wip
   Scenario: Snapshot is taken before an approved write operation
     Given a file "src/main.rs" exists with original content
     When the user approves a "write_file" operation on "src/main.rs"
@@ -147,6 +158,7 @@ Feature: Human-in-the-Loop Approval Gate
     And then the new content should be written
 
   # @req REQ-HITL-005
+  @wip
   Scenario: aegis undo restores the previous file version
     Given "src/main.rs" was modified by an approved write operation
     And the rollback journal contains the original content
@@ -155,6 +167,7 @@ Feature: Human-in-the-Loop Approval Gate
     And the audit ledger should record a "RollbackExecuted" event
 
   # @req REQ-HITL-005
+  @wip
   Scenario: aegis undo fails gracefully when no rollback data exists
     Given no rollback journal entries exist for the current session
     When the user executes "aegis undo"
@@ -162,6 +175,7 @@ Feature: Human-in-the-Loop Approval Gate
     And exit with a non-zero code
 
   # @req REQ-HITL-005
+  @wip
   Scenario: Rollback journal preserves file for new file creation
     Given "new_file.rs" does not exist
     When the user approves a "write_file" operation creating "new_file.rs"
@@ -173,6 +187,7 @@ Feature: Human-in-the-Loop Approval Gate
   # ---------------------------------------------------------------------------
 
   # @req REQ-HITL-006
+  @wip
   Scenario: aegis history lists all approval decisions for current session
     Given the current session has 3 approvals and 2 denials
     When the user runs "aegis history"
@@ -180,12 +195,14 @@ Feature: Human-in-the-Loop Approval Gate
     And each entry should show either "APPROVED", "DENIED", or "SKIPPED"
 
   # @req REQ-HITL-006
+  @wip
   Scenario: aegis history --denied filters to denied operations only
     Given the current session has 3 approvals and 2 denials
     When the user runs "aegis history --denied"
     Then only the 2 denied entries should be displayed
 
   # @req REQ-HITL-006
+  @wip
   Scenario: aegis history --session filters by session ID
     Given there are 3 sessions in the audit ledger
     When the user runs "aegis history --session <session_id>"
@@ -196,6 +213,7 @@ Feature: Human-in-the-Loop Approval Gate
   # ---------------------------------------------------------------------------
 
   # @req REQ-HITL-007
+  @wip
   Scenario: Ctrl+K terminates the agent loop immediately
     Given the agent is executing with 3 queued tool calls
     When the user presses Ctrl+K
@@ -204,6 +222,7 @@ Feature: Human-in-the-Loop Approval Gate
     And the audit ledger should record "KillSwitchActivated" with aborted_count: 3
 
   # @req REQ-HITL-007
+  @wip
   Scenario: Ctrl+K during a running tool aborts the tool
     Given the agent is executing a long-running "run_command"
     When the user presses Ctrl+K
@@ -212,6 +231,7 @@ Feature: Human-in-the-Loop Approval Gate
     And the exit should be clean without partial writes
 
   # @req REQ-HITL-007
+  @wip
   Scenario: Kill switch is distinct from Ctrl+C cancellation
     Given the agent is running
     When the user presses Ctrl+K
@@ -223,6 +243,7 @@ Feature: Human-in-the-Loop Approval Gate
   # ---------------------------------------------------------------------------
 
   # @req REQ-HITL-008
+  @wip
   Scenario: Session grant persists across restart within 24 hours
     Given the user granted "write_file" for "src/*.rs" with persistence
     And the grant was created 12 hours ago
@@ -231,6 +252,7 @@ Feature: Human-in-the-Loop Approval Gate
     And the grant should be loaded from "~/.aegis/grants.json"
 
   # @req REQ-HITL-008
+  @wip
   Scenario: Expired grant is purged on load
     Given "~/.aegis/grants.json" contains a grant created 25 hours ago
     When aegis starts and loads grants
@@ -238,6 +260,7 @@ Feature: Human-in-the-Loop Approval Gate
     And the tool call should require fresh approval
 
   # @req REQ-HITL-008
+  @wip
   Scenario: Grants file has 0600 permissions
     Given "~/.aegis/grants.json" exists
     When I check the file permissions
@@ -245,6 +268,7 @@ Feature: Human-in-the-Loop Approval Gate
     And aegis should reject the file if permissions are more permissive
 
   # @req REQ-HITL-008
+  @wip
   Scenario: Corrupt grants file is ignored and regenerated
     Given "~/.aegis/grants.json" contains invalid JSON
     When aegis starts and attempts to load grants

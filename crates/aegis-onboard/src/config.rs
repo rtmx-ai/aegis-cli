@@ -46,6 +46,9 @@ pub struct AegisConfig {
     pub backend: BackendConfig,
     #[serde(default)]
     pub infra: toml_map::InfraSection,
+    /// MCP servers for third-party tool integration (REQ-AGENT-022).
+    #[serde(default)]
+    pub mcp_servers: Vec<aegis_domain::types::McpServerConfig>,
 }
 
 /// Backend (LLM endpoint) configuration.
@@ -96,6 +99,7 @@ impl AegisConfig {
                 max_tokens: default_max_tokens(),
             },
             infra: Default::default(),
+            mcp_servers: Vec::new(),
         }
     }
 
@@ -240,6 +244,12 @@ pub fn merge_config(existing: &AegisConfig, new_values: &AegisConfig) -> AegisCo
         },
         // Preserve infra plugin outputs -- plugins manage these
         infra: existing.infra.clone(),
+        // Merge MCP servers from new values (user-updated)
+        mcp_servers: if new_values.mcp_servers.is_empty() {
+            existing.mcp_servers.clone()
+        } else {
+            new_values.mcp_servers.clone()
+        },
     }
 }
 
@@ -503,18 +513,8 @@ mod tests {
     #[test]
     fn merge_config_updates_mode_endpoint_model() {
         let existing = AegisConfig::local("http://localhost:11434/v1", "llama3");
-        let new_values = AegisConfig {
-            version: "1.0".to_string(),
-            mode: Mode::Local,
-            backend: BackendConfig {
-                provider: "local".to_string(),
-                model: "mixtral-8x7b".to_string(),
-                endpoint: "http://localhost:8080/v1".to_string(),
-                region: None,
-                max_tokens: default_max_tokens(),
-            },
-            infra: Default::default(),
-        };
+        let mut new_values = AegisConfig::local("http://localhost:8080/v1", "mixtral-8x7b");
+        new_values.backend.provider = "local".to_string();
 
         let merged = merge_config(&existing, &new_values);
         assert_eq!(merged.backend.model, "mixtral-8x7b");

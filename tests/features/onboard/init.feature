@@ -1,3 +1,4 @@
+@wip
 Feature: Secure Onboarding via aegis init
   As a defense engineer setting up aegis for the first time or updating an existing install
   I need a guided initialization that configures my cloud backend, proxy, and credentials

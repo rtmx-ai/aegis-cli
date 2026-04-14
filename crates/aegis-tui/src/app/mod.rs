@@ -228,6 +228,10 @@ fn describe_tool_call_short(call: &ToolCall) -> (String, String) {
         ToolCall::Grep { pattern, path } => {
             ("grep".to_string(), format!("'{pattern}' in {path}"))
         }
+        ToolCall::McpTool {
+            qualified_name,
+            arguments,
+        } => (qualified_name.clone(), arguments.to_string()),
     }
 }
 

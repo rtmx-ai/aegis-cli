@@ -97,6 +97,11 @@ pub fn parse_tool_call(name: &str, args_json: &str) -> Option<StreamEvent> {
             pattern: args["pattern"].as_str()?.to_string(),
             path: FilePath::new_unchecked(args["path"].as_str()?),
         },
+        // MCP tools use qualified names with "__" separator (REQ-AGENT-023).
+        name if name.contains("__") => ToolCall::McpTool {
+            qualified_name: name.to_string(),
+            arguments: args,
+        },
         _ => return None,
     };
     Some(StreamEvent::ToolUse(tool_call))

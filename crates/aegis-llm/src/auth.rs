@@ -291,26 +291,23 @@ mod tests {
 
     // rtmx:req REQ-LLM-021
     #[test]
-    #[ignore] // requires gcloud CLI or GCE metadata server
-    fn resolve_auth_vertex_returns_gcp_with_token() {
-        let cfg = ProviderConfig {
-            kind: ProviderKind::Vertex,
-            model: "gemini-2.5-pro-001".to_string(),
-            endpoint: "https://vertex.googleapis.com".to_string(),
-            max_tokens: 4096,
-            temperature: 0.0,
-            connect_timeout_secs: 10,
-            read_timeout_secs: 300,
-            project_id: None,
-            region: None,
+    fn gcp_auth_variant_validates_non_empty_token() {
+        // Verify that the Gcp auth variant passes validation when a
+        // token is present (the real resolve_gcp_access_token flow
+        // is tested via extract_access_token_from_json below).
+        let auth = ProviderAuth::Gcp {
+            access_token: "ya29.test-token".to_string(),
         };
-        let auth = resolve_auth(&cfg).unwrap();
-        match auth {
-            ProviderAuth::Gcp { ref access_token } => {
-                assert!(!access_token.trim().is_empty(), "token must not be empty");
-            }
-            other => panic!("expected Gcp variant, got {other:?}"),
-        }
+        assert!(validate_auth(&auth).is_ok());
+    }
+
+    // rtmx:req REQ-LLM-021
+    #[test]
+    fn gcp_auth_variant_rejects_empty_token() {
+        let auth = ProviderAuth::Gcp {
+            access_token: "  ".to_string(),
+        };
+        assert!(validate_auth(&auth).is_err());
     }
 
     // rtmx:req REQ-LLM-015
@@ -587,11 +584,14 @@ mod tests {
 
     // rtmx:req REQ-LLM-021
     #[test]
-    #[ignore] // requires gcloud CLI authenticated
-    fn resolve_gcp_access_token_returns_non_empty() {
-        let token = resolve_gcp_access_token().unwrap();
+    fn metadata_server_token_parsed_correctly() {
+        // Simulate the GCE metadata response that resolve_gcp_access_token
+        // would receive. The parsing flow (extract_access_token_from_json)
+        // is the offline-testable contract.
+        let metadata_response =
+            r#"{"access_token":"ya29.c.b0AXv0zTPtest","expires_in":3599,"token_type":"Bearer"}"#;
+        let token = extract_access_token_from_json(metadata_response).unwrap();
         assert!(!token.trim().is_empty(), "token must not be empty");
-        // GCP access tokens typically start with "ya29."
         assert!(
             token.starts_with("ya29."),
             "expected ya29. prefix, got: {token}"

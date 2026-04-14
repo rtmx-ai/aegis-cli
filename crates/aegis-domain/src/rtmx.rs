@@ -39,6 +39,17 @@ pub struct Requirement {
     pub completed_date: String,
 }
 
+impl Requirement {
+    /// Parse the pipe-delimited dependencies field into a list of requirement IDs.
+    pub fn dependency_ids(&self) -> Vec<&str> {
+        if self.dependencies.trim().is_empty() {
+            Vec::new()
+        } else {
+            self.dependencies.split('|').map(|s| s.trim()).collect()
+        }
+    }
+}
+
 /// A parsed RTMX requirements database.
 #[derive(Debug, Clone)]
 pub struct RequirementsDb {
@@ -350,6 +361,22 @@ REQ-AGENT-001,AGENT,LOOP,REA loop,Agent completes,tests/agent.rs,test_loop,Integ
         let db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
         let req = db.get("REQ-AGENT-001").unwrap();
         assert_eq!(req.dependencies, "REQ-LLM-001");
+    }
+
+    // rtmx:req REQ-AGENT-034
+    #[test]
+    fn dependency_ids_parses_pipe_delimited() {
+        let db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
+        let req = db.get("REQ-AGENT-001").unwrap();
+        assert_eq!(req.dependency_ids(), vec!["REQ-LLM-001"]);
+    }
+
+    // rtmx:req REQ-AGENT-034
+    #[test]
+    fn dependency_ids_empty_returns_empty_vec() {
+        let db = RequirementsDb::from_csv(SAMPLE_CSV).unwrap();
+        let req = db.get("REQ-BUILD-001").unwrap();
+        assert!(req.dependency_ids().is_empty());
     }
 
     // rtmx:req REQ-RTMX-001

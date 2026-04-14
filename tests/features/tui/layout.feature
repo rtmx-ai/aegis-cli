@@ -1,3 +1,4 @@
+@wip
 Feature: TUI Layout and Interactive Components
   As a defense engineer using aegis in a terminal
   I need a responsive, accessible TUI with streaming markdown, diffs, and tool calls

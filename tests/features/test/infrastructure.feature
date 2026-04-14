@@ -1,3 +1,4 @@
+@wip
 Feature: Test Infrastructure and Quality Gates
   As a defense engineer maintaining aegis quality
   I need deterministic, isolated, and comprehensive test infrastructure

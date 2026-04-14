@@ -66,6 +66,7 @@ async fn agent_invokes_tool(world: &mut AegisWorld, tool: String, target: String
         ToolCall::RunCommand { command, .. } => tool == "run_command" && command == &target,
         ToolCall::ListDir { path } => tool == "list_dir" && path.to_string() == target,
         ToolCall::Grep { path, .. } => tool == "grep" && path.to_string() == target,
+        ToolCall::McpTool { qualified_name, .. } => tool == qualified_name.as_str(),
     });
     assert!(
         matched,

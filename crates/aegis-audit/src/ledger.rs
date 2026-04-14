@@ -225,14 +225,22 @@ impl JsonlLedger {
 #[async_trait]
 impl AuditLedger for JsonlLedger {
     async fn record(&self, event: &DomainEvent) -> Result<(), DomainError> {
-        tracing::debug!("audit event recorded");
+        self.record_with_req(event, None).await
+    }
+
+    async fn record_with_req(
+        &self,
+        event: &DomainEvent,
+        req_id: Option<&str>,
+    ) -> Result<(), DomainError> {
+        tracing::debug!(req_id = req_id, "audit event recorded");
         let (os_user, hostname) = Self::current_identity();
         let entry = LedgerEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
             os_user,
             hostname,
             event,
-            req_id: None,
+            req_id: req_id.map(|s| s.to_string()),
         };
 
         // Serialize before acquiring any lock to minimize hold time.
@@ -767,5 +775,64 @@ mod tests {
             }
         }
         entries
+    }
+
+    // rtmx:req REQ-AUDIT-003
+    #[tokio::test]
+    async fn record_with_req_includes_req_id_in_entry() {
+        let dir = TempDir::new().unwrap();
+        let ledger = make_ledger(dir.path()).await;
+
+        let event = session_started_event();
+        ledger
+            .record_with_req(&event, Some("REQ-BUILD-001"))
+            .await
+            .unwrap();
+
+        let entries = read_log_entries(dir.path());
+        assert_eq!(entries.len(), 1);
+
+        let parsed: serde_json::Value = serde_json::from_str(&entries[0]).unwrap();
+        assert_eq!(
+            parsed["req_id"].as_str(),
+            Some("REQ-BUILD-001"),
+            "entry should contain req_id field"
+        );
+    }
+
+    // rtmx:req REQ-AUDIT-003
+    #[tokio::test]
+    async fn record_without_req_omits_req_id() {
+        let dir = TempDir::new().unwrap();
+        let ledger = make_ledger(dir.path()).await;
+
+        let event = session_started_event();
+        ledger.record(&event).await.unwrap();
+
+        let entries = read_log_entries(dir.path());
+        assert_eq!(entries.len(), 1);
+
+        let parsed: serde_json::Value = serde_json::from_str(&entries[0]).unwrap();
+        assert!(
+            parsed.get("req_id").is_none() || parsed["req_id"].is_null(),
+            "entry should not contain req_id when not provided"
+        );
+    }
+
+    // rtmx:req REQ-AUDIT-003
+    #[tokio::test]
+    async fn record_with_req_none_omits_req_id() {
+        let dir = TempDir::new().unwrap();
+        let ledger = make_ledger(dir.path()).await;
+
+        let event = session_started_event();
+        ledger.record_with_req(&event, None).await.unwrap();
+
+        let entries = read_log_entries(dir.path());
+        let parsed: serde_json::Value = serde_json::from_str(&entries[0]).unwrap();
+        assert!(
+            parsed.get("req_id").is_none() || parsed["req_id"].is_null(),
+            "entry should not contain req_id when None"
+        );
     }
 }

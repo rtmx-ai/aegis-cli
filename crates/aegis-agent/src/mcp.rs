@@ -15,40 +15,16 @@ use crate::truncation::truncate_output;
 use aegis_domain::error::DomainError;
 use aegis_domain::ports::ToolSchema;
 use aegis_domain::types::ToolRisk;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tracing::{debug, info};
 
+// Re-export config types from domain (shared kernel).
+pub use aegis_domain::types::{McpServerConfig, McpTransport};
+
 /// MCP protocol version supported by this client.
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
-
-/// Configuration for an MCP server connection.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct McpServerConfig {
-    /// Human-readable name for this server.
-    pub name: String,
-    /// Transport configuration.
-    pub transport: McpTransport,
-}
-
-/// Transport type for connecting to an MCP server.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum McpTransport {
-    /// Spawn a subprocess, communicate via stdin/stdout JSON-RPC (NDJSON).
-    Stdio {
-        command: String,
-        args: Vec<String>,
-        #[serde(default)]
-        env: HashMap<String, String>,
-    },
-    /// Connect via HTTP+SSE (not yet implemented).
-    Sse {
-        url: String,
-        #[serde(default)]
-        headers: HashMap<String, String>,
-    },
-}
 
 /// A discovered tool from an MCP server.
 #[derive(Debug, Clone)]

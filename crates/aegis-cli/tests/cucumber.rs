@@ -31,6 +31,26 @@ pub struct AegisWorld {
     pub final_response: Option<String>,
     /// Last error message produced by the system under test.
     pub last_error: Option<String>,
+
+    // -- Security (REQ-SECURITY-001) --
+    /// Security filter for .aegisignore tests.
+    pub security_filter: Option<aegis_security::aegisignore::AegisIgnore>,
+    /// Temporary workspace directory for file-system-backed scenarios.
+    pub temp_dir: Option<tempfile::TempDir>,
+    /// Result of the last tool invocation (for assertion steps).
+    pub tool_result: Option<Result<String, String>>,
+
+    // -- HITL (REQ-HITL-001, REQ-HITL-002) --
+    /// Pending tool call for HITL scenarios.
+    pub pending_tool_call: Option<aegis_domain::types::ToolCall>,
+    /// HITL approval decision from the simulated user.
+    pub approval_decision: Option<aegis_domain::types::ApprovalDecision>,
+
+    // -- Audit (REQ-AUDIT-001) --
+    /// In-memory audit ledger for assertion.
+    pub audit_ledger: Option<aegis_test_support::mock_ledger::MockAuditLedger>,
+    /// Session ID for audit scenarios.
+    pub session_id: Option<aegis_domain::types::SessionId>,
 }
 
 // Manual Debug impl since MockLlmProvider doesn't implement Debug.
@@ -45,6 +65,13 @@ impl std::fmt::Debug for AegisWorld {
             .field("tool_calls_seen", &self.tool_calls_seen)
             .field("final_response", &self.final_response)
             .field("last_error", &self.last_error)
+            .field("security_filter", &self.security_filter.is_some())
+            .field("temp_dir", &self.temp_dir.is_some())
+            .field("tool_result", &self.tool_result)
+            .field("pending_tool_call", &self.pending_tool_call)
+            .field("approval_decision", &self.approval_decision)
+            .field("audit_ledger", &self.audit_ledger.is_some())
+            .field("session_id", &self.session_id)
             .finish()
     }
 }
@@ -52,9 +79,12 @@ impl std::fmt::Debug for AegisWorld {
 #[tokio::main]
 async fn main() {
     AegisWorld::cucumber()
-        .filter_run("../../tests/features", |_, _, sc| {
+        .fail_on_skipped()
+        .filter_run("../../tests/features", |feat, _, sc| {
             // Skip scenarios tagged @wip until their step definitions exist.
-            !sc.tags.iter().any(|t| t == "wip")
+            // Check both feature-level and scenario-level tags.
+            let mut dominated = feat.tags.iter().chain(sc.tags.iter());
+            !dominated.any(|t| t == "wip")
         })
         .await;
 }

@@ -1,3 +1,4 @@
+@wip
 Feature: Infrastructure Plugin Protocol (aegis-infra/v1)
   As a defense engineer using aegis init to provision a cloud boundary
   I need aegis-cli to invoke IaC plugins via a well-defined protocol

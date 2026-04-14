@@ -10,6 +10,9 @@ use crate::local::LocalProvider;
 use crate::vertex::VertexProvider;
 
 /// Create an `LlmProvider` from a `ProviderConfig`.
+///
+/// Resolves authentication automatically. For testable construction
+/// with pre-resolved auth, use `create_provider_with_token`.
 pub fn create_provider(config: &ProviderConfig) -> Result<Box<dyn LlmProvider>, DomainError> {
     match config.kind {
         ProviderKind::Local => Ok(Box::new(LocalProvider::new(config)?)),
@@ -28,6 +31,15 @@ pub fn create_provider(config: &ProviderConfig) -> Result<Box<dyn LlmProvider>, 
     }
 }
 
+/// Create a Vertex AI provider with a pre-resolved access token.
+/// Useful in tests where GCP credentials are not available.
+pub fn create_vertex_provider_with_token(
+    config: &ProviderConfig,
+    access_token: String,
+) -> Result<Box<dyn LlmProvider>, DomainError> {
+    Ok(Box::new(VertexProvider::new(config, access_token)?))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -42,8 +54,7 @@ mod tests {
 
     // rtmx:req REQ-LLM-023
     #[test]
-    #[ignore] // requires gcloud CLI or GCE metadata server for ADC
-    fn factory_creates_vertex_provider() {
+    fn factory_creates_vertex_provider_with_token() {
         let cfg = ProviderConfig {
             kind: ProviderKind::Vertex,
             model: "gemini-2.5-pro-001".to_string(),
@@ -55,7 +66,7 @@ mod tests {
             project_id: Some("my-project".to_string()),
             region: Some("us-central1".to_string()),
         };
-        let result = create_provider(&cfg);
+        let result = create_vertex_provider_with_token(&cfg, "ya29.fake-test-token".into());
         assert!(result.is_ok());
     }
 

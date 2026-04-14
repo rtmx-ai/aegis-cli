@@ -1,3 +1,4 @@
+@wip
 Feature: LLM Provider Abstraction
   As a defense engineer using aegis in cloud and air-gapped environments
   I need a robust, provider-agnostic LLM interface

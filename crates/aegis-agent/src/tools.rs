@@ -199,6 +199,9 @@ impl ToolExecutor for BuiltinExecutor {
             } => self.run_command(command, *timeout_secs).await,
             ToolCall::ListDir { path } => self.list_dir(path).await,
             ToolCall::Grep { pattern, path } => self.grep(pattern, path).await,
+            ToolCall::McpTool { .. } => Err(DomainError::Other(
+                "MCP tools are handled by McpManager, not BuiltinExecutor".to_string(),
+            )),
         }
     }
 }

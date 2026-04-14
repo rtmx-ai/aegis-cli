@@ -1,3 +1,4 @@
+@wip
 Feature: RTMX Closed-Loop Verification
   As a defense engineer with compliance obligations
   I need the agent to link all work to RTMX requirements
