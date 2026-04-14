@@ -11,6 +11,8 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
+use crate::command_palette::CommandPaletteView;
+
 /// Structured status line information.
 ///
 /// Replaces the old `status_text: String` with discrete fields so the renderer
@@ -73,6 +75,8 @@ pub struct AppState {
     pub spinner_frame: u8,
     /// When set, a file picker overlay is rendered for @-mention selection.
     pub file_picker: Option<FilePickerView>,
+    /// When set, a command palette overlay is rendered for / autocomplete.
+    pub command_palette: Option<CommandPaletteView>,
 }
 
 /// View data for the file picker dropdown.
@@ -107,6 +111,7 @@ impl Default for AppState {
             approval_display: None,
             spinner_frame: 0,
             file_picker: None,
+            command_palette: None,
         }
     }
 }

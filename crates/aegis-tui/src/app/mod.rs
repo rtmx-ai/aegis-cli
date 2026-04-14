@@ -20,6 +20,7 @@ pub mod status;
 pub use approval::ApprovalDisplayInfo;
 pub use phase::{Action, AppPhase};
 
+use crate::command_palette::CommandPalette;
 use crate::event::{ApprovalRequestHandle, TuiEvent};
 use crate::input::InputState;
 use crate::messages::ChatMessage;
@@ -69,6 +70,8 @@ pub struct App {
 
     // File picker: interactive @-mention file selector overlay.
     pub file_picker: Option<file_picker::FilePicker>,
+
+    pub command_palette: CommandPalette,
 }
 
 /// Number of lines to scroll per PageUp/PageDown press.
@@ -97,6 +100,7 @@ impl App {
             tick_count: 0,
             search_match_index: None,
             file_picker: None,
+            command_palette: CommandPalette::new(),
         }
     }
 

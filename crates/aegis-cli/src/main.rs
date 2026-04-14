@@ -841,6 +841,7 @@ async fn run_interactive_chat(
                         stream_buffer: app.stream_buffer.clone(),
                         approval_display: app.approval_display.clone(),
                         spinner_frame: (app.tick_count % 4) as u8,
+                        command_palette: app.command_palette.view(),
                         file_picker: app.file_picker.as_ref().map(|fp| {
                             aegis_tui::layout::FilePickerView {
                                 query: fp.query.clone(),

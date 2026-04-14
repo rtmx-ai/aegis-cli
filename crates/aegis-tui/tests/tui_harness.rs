@@ -105,6 +105,7 @@ impl TuiHarness {
                             preview_extension: fp.selected_extension(),
                         }
                     }),
+                    command_palette: app.command_palette.view(),
                 };
                 aegis_tui::layout::render(frame, &view);
             })
