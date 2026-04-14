@@ -106,6 +106,7 @@ impl TuiHarness {
                         }
                     }),
                     command_palette: app.command_palette.view(),
+                    ghost_text: app.input.ghost_text.clone(),
                 };
                 aegis_tui::layout::render(frame, &view);
             })

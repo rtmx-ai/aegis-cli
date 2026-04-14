@@ -78,6 +78,8 @@ pub struct AppState {
     pub file_picker: Option<FilePickerView>,
     /// When set, a command palette overlay is rendered for / autocomplete.
     pub command_palette: Option<CommandPaletteView>,
+    /// Ghost text for usage hints (shown dim italic after input cursor).
+    pub ghost_text: Option<String>,
 }
 
 /// View data for the file picker dropdown.
@@ -113,6 +115,7 @@ impl Default for AppState {
             spinner_frame: 0,
             file_picker: None,
             command_palette: None,
+            ghost_text: None,
         }
     }
 }
@@ -452,15 +455,16 @@ fn render_chat_log(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppSt
         lines.push(Line::from(""));
     }
 
-    // Clamp scroll so we don't scroll past content or when content fits.
+    // Scroll logic: scroll_offset counts lines UP from the bottom.
+    // 0 = pinned to bottom (auto-scroll), N = scrolled up N lines.
     let total_lines = lines.len() as u16;
     let visible_height = area.height;
     let max_scroll = total_lines.saturating_sub(visible_height);
-    let clamped_scroll = state.scroll_offset.min(max_scroll);
+    let scroll_from_top = max_scroll.saturating_sub(state.scroll_offset);
 
     let chat = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
-        .scroll((clamped_scroll, 0));
+        .scroll((scroll_from_top, 0));
 
     frame.render_widget(chat, area);
 }

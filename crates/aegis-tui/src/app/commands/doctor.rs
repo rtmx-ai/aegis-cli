@@ -40,25 +40,25 @@ impl App {
         // Check 2: Configuration validity
         total += 1;
         let config_check = if let Some(home) = dirs_check_home() {
-            let config_path = home.join(".aegis").join("config.toml");
+            let config_path = home.join(".aegis").join("config.yaml");
             if config_path.exists() {
                 match std::fs::read_to_string(&config_path) {
                     Ok(content) => {
                         if content.contains("[") || content.contains("mode") {
                             passed += 1;
-                            "[PASS] Configuration: config.toml is readable".to_string()
+                            "[PASS] Configuration: config.yaml is readable".to_string()
                         } else {
-                            "[FAIL] Configuration: config.toml appears empty \
+                            "[FAIL] Configuration: config.yaml appears empty \
                                  or invalid"
                                 .to_string()
                         }
                     }
                     Err(e) => {
-                        format!("[FAIL] Configuration: cannot read config.toml: {e}")
+                        format!("[FAIL] Configuration: cannot read config.yaml: {e}")
                     }
                 }
             } else {
-                "[FAIL] Configuration: config.toml not found. Run aegis init.".to_string()
+                "[FAIL] Configuration: config.yaml not found. Run aegis init.".to_string()
             }
         } else {
             "[FAIL] Configuration: could not determine home directory".to_string()

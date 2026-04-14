@@ -36,13 +36,21 @@ impl CommandPalette {
     pub fn new() -> Self {
         let all_commands = vec![
             cmd("/help", "Show available commands and usage"),
-            cmd("/connect", "Connect to an LLM provider"),
-            cmd("/model", "Switch or display current model"),
-            cmd("/add", "Add file to conversation context"),
-            cmd("/drop", "Remove file from context"),
+            cmd_with_usage(
+                "/connect",
+                "Connect to an LLM provider",
+                "<local|vertex|bedrock|azure>",
+            ),
+            cmd_with_usage("/model", "Switch or display current model", "<name>"),
+            cmd_with_usage("/add", "Add file to conversation context", "<path>"),
+            cmd_with_usage("/drop", "Remove file from context", "<path>"),
             cmd("/context", "Show current context files"),
-            cmd("/search", "Search conversation history"),
-            cmd("/infra", "Infrastructure plugin operations"),
+            cmd_with_usage("/search", "Search conversation history", "<query>"),
+            cmd_with_usage(
+                "/infra",
+                "Infrastructure plugin operations",
+                "<list|status|up|preview|destroy>",
+            ),
             cmd("/doctor", "Run health and connectivity checks"),
             cmd("/clear", "Clear conversation history"),
             cmd("/quit", "Exit aegis"),
@@ -91,6 +99,10 @@ impl CommandPalette {
         }
     }
 
+    pub fn selected_entry(&self) -> Option<&CommandEntry> {
+        self.filtered.get(self.selected)
+    }
+
     pub fn selected_command(&self) -> Option<&str> {
         self.filtered.get(self.selected).map(|e| e.name.as_str())
     }
@@ -111,6 +123,14 @@ fn cmd(name: &str, desc: &str) -> CommandEntry {
         name: name.into(),
         description: desc.into(),
         usage: None,
+    }
+}
+
+fn cmd_with_usage(name: &str, desc: &str, usage: &str) -> CommandEntry {
+    CommandEntry {
+        name: name.into(),
+        description: desc.into(),
+        usage: Some(usage.into()),
     }
 }
 

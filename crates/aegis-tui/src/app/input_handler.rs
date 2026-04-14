@@ -50,9 +50,11 @@ impl App {
                     self.command_palette.next();
                     return Action::Continue;
                 }
-                KeyCode::Tab => {
-                    if let Some(cmd) = self.command_palette.selected_command() {
-                        let completed = format!("{} ", cmd);
+                KeyCode::Tab | KeyCode::Enter => {
+                    let selection = self.command_palette.selected_entry();
+                    if let Some(entry) = selection {
+                        let completed = format!("{} ", entry.name);
+                        self.input.ghost_text = entry.usage.clone();
                         self.input.text = completed;
                         self.input.cursor = self.input.text.len();
                     }
@@ -63,10 +65,7 @@ impl App {
                     self.command_palette.hide();
                     return Action::Continue;
                 }
-                KeyCode::Enter => {
-                    self.command_palette.hide();
-                    // Fall through to normal Enter handling
-                }
+                // Enter is handled above with Tab
                 KeyCode::Backspace => {
                     self.input.backspace();
                     if self.input.text.starts_with('/') {

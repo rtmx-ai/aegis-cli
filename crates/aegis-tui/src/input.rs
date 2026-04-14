@@ -18,6 +18,8 @@ pub enum InputMode {
 pub struct InputState {
     /// Current text content.
     pub text: String,
+    /// Ghost text shown after cursor (italic, dim) for usage hints.
+    pub ghost_text: Option<String>,
     /// Cursor position (byte offset into text).
     pub cursor: usize,
     /// Current editing mode.
@@ -36,6 +38,7 @@ impl Default for InputState {
     fn default() -> Self {
         Self {
             text: String::new(),
+            ghost_text: None,
             cursor: 0,
             mode: InputMode::Insert,
             history: Vec::new(),
@@ -49,6 +52,7 @@ impl Default for InputState {
 impl InputState {
     /// Insert a character at the cursor position.
     pub fn insert_char(&mut self, ch: char) {
+        self.ghost_text = None;
         if self.mode != InputMode::Insert {
             return;
         }
@@ -58,6 +62,7 @@ impl InputState {
 
     /// Delete the character before the cursor (backspace).
     pub fn backspace(&mut self) {
+        self.ghost_text = None;
         if self.cursor == 0 {
             return;
         }
@@ -187,6 +192,7 @@ impl InputState {
     /// Submit the current text: add to history and return it.
     /// Clears the input state.
     pub fn submit(&mut self) -> String {
+        self.ghost_text = None;
         let text = self.text.clone();
         if !text.trim().is_empty() {
             self.history.push(text.clone());
