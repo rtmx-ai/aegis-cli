@@ -12,6 +12,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
 use crate::command_palette::CommandPaletteView;
+use crate::command_palette_render::render_command_palette;
 
 /// Structured status line information.
 ///
@@ -173,6 +174,12 @@ pub fn render(frame: &mut Frame, state: &AppState) {
     // Render HITL approval modal overlay on top of everything.
     if let Some(ref info) = state.approval_display {
         render_approval_modal(frame, frame.area(), info);
+    }
+
+    // Render command palette dropdown above the input line.
+    if let Some(ref palette_view) = state.command_palette {
+        let input_area = chunks[3];
+        render_command_palette(frame, palette_view, input_area);
     }
 
     // Render file picker dropdown below the separator.
