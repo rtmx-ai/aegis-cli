@@ -152,6 +152,7 @@ fn chat_no_tui_flag_appears_in_help() {
 
 // rtmx:req REQ-TUI-013
 #[test]
+#[ignore] // flaky: succeeds when local Ollama is running (auto-discovery)
 fn chat_no_tui_without_config_errors_gracefully() {
     // --no-tui without a config or available backend should fail gracefully.
     let tmp = tempfile::TempDir::new().unwrap();

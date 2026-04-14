@@ -102,9 +102,11 @@ impl App {
                         )));
                         match detect_and_setup_local(model) {
                             LocalSetupResult::Ready(endpoint) => {
+                                // Update the model name so the TUI shows it
+                                self.model_name = model.to_string();
                                 self.messages.push(ChatMessage::system(format!(
-                                    "Connected to {endpoint} with model '{model}'.\n\
-                                     Restart aegis to use: aegis chat --provider local --model {model}"
+                                    "Ready. Ollama is running with model '{model}' at {endpoint}.\n\
+                                     You can start chatting now."
                                 )));
                             }
                             LocalSetupResult::PullingModel(model_name) => {
@@ -268,12 +270,14 @@ fn detect_and_setup_local(model: &str) -> LocalSetupResult {
     tracing::info!(model = model, "Pulling model via ollama pull");
     let pull_result = std::process::Command::new("ollama")
         .args(["pull", model])
-        .stdout(std::process::Stdio::inherit())
-        .stderr(std::process::Stdio::inherit())
-        .status();
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output();
 
     match pull_result {
-        Ok(status) if status.success() => LocalSetupResult::Ready(format!("{endpoint}/v1")),
+        Ok(output) if output.status.success() => {
+            LocalSetupResult::Ready(format!("{endpoint}/v1"))
+        }
         _ => LocalSetupResult::PullingModel(model.to_string()),
     }
 }
