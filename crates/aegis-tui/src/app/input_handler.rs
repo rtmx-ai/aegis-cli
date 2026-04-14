@@ -39,6 +39,58 @@ impl App {
             AppPhase::Idle => {}
         }
 
+        // Command palette intercept: handle keys when palette is visible.
+        if self.command_palette.is_visible {
+            match key.code {
+                KeyCode::Up => {
+                    self.command_palette.prev();
+                    return Action::Continue;
+                }
+                KeyCode::Down => {
+                    self.command_palette.next();
+                    return Action::Continue;
+                }
+                KeyCode::Tab => {
+                    if let Some(cmd) = self.command_palette.selected_command() {
+                        let completed = format!("{} ", cmd);
+                        self.input.text = completed;
+                        self.input.cursor = self.input.text.len();
+                    }
+                    self.command_palette.hide();
+                    return Action::Continue;
+                }
+                KeyCode::Esc => {
+                    self.command_palette.hide();
+                    return Action::Continue;
+                }
+                KeyCode::Enter => {
+                    self.command_palette.hide();
+                    // Fall through to normal Enter handling
+                }
+                KeyCode::Backspace => {
+                    self.input.backspace();
+                    if self.input.text.starts_with('/') {
+                        self.command_palette.filter(&self.input.text);
+                    } else {
+                        self.command_palette.hide();
+                    }
+                    return Action::Continue;
+                }
+                KeyCode::Char(ch) => {
+                    self.input.insert_char(ch);
+                    if self.input.text.starts_with('/') {
+                        self.command_palette.filter(&self.input.text);
+                    } else {
+                        self.command_palette.hide();
+                    }
+                    return Action::Continue;
+                }
+                _ => {
+                    self.command_palette.hide();
+                }
+            }
+        }
+
         // File-picker intercept: capture keystrokes when picker is open.
         if self.file_picker.is_some() {
             return self.handle_file_picker_key(key);
@@ -192,6 +244,13 @@ impl App {
             }
             KeyCode::Char(c) => {
                 self.input.insert_char(c);
+                // Show/update command palette when typing /commands
+                if self.input.text.starts_with('/') && !self.input.text.contains(' ') {
+                    self.command_palette.show();
+                    self.command_palette.filter(&self.input.text);
+                } else if self.command_palette.is_visible {
+                    self.command_palette.hide();
+                }
                 Action::Continue
             }
             _ => Action::Continue,
