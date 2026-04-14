@@ -738,6 +738,16 @@ fn render_input_line(frame: &mut Frame, area: Rect, state: &AppState) {
         }
     }
 
+    // Append ghost text (dim italic usage hint) after cursor
+    if let (Some(ghost), Some(last_line)) = (&state.ghost_text, lines.last_mut()) {
+        last_line.spans.push(Span::styled(
+            ghost.clone(),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        ));
+    }
+
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, area);
 

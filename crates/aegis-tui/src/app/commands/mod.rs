@@ -19,7 +19,7 @@ impl App {
             SlashCommand::Help => {
                 self.messages.push(ChatMessage::system(
                     "Commands:\n\
-                     /connect <url>        Connect to an LLM endpoint\n\
+                     /connect <provider>   Connect to an LLM provider\n\
                      /add <path>           Add file to context\n\
                      /drop <path>          Remove file from context\n\
                      /model [name]         Show or switch active model\n\
@@ -69,29 +69,94 @@ impl App {
                 }
                 Action::Continue
             }
-            SlashCommand::Connect(url) => {
-                if url.is_empty() {
-                    self.messages.push(ChatMessage::system(format!(
-                        "Current endpoint: http://localhost:11434/v1\n\
-                         Current model: {}\n\n\
-                         Usage: /connect <endpoint-url>",
-                        self.model_name
-                    )));
-                } else {
-                    // Validate URL format
-                    if !url.starts_with("http://") && !url.starts_with("https://") {
-                        self.messages.push(ChatMessage::error(
-                            "Endpoint must start with http:// or https://".to_string(),
+            SlashCommand::Connect(args) => {
+                let parts: Vec<&str> = args.split_whitespace().collect();
+                let provider = parts.first().copied().unwrap_or("");
+                match provider {
+                    "" => {
+                        self.messages.push(ChatMessage::system(
+                            "Connect to an LLM provider:\n\
+                             \n\
+                             Local models:\n\
+                               /connect local              Ollama (auto-installs llama3)\n\
+                               /connect local <url>        Connect to running endpoint\n\
+                             \n\
+                             Cloud providers:\n\
+                               /connect vertex             Google Vertex AI (Gemini)\n\
+                               /connect bedrock            AWS Bedrock (Claude)\n\
+                               /connect azure <endpoint>   Azure OpenAI\n\
+                             \n\
+                             Infrastructure provisioning:\n\
+                               /infra list                 Show available plugins\n\
+                               /infra up <plugin>          Provision cloud environment\n\
+                             \n\
+                             Direct endpoint:\n\
+                               /connect http://...         Any OpenAI-compatible API"
+                                .to_string(),
                         ));
-                    } else {
+                    }
+                    "local" => {
+                        let endpoint =
+                            parts.get(1).copied().unwrap_or("http://localhost:11434/v1");
+                        self.messages.push(ChatMessage::system(format!(
+                            "Connecting to local model at {endpoint}...\n\
+                             \n\
+                             If Ollama is not running:\n\
+                               brew install ollama\n\
+                               ollama serve\n\
+                               ollama pull llama3\n\
+                             \n\
+                             Then restart aegis or run: /connect local"
+                        )));
+                    }
+                    "vertex" => {
+                        self.messages.push(ChatMessage::system(
+                            "Connecting to Google Vertex AI...\n\
+                             \n\
+                             Requires: gcloud auth application-default login\n\
+                             Restart aegis with: aegis chat --provider vertex"
+                                .to_string(),
+                        ));
+                    }
+                    "bedrock" => {
+                        let region = parts.get(1).copied().unwrap_or("us-east-1");
+                        self.messages.push(ChatMessage::system(format!(
+                            "Connecting to AWS Bedrock ({region})...\n\
+                             \n\
+                             Requires: AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY\n\
+                             Restart aegis with: aegis chat --provider bedrock --region {region}"
+                        )));
+                    }
+                    "azure" => {
+                        let endpoint = parts.get(1).copied().unwrap_or("");
+                        if endpoint.is_empty() {
+                            self.messages.push(ChatMessage::error(
+                                "Azure requires an endpoint URL:\n\
+                                 /connect azure https://myresource.openai.azure.com"
+                                    .to_string(),
+                            ));
+                        } else {
+                            self.messages.push(ChatMessage::system(format!(
+                                "Connecting to Azure OpenAI at {endpoint}...\n\
+                                 \n\
+                                 Requires: AZURE_OPENAI_API_KEY\n\
+                                 Restart aegis with: aegis chat --provider azure --endpoint {endpoint}"
+                            )));
+                        }
+                    }
+                    url if url.starts_with("http") => {
                         tracing::info!(endpoint = %url, "connecting to LLM endpoint");
                         self.messages.push(ChatMessage::system(format!(
                             "Endpoint set to: {url}\n\
                              Type a message to test the connection."
                         )));
-                        // TODO: reconfigure the agent's provider at runtime
-                        // For now, the user needs to restart aegis after /connect
-                        // to pick up the new endpoint from config.
+                    }
+                    other => {
+                        self.messages.push(ChatMessage::error(format!(
+                            "Unknown provider '{other}'.\n\
+                             Options: local, vertex, bedrock, azure\n\
+                             Or: /connect http://... for direct endpoint"
+                        )));
                     }
                 }
                 Action::Continue
