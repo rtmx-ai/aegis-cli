@@ -183,7 +183,14 @@ Install git hooks for local quality gates:
 
 ## Install
 
-Pre-built binaries and installers will be available with the first release. Until then, build from source:
+### macOS (Homebrew)
+
+```bash
+brew tap rtmx-ai/tap
+brew install aegis
+```
+
+### From source
 
 ```bash
 git clone https://github.com/rtmx-ai/aegis-cli.git
@@ -193,11 +200,14 @@ cargo build --release
 
 The binary is at `target/release/aegis` (Linux/macOS) or `target/release/aegis.exe` (Windows).
 
+RPM, DEB, and MSI installers will be available with future releases.
+
 ## Target Platforms
 
 | Platform | Target | Delivery |
 |---|---|---|
 | RHEL 8/9 | `x86_64-unknown-linux-musl` | RPM, standalone static binary |
+| macOS | `x86_64-apple-darwin`, `aarch64-apple-darwin` | Homebrew |
 | Ubuntu/Debian | `x86_64-unknown-linux-gnu` | DEB, standalone binary |
 | Windows 10/11 | `x86_64-pc-windows-msvc` | MSI, standalone EXE |
 
