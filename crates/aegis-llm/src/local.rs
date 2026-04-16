@@ -3,6 +3,22 @@
 //! Connects to any server that implements the OpenAI chat completions
 //! API: Ollama, vLLM, llama.cpp, text-generation-inference, etc.
 //! Zero network egress beyond the configured LOCAL_ENDPOINT.
+//!
+//! # Cold-start latency (REQ-LLM-028)
+//!
+//! The first prompt after Ollama loads a model pays a 10-15 second
+//! load-into-RAM cost; subsequent prompts are typically sub-second.
+//! Call [`LocalProvider::warmup`] after `/connect local` to absorb
+//! that cost up front, and [`LocalProvider::is_warm`] to check
+//! whether a re-warmup is needed after an idle period.
+//!
+//! For longer-running aegis sessions, set `OLLAMA_KEEP_ALIVE=-1` in the
+//! Ollama server's environment to keep models resident in GPU/RAM
+//! indefinitely. Default keep-alive is 5 minutes after the last
+//! request; for vLLM and llama.cpp the model is always resident and
+//! the warmup cost is one-time at server start.
+
+use std::time::{Duration, Instant};
 
 use aegis_domain::error::DomainError;
 use aegis_domain::ports::*;
@@ -12,6 +28,10 @@ use reqwest::Client;
 use crate::capabilities::needs_tool_shim;
 use crate::config::ProviderConfig;
 use crate::sse::SseTokenStream;
+
+/// Latency threshold below which [`LocalProvider::is_warm`] reports
+/// that the model is resident and serving from hot cache.
+const WARM_LATENCY_THRESHOLD: Duration = Duration::from_secs(3);
 
 /// Provider that speaks the OpenAI chat completions API.
 pub struct LocalProvider {
@@ -109,6 +129,83 @@ impl LocalProvider {
         }
 
         body
+    }
+
+    /// Send a minimal completion request and return the elapsed time.
+    ///
+    /// Eliminates the 10-15 s cold-start surprise on the first real
+    /// prompt by forcing Ollama (or the configured OpenAI-compatible
+    /// server) to load the model into GPU/RAM.
+    ///
+    /// This sends `{"model": ..., "prompt": "Hi", "max_tokens": 1,
+    /// "stream": false}` to `POST {endpoint}/chat/completions`. The
+    /// response body is discarded; only the HTTP round-trip latency
+    /// is reported.
+    ///
+    /// Errors:
+    /// * [`DomainError::ProviderError`] if the request fails or the
+    ///   server responds with a non-success HTTP status.
+    pub async fn warmup(&self) -> Result<Duration, DomainError> {
+        let url = format!("{}/chat/completions", self.endpoint);
+        let body = serde_json::json!({
+            "model": self.model,
+            "messages": [{"role": "user", "content": "Hi"}],
+            "max_tokens": 1,
+            "temperature": self.temperature,
+            "stream": false,
+        });
+
+        tracing::info!(
+            model = %self.model,
+            endpoint = %self.endpoint,
+            "warming up local model"
+        );
+
+        let start = Instant::now();
+        let response = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| DomainError::ProviderError {
+                message: format!("Warmup request to {url} failed: {e}"),
+            })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(DomainError::ProviderError {
+                message: format!("Warmup returned {status}: {body}"),
+            });
+        }
+
+        // Drain the body so the connection can be reused; we do not
+        // need the content.
+        let _ = response.bytes().await;
+        let elapsed = start.elapsed();
+
+        tracing::info!(
+            model = %self.model,
+            latency_ms = elapsed.as_millis() as u64,
+            "local model warmup complete"
+        );
+
+        Ok(elapsed)
+    }
+
+    /// Estimate whether the model is currently resident and serving
+    /// from hot cache. Sends a 1-token completion and returns `true`
+    /// if the round-trip latency is below [`WARM_LATENCY_THRESHOLD`].
+    ///
+    /// Returns `false` on any transport or HTTP error so that the
+    /// caller treats an unhealthy endpoint as cold (a subsequent
+    /// [`LocalProvider::warmup`] call will surface the real error).
+    pub async fn is_warm(&self) -> bool {
+        match self.warmup().await {
+            Ok(elapsed) => elapsed < WARM_LATENCY_THRESHOLD,
+            Err(_) => false,
+        }
     }
 }
 
@@ -587,5 +684,167 @@ mod tests {
             }
             other => panic!("Expected Degraded, got {:?}", other),
         }
+    }
+
+    // -- REQ-LLM-028: cold-start warmup --
+
+    /// Minimal non-streaming chat-completions body for warmup mocks.
+    fn warmup_response_body() -> &'static str {
+        r#"{"id":"cmpl-1","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"."},"finish_reason":"length"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}"#
+    }
+
+    // rtmx:req REQ-LLM-028
+    #[tokio::test]
+    async fn test_warmup_ping_loads_model() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(warmup_response_body())
+                    .insert_header("content-type", "application/json"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let cfg = ProviderConfig::local(&format!("{}/v1", server.uri()), "llama3");
+        let provider = LocalProvider::new(&cfg).unwrap();
+
+        let elapsed = provider
+            .warmup()
+            .await
+            .expect("warmup should succeed against mock");
+        // Elapsed is always >= 0; the meaningful assertion is that the
+        // mock was hit exactly once, which wiremock enforces on drop.
+        assert!(
+            elapsed < std::time::Duration::from_secs(30),
+            "warmup latency should be measurable, got {elapsed:?}"
+        );
+    }
+
+    // rtmx:req REQ-LLM-028
+    #[tokio::test]
+    async fn test_warmup_sends_minimal_request() {
+        let server = MockServer::start().await;
+
+        // Validate the warmup request shape: single "Hi" user message,
+        // max_tokens=1, stream=false.
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(warmup_response_body()))
+            .mount(&server)
+            .await;
+
+        let cfg = ProviderConfig::local(&format!("{}/v1", server.uri()), "llama3");
+        let provider = LocalProvider::new(&cfg).unwrap();
+        provider.warmup().await.expect("warmup should succeed");
+
+        // Inspect the recorded request.
+        let received = server.received_requests().await.unwrap();
+        assert_eq!(received.len(), 1, "expected exactly one warmup request");
+        let body: serde_json::Value =
+            serde_json::from_slice(&received[0].body).expect("warmup body should be JSON");
+        assert_eq!(body["model"], "llama3");
+        assert_eq!(body["max_tokens"], 1);
+        assert_eq!(body["stream"], false);
+        let msgs = body["messages"].as_array().expect("messages array");
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0]["role"], "user");
+        assert_eq!(msgs[0]["content"], "Hi");
+    }
+
+    // rtmx:req REQ-LLM-028
+    #[tokio::test]
+    async fn test_warmup_surfaces_http_errors() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(503).set_body_string("model loading"))
+            .mount(&server)
+            .await;
+
+        let cfg = ProviderConfig::local(&format!("{}/v1", server.uri()), "llama3");
+        let provider = LocalProvider::new(&cfg).unwrap();
+
+        let err = provider.warmup().await.expect_err("503 should error");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("503"),
+            "error should mention status code: {msg}"
+        );
+    }
+
+    // rtmx:req REQ-LLM-028
+    #[tokio::test]
+    async fn test_is_warm_returns_true_for_fast_response() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(warmup_response_body())
+                    .set_delay(std::time::Duration::from_millis(50)),
+            )
+            .mount(&server)
+            .await;
+
+        let cfg = ProviderConfig::local(&format!("{}/v1", server.uri()), "llama3");
+        let provider = LocalProvider::new(&cfg).unwrap();
+
+        assert!(
+            provider.is_warm().await,
+            "a sub-100ms response should report warm"
+        );
+    }
+
+    // rtmx:req REQ-LLM-028
+    #[tokio::test]
+    async fn test_is_warm_returns_false_for_slow_response() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(warmup_response_body())
+                    .set_delay(std::time::Duration::from_secs(4)),
+            )
+            .mount(&server)
+            .await;
+
+        let cfg = ProviderConfig {
+            kind: crate::config::ProviderKind::Local,
+            model: "llama3".to_string(),
+            endpoint: format!("{}/v1", server.uri()),
+            max_tokens: 4096,
+            temperature: 0.0,
+            connect_timeout_secs: 10,
+            // Must exceed the 4 s server delay or the request times out
+            // before we can observe the latency.
+            read_timeout_secs: 30,
+            project_id: None,
+            region: None,
+        };
+        let provider = LocalProvider::new(&cfg).unwrap();
+
+        assert!(
+            !provider.is_warm().await,
+            "a 4s response should report NOT warm"
+        );
+    }
+
+    // rtmx:req REQ-LLM-028
+    #[tokio::test]
+    async fn test_is_warm_returns_false_for_unreachable_endpoint() {
+        let cfg = ProviderConfig::local("http://127.0.0.1:1/v1", "llama3");
+        let provider = LocalProvider::new(&cfg).unwrap();
+        assert!(
+            !provider.is_warm().await,
+            "unreachable endpoint must not be considered warm"
+        );
     }
 }

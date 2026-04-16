@@ -130,6 +130,7 @@ name = "aegis-llm"
 version = "0.1.0"
 dependencies = [
  "aegis-domain",
+ "aegis-security",
  "async-trait",
  "aws-credential-types",
  "aws-sigv4",

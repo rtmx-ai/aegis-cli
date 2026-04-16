@@ -11,6 +11,7 @@ pub mod bedrock_stream;
 pub mod capabilities;
 pub mod config;
 pub mod discovery;
+pub mod dlp_gate;
 pub mod failover;
 pub mod local;
 pub mod provider;
