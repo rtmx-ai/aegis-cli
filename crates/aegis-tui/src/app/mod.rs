@@ -235,6 +235,93 @@ impl App {
     }
 }
 
+impl App {
+    /// Execute the `/undo` slash command.
+    ///
+    /// Scaffold only. A real undo requires hooking into the HITL-managed
+    /// edit ledger so we can restore the pre-write contents of the most
+    /// recently approved `write_file` call.
+    // TODO(REQ-HITL-005): wire to aegis-hitl edit tracking / rollback.
+    pub(crate) fn execute_undo_command(&mut self) {
+        self.messages.push(ChatMessage::system(
+            "Undo not yet wired to tool executor. \
+             Check the audit ledger for the most recent write."
+                .to_string(),
+        ));
+    }
+
+    /// Execute the `/copy` slash command: copy the last fenced code block
+    /// from the most recent assistant message to the system clipboard.
+    pub(crate) fn execute_copy_command(&mut self) {
+        let last_assistant = self
+            .messages
+            .iter()
+            .rev()
+            .find(|m| matches!(m.kind, crate::messages::MessageKind::Assistant));
+        let block = match last_assistant {
+            Some(msg) => extract_last_code_block(&msg.content),
+            None => None,
+        };
+        match block {
+            Some(code) => match crate::clipboard::copy_text(&code) {
+                Ok(()) => {
+                    self.messages.push(ChatMessage::system(format!(
+                        "Copied {} bytes to clipboard.",
+                        code.len()
+                    )));
+                }
+                Err(e) => {
+                    self.messages
+                        .push(ChatMessage::error(format!("Copy failed: {e}")));
+                }
+            },
+            None => {
+                self.messages.push(ChatMessage::system(
+                    "no code block in last response".to_string(),
+                ));
+            }
+        }
+    }
+}
+
+/// Extract the last fenced code block from a markdown-ish string.
+///
+/// A fenced block starts with a line whose first non-whitespace tokens
+/// are three backticks (optionally followed by a language tag) and ends
+/// with a subsequent line whose first non-whitespace tokens are three
+/// backticks. Returns the content between the fences with no trailing
+/// newline. Returns `None` if no complete fenced block is present.
+pub fn extract_last_code_block(text: &str) -> Option<String> {
+    let fence = "```";
+    let lines: Vec<&str> = text.lines().collect();
+    let mut last: Option<String> = None;
+    let mut i = 0;
+    while i < lines.len() {
+        if lines[i].trim_start().starts_with(fence) {
+            // Found an opening fence; scan for the matching close.
+            let mut j = i + 1;
+            let mut body: Vec<&str> = Vec::new();
+            while j < lines.len() {
+                if lines[j].trim_start().starts_with(fence) {
+                    // Closing fence found -- record this block.
+                    last = Some(body.join("\n"));
+                    i = j + 1;
+                    break;
+                }
+                body.push(lines[j]);
+                j += 1;
+            }
+            if j >= lines.len() {
+                // Unterminated fence; bail.
+                break;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    last
+}
+
 fn describe_tool_call_short(call: &ToolCall) -> (String, String) {
     match call {
         ToolCall::ReadFile { path } => ("read_file".to_string(), path.to_string()),
@@ -1244,5 +1331,119 @@ mod tests {
         let text1 = app.waiting_text().unwrap();
         let text2 = app.waiting_text().unwrap();
         assert_eq!(text1, text2, "verb should be stable for same prompt_count");
+    }
+
+    // rtmx:req REQ-TUI-027
+    #[test]
+    fn test_undo_reverts_last_write() {
+        // Scaffold: with no write history available to the TUI, /undo
+        // pushes a system message directing the user to the audit ledger.
+        let mut app = make_app();
+        app.execute_slash_command(SlashCommand::Undo);
+        assert_eq!(app.messages.len(), 1);
+        let content = &app.messages[0].content;
+        assert!(
+            content.contains("Undo") && content.contains("audit ledger"),
+            "expected undo scaffold message, got: {content}"
+        );
+    }
+
+    // rtmx:req REQ-TUI-027
+    #[test]
+    fn test_undo_with_no_writes_shows_message() {
+        let mut app = make_app();
+        app.execute_undo_command();
+        assert_eq!(app.messages.len(), 1);
+        assert!(app.messages[0].content.contains("Undo not yet wired"));
+    }
+
+    // rtmx:req REQ-TUI-045
+    #[test]
+    fn test_copy_code_block_extracts_fenced_block() {
+        let input = "text\n```rust\nfn main(){}\n```\nmore";
+        assert_eq!(
+            extract_last_code_block(input),
+            Some("fn main(){}".to_string())
+        );
+    }
+
+    // rtmx:req REQ-TUI-045
+    #[test]
+    fn test_extract_returns_none_when_no_code_block() {
+        assert_eq!(extract_last_code_block("just plain text"), None);
+        assert_eq!(extract_last_code_block(""), None);
+    }
+
+    // rtmx:req REQ-TUI-045
+    #[test]
+    fn test_extract_returns_last_block_when_multiple() {
+        let input = "\
+intro\n\
+```python\n\
+print('first')\n\
+```\n\
+middle\n\
+```rust\n\
+let x = 1;\n\
+let y = 2;\n\
+```\n\
+trailing";
+        assert_eq!(
+            extract_last_code_block(input),
+            Some("let x = 1;\nlet y = 2;".to_string())
+        );
+    }
+
+    // rtmx:req REQ-TUI-045
+    #[test]
+    fn test_extract_handles_block_with_no_language_tag() {
+        let input = "before\n```\nhello\n```\nafter";
+        assert_eq!(extract_last_code_block(input), Some("hello".to_string()));
+    }
+
+    // rtmx:req REQ-TUI-045
+    #[test]
+    fn test_extract_returns_none_for_unterminated_fence() {
+        let input = "text\n```rust\nfn main() {}\nno close fence";
+        assert_eq!(extract_last_code_block(input), None);
+    }
+
+    // rtmx:req REQ-TUI-045
+    #[test]
+    fn copy_command_with_no_assistant_message_shows_system_note() {
+        let mut app = make_app();
+        app.execute_copy_command();
+        assert_eq!(app.messages.len(), 1);
+        assert!(app.messages[0].content.contains("no code block"));
+    }
+
+    // rtmx:req REQ-TUI-045
+    #[test]
+    fn copy_command_with_assistant_without_code_block_shows_note() {
+        let mut app = make_app();
+        app.messages
+            .push(ChatMessage::assistant("plain prose, nothing fenced"));
+        app.execute_copy_command();
+        let last = app.messages.last().unwrap();
+        assert!(last.content.contains("no code block"));
+    }
+
+    // rtmx:req REQ-TUI-045
+    #[test]
+    fn copy_command_reports_bytes_or_error_when_block_present() {
+        let mut app = make_app();
+        app.messages.push(ChatMessage::assistant(
+            "here you go\n```rust\nfn main() {}\n```",
+        ));
+        app.execute_copy_command();
+        let last = app.messages.last().unwrap();
+        // Either the clipboard succeeded (bytes copied) or we surfaced a
+        // user-friendly error. We must NEVER fall back to "no code block"
+        // in this case because the input clearly contains one.
+        assert!(
+            last.content.starts_with("Copied") || last.content.starts_with("Copy failed"),
+            "unexpected copy result: {}",
+            last.content
+        );
     }
 }

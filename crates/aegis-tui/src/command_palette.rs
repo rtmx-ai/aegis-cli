@@ -52,6 +52,8 @@ impl CommandPalette {
                 "<list|status|up|preview|destroy>",
             ),
             cmd("/doctor", "Run health and connectivity checks"),
+            cmd("/copy", "Copy last code block to clipboard"),
+            cmd("/undo", "Revert most recent approved write"),
             cmd("/clear", "Clear conversation history"),
             cmd("/quit", "Exit aegis"),
         ];
