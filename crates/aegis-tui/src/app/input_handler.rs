@@ -124,9 +124,13 @@ impl App {
                 if text.is_empty() {
                     return Action::Continue;
                 }
-                // Check for slash commands
+                // Check for slash commands. Always push the user's input
+                // so it appears in the chat log (REQ-TUI-062).
                 match slash_commands::parse_slash_command(&text) {
-                    slash_commands::ParseResult::Command(cmd) => self.execute_slash_command(cmd),
+                    slash_commands::ParseResult::Command(cmd) => {
+                        self.messages.push(ChatMessage::user(&text));
+                        self.execute_slash_command(cmd)
+                    }
                     slash_commands::ParseResult::NotACommand => {
                         self.messages.push(ChatMessage::user(&text));
                         self.phase = AppPhase::Streaming;
