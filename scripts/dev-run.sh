@@ -30,12 +30,23 @@ if [ ! -d "$SANDBOX/.git" ]; then
     git clone https://github.com/rtmx-ai/aegis-cli.git "$SANDBOX"
 fi
 
+# Restore terminal: disable all mouse modes, alternate screen, bracketed
+# paste, and reset cooked input. Run after aegis exits and on script exit.
+# Crossterm's EnableMouseCapture sets multiple modes (1000/1002/1003/1006/1015)
+# so all must be disabled or mouse-motion escape codes will leak into the shell.
+reset_terminal() {
+    stty sane 2>/dev/null || true
+    printf '\e[?1000l\e[?1002l\e[?1003l\e[?1006l\e[?1015l\e[?1049l\e[?2004l\e[?25h' \
+        2>/dev/null || true
+}
+
 # Clean up on exit.
 cleanup() {
     rm -f "$SENTINEL" "$PIDFILE"
     if [ -n "${WATCH_PID:-}" ]; then
         kill "$WATCH_PID" 2>/dev/null || true
     fi
+    reset_terminal
 }
 trap cleanup EXIT
 
@@ -72,8 +83,7 @@ while true; do
     # Restore terminal state in case aegis was killed before its cleanup
     # ran (SIGTERM during startup, panic, etc.). Without this, raw mode,
     # mouse capture, and alternate screen leak into the next iteration.
-    stty sane 2>/dev/null || true
-    printf '\e[?1000l\e[?1006l\e[?1049l\e[?2004l' 2>/dev/null || true
+    reset_terminal
 
     # Stop the watcher.
     if [ -n "${WATCH_PID:-}" ]; then
