@@ -170,12 +170,16 @@ name = "aegis-security"
 version = "0.1.0"
 dependencies = [
  "aegis-domain",
+ "aegis-test-support",
+ "async-trait",
  "proptest",
  "regex",
  "reqwest",
  "rstest",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
+ "tokio",
  "tracing",
 ]
 

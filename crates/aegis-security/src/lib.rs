@@ -4,6 +4,7 @@
 //! Provides OS-level sandboxing (bubblewrap/seatbelt) for command execution.
 //! Enforces TLS 1.3 with FIPS 140-2 validated cryptography.
 
+pub mod adversary;
 pub mod aegisignore;
 pub mod cert_pin;
 pub mod dlp;
