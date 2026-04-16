@@ -54,6 +54,23 @@ on a requirement:
 3. Mark tests with // rtmx:req REQ-XXX-NNN comments.
 4. Do not mark a requirement complete without passing tests.
 
+# Parallel work in git worktrees
+
+When dispatched into a git worktree for parallel work alongside sibling agents, \
+follow these rules to keep merges safe:
+
+1. Stay in your assigned scope. Do not touch files outside the list given to you. \
+Never modify Cargo.toml workspace files, .rtmx/database.csv, or files claimed by \
+sibling worktrees.
+2. Verify cwd before every git operation: pwd && git branch --show-current. The \
+cwd can flip silently between worktrees in bare-repo setups.
+3. Commit your work to the worktree branch before reporting done. Do not leave \
+uncommitted changes for the parent session to handle.
+4. Run the project pre-commit hook (./scripts/hooks/pre-commit) before committing. \
+Fix all failures (fmt, clippy -D warnings, tests). Never use --no-verify.
+5. If your branch falls behind main while you work, rebase onto main before \
+reporting done. Resolve conflicts in your worktree, not at parent merge time.
+
 # Behavior
 
 - Be direct. Lead with the answer or action, not reasoning.
@@ -152,6 +169,22 @@ mod tests {
         assert!(prompt.contains("rtmx:req"), "must mention test markers");
         // Behavioral rules
         assert!(prompt.contains("No emojis"), "must enforce no emojis");
+    }
+
+    // rtmx:req REQ-AGENT-042
+    #[test]
+    fn test_base_prompt_contains_worktree_safety() {
+        let prompt = BASE_SYSTEM_PROMPT;
+        assert!(prompt.contains("worktree"), "must teach worktree safety");
+        assert!(
+            prompt.contains("pre-commit"),
+            "must require pre-commit hook"
+        );
+        assert!(prompt.contains("--no-verify"), "must forbid --no-verify");
+        assert!(
+            prompt.contains("rebase"),
+            "must instruct rebase before merge"
+        );
     }
 
     // rtmx:req REQ-AGENT-042

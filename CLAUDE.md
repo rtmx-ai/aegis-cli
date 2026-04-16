@@ -102,6 +102,75 @@ Run locally: `cargo deny check licenses advisories`
 5. `cargo fmt --all && cargo clippy --workspace`
 6. Commit (pre-commit hook validates), push (pre-push hook validates)
 
+### Parallel worktree workflow
+
+Parallel worktrees are valuable for this project: many independent crates,
+high test coverage, and a working file conflict matrix in
+`crates/aegis-agent/src/orchestration.rs`. The practice below addresses
+recurring failure modes in Rust monorepos (Cargo.lock entanglement, stale
+base, agent commit handoff).
+
+**Pre-launch checklist (parent session):**
+
+1. Working tree on `main` is clean (no uncommitted changes).
+2. `cargo test --workspace` is green at the current HEAD.
+3. Compute the conflict matrix on the planned batch via
+   `aegis_agent::orchestration::compute_conflict_matrix()`. Reject any
+   batch with intra-batch file conflicts.
+4. Capture current main HEAD as the base commit. Worktrees are branched
+   from this. If main moves before all worktrees finish, the late
+   worktrees must rebase before merge.
+5. Designate at most ONE worktree per batch as the "Cargo.lock owner."
+   Other worktrees must not modify dependencies. This avoids three-way
+   `Cargo.lock` merges.
+
+**Agent prompt requirements:**
+
+Every parallel-worktree agent prompt must include:
+
+1. The worktree's scope (specific reqs, files allowed, files forbidden).
+2. **Commit instruction:** "Commit your work to the worktree branch
+   before reporting done. Use a conventional commit message referencing
+   each REQ-ID."
+3. **Pre-commit gate:** "Run `./scripts/hooks/pre-commit` before
+   committing. Fix any failures (fmt, clippy, tests, doc tests) before
+   reporting done. Do not skip with `--no-verify`."
+4. **Forbidden paths:** `Cargo.toml` (workspace), `.rtmx/database.csv`,
+   files owned by other worktrees in the batch.
+5. **Standard quality gates** at the end: `cargo fmt --all`,
+   `cargo clippy --workspace -- -D warnings`,
+   `cargo test --workspace`.
+
+**Merge protocol (parent session):**
+
+For each completed worktree, in dependency order (smallest diff first):
+
+1. `git -C <worktree-path> rebase main` -- catches conflicts in the
+   worktree where the agent could resolve them. If conflicts cannot be
+   auto-resolved, send the agent back to fix them.
+2. `git merge <worktree-branch> --no-edit` from main.
+3. Run merge-verification gate: `cargo fmt --all`,
+   `cargo clippy --workspace -- -D warnings`,
+   `cargo test --workspace --no-fail-fast`. Block the next merge if any
+   fail.
+4. Push only after the entire batch is merged and the gate passes.
+
+**When to skip worktrees and go serial:**
+
+- Tasks all touch shared kernel (`crates/aegis-domain/`).
+- Tasks all modify `Cargo.toml` workspace or `Cargo.lock`.
+- Total batch effort < 2 weeks.
+- Need fast iteration on any single task.
+
+**Cleanup:**
+
+After successful merge, use `aegis_agent::orchestration::cleanup_worktree()`
+or run manually:
+```bash
+git worktree remove <path>
+git branch -D <branch>
+```
+
 ## Requirements
 
 159 requirements tracked via [RTMX](https://rtmx.ai) at `.rtmx/database.csv`. 12 BDD feature files with ~450 scenarios.
