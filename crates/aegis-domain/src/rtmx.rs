@@ -49,6 +49,15 @@ impl Requirement {
             self.dependencies.split('|').map(|s| s.trim()).collect()
         }
     }
+
+    /// Parse the pipe-delimited blocks field into a list of requirement IDs.
+    pub fn blocks_ids(&self) -> Vec<&str> {
+        if self.blocks.trim().is_empty() {
+            Vec::new()
+        } else {
+            self.blocks.split('|').map(|s| s.trim()).collect()
+        }
+    }
 }
 
 /// A parsed RTMX requirements database.
@@ -526,6 +535,186 @@ impl DependencyGraph {
     }
 
     // -----------------------------------------------------------------------
+    // REQ-RTMX-007: Priority and critical-path analysis
+    // -----------------------------------------------------------------------
+
+    /// Count requirements that transitively depend on `req_id`.
+    ///
+    /// Walks the `reverse_edges` graph (downstream direction) with BFS and
+    /// returns the number of distinct descendants excluding `req_id` itself.
+    /// This is "how much work would be unblocked if this requirement were
+    /// completed" -- the leverage metric used by [`priority_scores`].
+    ///
+    /// [`priority_scores`]: DependencyGraph::priority_scores
+    pub fn transitive_blocks(&self, req_id: &str) -> usize {
+        let mut visited: HashSet<&str> = HashSet::new();
+        let mut queue: VecDeque<&str> = VecDeque::new();
+        queue.push_back(req_id);
+        visited.insert(req_id);
+
+        while let Some(node) = queue.pop_front() {
+            if let Some(dependents) = self.reverse_edges.get(node) {
+                for dep in dependents {
+                    if visited.insert(dep.as_str()) {
+                        queue.push_back(dep.as_str());
+                    }
+                }
+            }
+        }
+
+        // Exclude the starting node from the count.
+        visited.len().saturating_sub(1)
+    }
+
+    /// Compute prioritization scores for all MISSING requirements whose
+    /// dependencies are satisfied (the actionable frontier).
+    ///
+    /// A dependency is satisfied when every entry in the requirement's
+    /// `dependencies` column refers to a requirement that is COMPLETE (or
+    /// DONE). Requirements with unknown or incomplete dependencies are not
+    /// actionable yet and are omitted from the result.
+    pub fn priority_scores(&self, db: &RequirementsDb) -> Vec<PriorityScore> {
+        let mut scores = Vec::new();
+
+        for req in db.all() {
+            if !is_missing(&req.status) {
+                continue;
+            }
+            if !deps_satisfied(req, db) {
+                continue;
+            }
+
+            let direct_blocks = self
+                .reverse_edges
+                .get(&req.req_id)
+                .map(|s| s.len())
+                .unwrap_or(0);
+            let transitive_blocks = self.transitive_blocks(&req.req_id);
+            let weight = priority_weight(&req.priority);
+            let score = weight * (1.0 + transitive_blocks as f64);
+            let effort_weeks = parse_effort(&req.effort_weeks);
+
+            scores.push(PriorityScore {
+                req_id: req.req_id.clone(),
+                direct_blocks,
+                transitive_blocks,
+                score,
+                effort_weeks,
+            });
+        }
+
+        scores
+    }
+
+    /// The critical path: actionable requirements ordered by score
+    /// (highest first). Ties are broken by transitive block count then by
+    /// req_id for deterministic output.
+    pub fn critical_path(&self, db: &RequirementsDb) -> Vec<PriorityScore> {
+        let mut scores = self.priority_scores(db);
+        scores.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b.transitive_blocks.cmp(&a.transitive_blocks))
+                .then_with(|| a.req_id.cmp(&b.req_id))
+        });
+        scores
+    }
+
+    // -----------------------------------------------------------------------
+    // REQ-RTMX-008: Requirement conflict detection
+    // -----------------------------------------------------------------------
+
+    /// Detect logical conflicts in the requirement set:
+    ///
+    /// - [`RequirementConflict::CircularDependency`] for each cycle
+    ///   reported by [`Self::cycles`].
+    /// - [`RequirementConflict::DanglingDependency`] when a requirement
+    ///   declares a dependency on a req_id not present in the database.
+    /// - [`RequirementConflict::DanglingBlocks`] when a requirement's
+    ///   `blocks` column references a req_id not present in the database.
+    /// - [`RequirementConflict::ContradictoryEdge`] when A depends on B
+    ///   *and* B declares it blocks A -- a logical impossibility ("I need
+    ///   B before I run" paired with "B prevents A from running").
+    pub fn detect_conflicts(&self, db: &RequirementsDb) -> Vec<RequirementConflict> {
+        let mut conflicts: Vec<RequirementConflict> = Vec::new();
+
+        // Circular dependencies via the existing Tarjan-based cycles().
+        // Sort each cycle and the outer list for deterministic output.
+        let mut cycles = self.cycles();
+        for scc in cycles.iter_mut() {
+            scc.sort();
+        }
+        cycles.sort_by(|a, b| a.first().cmp(&b.first()));
+        for members in cycles {
+            conflicts.push(RequirementConflict::CircularDependency { members });
+        }
+
+        // Dangling dependencies and blocks. Iterate in database order so
+        // conflicts appear in a predictable sequence.
+        for req in db.all() {
+            for dep in req.dependency_ids() {
+                if dep.is_empty() {
+                    continue;
+                }
+                if db.get(dep).is_none() {
+                    conflicts.push(RequirementConflict::DanglingDependency {
+                        req_id: req.req_id.clone(),
+                        missing_dep: dep.to_string(),
+                    });
+                }
+            }
+            for target in req.blocks_ids() {
+                if target.is_empty() {
+                    continue;
+                }
+                if db.get(target).is_none() {
+                    conflicts.push(RequirementConflict::DanglingBlocks {
+                        req_id: req.req_id.clone(),
+                        missing_target: target.to_string(),
+                    });
+                }
+            }
+        }
+
+        // Contradictory edges: A depends on B and B blocks A. We iterate
+        // over every dep edge A -> B and check B's blocks list for A.
+        // To avoid double-reporting the same unordered pair, emit only
+        // when req_a < req_b lexicographically.
+        let mut seen_pairs: HashSet<(String, String)> = HashSet::new();
+        for req in db.all() {
+            for dep in req.dependency_ids() {
+                if dep.is_empty() {
+                    continue;
+                }
+                let Some(dep_req) = db.get(dep) else {
+                    continue;
+                };
+                let blocks_list = dep_req.blocks_ids();
+                if blocks_list.contains(&req.req_id.as_str()) {
+                    let (a, b) = if req.req_id < dep_req.req_id {
+                        (req.req_id.clone(), dep_req.req_id.clone())
+                    } else {
+                        (dep_req.req_id.clone(), req.req_id.clone())
+                    };
+                    if seen_pairs.insert((a.clone(), b.clone())) {
+                        conflicts.push(RequirementConflict::ContradictoryEdge {
+                            req_a: a,
+                            req_b: b,
+                            reason: format!(
+                                "{} depends on {}, but {} lists {} in its blocks column",
+                                req.req_id, dep_req.req_id, dep_req.req_id, req.req_id
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+
+        conflicts
+    }
+
+    // -----------------------------------------------------------------------
     // REQ-RTMX-013: Graph rendering (Graphviz DOT and Mermaid flowchart)
     // -----------------------------------------------------------------------
 
@@ -668,6 +857,103 @@ impl DependencyGraph {
         }
         out
     }
+}
+
+// ---------------------------------------------------------------------------
+// REQ-RTMX-007: Priority score and helpers
+// ---------------------------------------------------------------------------
+
+/// A score describing how much downstream work a requirement unblocks.
+///
+/// Produced by [`DependencyGraph::priority_scores`] and
+/// [`DependencyGraph::critical_path`]. `score` is
+/// `priority_weight(priority) * (1 + transitive_blocks)` so that a
+/// HIGH-priority requirement with many dependents dominates a LOW-priority
+/// leaf.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PriorityScore {
+    pub req_id: String,
+    /// Number of requirements directly depending on this one.
+    pub direct_blocks: usize,
+    /// Number of requirements transitively depending on this one.
+    pub transitive_blocks: usize,
+    /// Combined score: priority weight times (1 + transitive_blocks).
+    pub score: f64,
+    /// Effort in weeks parsed from the CSV (0.0 if absent or unparseable).
+    pub effort_weeks: f64,
+}
+
+/// Map a priority string (case-insensitive) to a numeric weight used by
+/// [`DependencyGraph::priority_scores`]. HIGH/CRITICAL=3.0, MEDIUM=2.0,
+/// LOW=1.0, unknown=1.0.
+fn priority_weight(priority: &str) -> f64 {
+    match priority.trim().to_ascii_uppercase().as_str() {
+        "HIGH" | "CRITICAL" => 3.0,
+        "MEDIUM" => 2.0,
+        "LOW" => 1.0,
+        _ => 1.0,
+    }
+}
+
+/// Parse the `effort_weeks` CSV column. Empty or non-numeric values map
+/// to 0.0 so the caller does not have to handle Result everywhere.
+fn parse_effort(effort: &str) -> f64 {
+    effort.trim().parse::<f64>().unwrap_or(0.0)
+}
+
+/// Return true if a status string denotes an unstarted / missing item.
+fn is_missing(status: &str) -> bool {
+    matches!(status.trim().to_ascii_uppercase().as_str(), "MISSING")
+}
+
+/// Return true if a status string denotes completion (COMPLETE or DONE).
+fn is_complete(status: &str) -> bool {
+    matches!(
+        status.trim().to_ascii_uppercase().as_str(),
+        "COMPLETE" | "DONE"
+    )
+}
+
+/// A requirement is actionable when every declared dependency resolves to
+/// a COMPLETE requirement in the database. Missing or in-progress deps
+/// mean the requirement is not yet on the frontier.
+fn deps_satisfied(req: &Requirement, db: &RequirementsDb) -> bool {
+    for dep in req.dependency_ids() {
+        if dep.is_empty() {
+            continue;
+        }
+        match db.get(dep) {
+            Some(r) if is_complete(&r.status) => continue,
+            _ => return false,
+        }
+    }
+    true
+}
+
+// ---------------------------------------------------------------------------
+// REQ-RTMX-008: Requirement conflicts
+// ---------------------------------------------------------------------------
+
+/// A logical conflict discovered in the requirement set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RequirementConflict {
+    /// A set of requirements that form a cycle in the dependency graph.
+    CircularDependency { members: Vec<String> },
+    /// A depends on B *and* B declares it blocks A: contradictory edge.
+    ContradictoryEdge {
+        req_a: String,
+        req_b: String,
+        reason: String,
+    },
+    /// A requirement declares a dependency on a req_id not present in
+    /// the database.
+    DanglingDependency { req_id: String, missing_dep: String },
+    /// A requirement's `blocks` column names a req_id not present in
+    /// the database.
+    DanglingBlocks {
+        req_id: String,
+        missing_target: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
