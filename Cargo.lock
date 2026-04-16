@@ -37,6 +37,7 @@ dependencies = [
  "chrono",
  "fs2",
  "hostname",
+ "reqwest",
  "rstest",
  "serde",
  "serde_json",
@@ -44,6 +45,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "wiremock",
  "zstd",
 ]
 

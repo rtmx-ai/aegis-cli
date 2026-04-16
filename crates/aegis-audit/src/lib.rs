@@ -13,4 +13,6 @@ pub mod redaction; // rtmx:req REQ-AUDIT-015
 pub mod retention; // rtmx:req REQ-AUDIT-010
 pub mod rotation; // rtmx:req REQ-AUDIT-009
 pub mod search; // rtmx:req REQ-AUDIT-013
+pub mod siem; // rtmx:req REQ-AUDIT-011
+pub mod syslog; // rtmx:req REQ-AUDIT-012
 // pub mod evidence;  // rtmx:req REQ-AUDIT-003

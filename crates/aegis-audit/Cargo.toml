@@ -18,7 +18,10 @@ tracing = { workspace = true }
 sha2 = { workspace = true }
 fs2 = { workspace = true }
 zstd = { workspace = true }
+reqwest = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
 tempfile = { workspace = true }
+wiremock = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
