@@ -28,6 +28,12 @@ pub enum SlashCommand {
     Model(String),
     /// Connect to an LLM endpoint: /connect <url>
     Connect(String),
+    /// Revert the most recent approved write. Scaffold only: actual
+    /// rollback requires HITL edit tracking (REQ-HITL-005).
+    Undo,
+    /// Copy the last fenced code block from the most recent assistant
+    /// message to the system clipboard.
+    Copy,
 }
 
 /// Result of attempting to parse a slash command.
@@ -110,6 +116,8 @@ pub fn parse_slash_command(input: &str) -> ParseResult {
                 .join(" ");
             ParseResult::Command(SlashCommand::Connect(raw_arg))
         }
+        "/undo" => ParseResult::Command(SlashCommand::Undo),
+        "/copy" => ParseResult::Command(SlashCommand::Copy),
         _ => ParseResult::Unknown(cmd),
     }
 }
@@ -373,6 +381,51 @@ mod tests {
         assert_eq!(
             parse_slash_command("/model Gemini-1.5-Pro"),
             ParseResult::Command(SlashCommand::Model("Gemini-1.5-Pro".to_string()))
+        );
+    }
+
+    // rtmx:req REQ-TUI-027
+    #[test]
+    fn parse_undo_command() {
+        assert_eq!(
+            parse_slash_command("/undo"),
+            ParseResult::Command(SlashCommand::Undo)
+        );
+    }
+
+    // rtmx:req REQ-TUI-027
+    #[test]
+    fn parse_undo_command_case_insensitive() {
+        assert_eq!(
+            parse_slash_command("/UNDO"),
+            ParseResult::Command(SlashCommand::Undo)
+        );
+    }
+
+    // rtmx:req REQ-TUI-027
+    #[test]
+    fn parse_undo_ignores_trailing_args() {
+        assert_eq!(
+            parse_slash_command("/undo last"),
+            ParseResult::Command(SlashCommand::Undo)
+        );
+    }
+
+    // rtmx:req REQ-TUI-045
+    #[test]
+    fn parse_copy_command() {
+        assert_eq!(
+            parse_slash_command("/copy"),
+            ParseResult::Command(SlashCommand::Copy)
+        );
+    }
+
+    // rtmx:req REQ-TUI-045
+    #[test]
+    fn parse_copy_command_case_insensitive() {
+        assert_eq!(
+            parse_slash_command("/COPY"),
+            ParseResult::Command(SlashCommand::Copy)
         );
     }
 }

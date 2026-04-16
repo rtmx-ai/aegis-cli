@@ -6,6 +6,7 @@
 
 pub mod app;
 pub mod brand;
+pub mod clipboard;
 pub mod command_palette;
 pub mod command_palette_render;
 pub mod diff;

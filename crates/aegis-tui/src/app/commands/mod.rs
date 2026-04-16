@@ -26,6 +26,8 @@ impl App {
                      /infra <subcmd>       Plugin ops: status, list, preview <name>\n\
                      /doctor               Run connectivity and health checks\n\
                      /context              Show current context summary\n\
+                     /copy                 Copy last code block to clipboard\n\
+                     /undo                 Revert most recent approved write\n\
                      /clear                Clear chat log\n\
                      /help                 Show this help\n\
                      /quit                 Exit aegis\n\
@@ -196,6 +198,14 @@ impl App {
                 self.messages.push(ChatMessage::system(format!(
                     "Key event logging: {state}. Press keys to see raw events."
                 )));
+                Action::Continue
+            }
+            SlashCommand::Undo => {
+                self.execute_undo_command();
+                Action::Continue
+            }
+            SlashCommand::Copy => {
+                self.execute_copy_command();
                 Action::Continue
             }
         }
