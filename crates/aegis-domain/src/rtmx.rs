@@ -4,8 +4,9 @@
 //! as queryable domain objects for the agent loop.
 
 use crate::error::DomainError;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 
 /// A single RTMX requirement.
@@ -263,6 +264,296 @@ impl RequirementsDb {
 
         std::fs::write(path, out)
             .map_err(|e| DomainError::Other(format!("Failed to write {}: {e}", path.display())))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// REQ-RTMX-011: Dependency graph as directed acyclic graph
+// ---------------------------------------------------------------------------
+
+/// Directed acyclic graph of requirement dependencies.
+#[derive(Debug, Clone)]
+pub struct DependencyGraph {
+    /// Adjacency list: req_id -> set of requirement IDs it depends on.
+    pub edges: HashMap<String, HashSet<String>>,
+    /// Reverse adjacency: req_id -> set of requirements that depend on it.
+    pub reverse_edges: HashMap<String, HashSet<String>>,
+}
+
+impl DependencyGraph {
+    /// Build the DAG from all requirements in the database.
+    pub fn from_db(db: &RequirementsDb) -> Self {
+        let mut edges: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut reverse_edges: HashMap<String, HashSet<String>> = HashMap::new();
+
+        for req in db.all() {
+            // Ensure every requirement has an entry even if it has no deps.
+            edges.entry(req.req_id.clone()).or_default();
+            reverse_edges.entry(req.req_id.clone()).or_default();
+
+            for dep_id in req.dependency_ids() {
+                let dep = dep_id.to_string();
+                edges
+                    .entry(req.req_id.clone())
+                    .or_default()
+                    .insert(dep.clone());
+                reverse_edges
+                    .entry(dep)
+                    .or_default()
+                    .insert(req.req_id.clone());
+            }
+        }
+
+        Self {
+            edges,
+            reverse_edges,
+        }
+    }
+
+    /// Return requirement IDs that depend on the given requirement.
+    pub fn dependents(&self, req_id: &str) -> Vec<&str> {
+        self.reverse_edges
+            .get(req_id)
+            .map(|s| s.iter().map(|id| id.as_str()).collect())
+            .unwrap_or_default()
+    }
+
+    /// Return requirement IDs that the given requirement depends on.
+    pub fn dependencies(&self, req_id: &str) -> Vec<&str> {
+        self.edges
+            .get(req_id)
+            .map(|s| s.iter().map(|id| id.as_str()).collect())
+            .unwrap_or_default()
+    }
+
+    /// Topological sort via Kahn's algorithm.
+    ///
+    /// Returns `Ok(ordered)` with requirements in dependency order (dependencies
+    /// before dependents), or `Err(cycle_members)` listing the requirement IDs
+    /// involved in a cycle.
+    pub fn topological_order(&self) -> Result<Vec<String>, Vec<String>> {
+        // In-degree: how many dependencies does each node have?
+        let mut in_degree: HashMap<&str, usize> = HashMap::new();
+        for (node, deps) in &self.edges {
+            in_degree.entry(node.as_str()).or_insert(0);
+            // Only count edges to nodes that actually exist in the graph.
+            let valid_deps = deps.iter().filter(|d| self.edges.contains_key(d.as_str()));
+            for dep in valid_deps {
+                // dep is depended-upon, so this edge goes dep -> node in topo terms.
+                // in_degree tracks how many unsatisfied deps each node has.
+                *in_degree.entry(node.as_str()).or_insert(0) += 0; // ensure node exists
+                let _ = in_degree.entry(dep.as_str()).or_insert(0);
+            }
+        }
+
+        // Recompute properly: in_degree[node] = number of valid deps for node.
+        for (node, deps) in &self.edges {
+            let count = deps
+                .iter()
+                .filter(|d| self.edges.contains_key(d.as_str()))
+                .count();
+            in_degree.insert(node.as_str(), count);
+        }
+
+        let mut queue: VecDeque<&str> = in_degree
+            .iter()
+            .filter(|&(_, deg)| *deg == 0)
+            .map(|(&node, _)| node)
+            .collect();
+
+        let mut result: Vec<String> = Vec::new();
+
+        while let Some(node) = queue.pop_front() {
+            result.push(node.to_string());
+
+            // For each requirement that depends on `node`, decrement in-degree.
+            if let Some(dependents) = self.reverse_edges.get(node) {
+                for dep in dependents {
+                    if let Some(deg) = in_degree.get_mut(dep.as_str())
+                        && *deg > 0
+                    {
+                        *deg -= 1;
+                        if *deg == 0 {
+                            queue.push_back(dep.as_str());
+                        }
+                    }
+                }
+            }
+        }
+
+        if result.len() == self.edges.len() {
+            Ok(result)
+        } else {
+            // Nodes not in result are involved in a cycle.
+            let in_result: HashSet<&str> = result.iter().map(|s| s.as_str()).collect();
+            let cycle_members: Vec<String> = self
+                .edges
+                .keys()
+                .filter(|k| !in_result.contains(k.as_str()))
+                .cloned()
+                .collect();
+            Err(cycle_members)
+        }
+    }
+
+    /// Returns true if the dependency graph is a valid DAG (no cycles).
+    pub fn is_dag(&self) -> bool {
+        self.topological_order().is_ok()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// REQ-RTMX-004: Test marker scanning
+// ---------------------------------------------------------------------------
+
+/// A discovered test-to-requirement marker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MarkerScanResult {
+    pub req_id: String,
+    pub file_path: String,
+    pub function_name: Option<String>,
+    pub line_number: usize,
+}
+
+/// Walk `.rs` files under `source_dir` and scan for requirement markers.
+///
+/// Recognized formats:
+/// - `// rtmx:req REQ-XXX-NNN`
+/// - `// @req REQ-XXX-NNN`
+/// - `#[req(REQ-XXX-NNN)]`
+pub fn scan_markers(source_dir: &Path) -> Vec<MarkerScanResult> {
+    let re = Regex::new(
+        r"(?://\s*rtmx:req\s+(REQ-[A-Z]+-\d+))|(?://\s*@req\s+(REQ-[A-Z]+-\d+))|(?:#\[req\((REQ-[A-Z]+-\d+)\)\])",
+    )
+    .expect("marker regex is valid");
+
+    let fn_re = Regex::new(r"\bfn\s+(\w+)").expect("fn regex is valid");
+
+    let mut results = Vec::new();
+    let mut files = Vec::new();
+    collect_rs_files(source_dir, &mut files);
+
+    for file_path in &files {
+        let content = match std::fs::read_to_string(file_path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let lines: Vec<&str> = content.lines().collect();
+
+        for (i, line) in lines.iter().enumerate() {
+            if let Some(caps) = re.captures(line) {
+                let req_id = caps
+                    .get(1)
+                    .or_else(|| caps.get(2))
+                    .or_else(|| caps.get(3))
+                    .map(|m| m.as_str().to_string())
+                    .unwrap_or_default();
+
+                // Look forward from the marker to find the nearest fn declaration.
+                let function_name = lines[i..]
+                    .iter()
+                    .take(10)
+                    .find_map(|l| fn_re.captures(l).map(|c| c[1].to_string()));
+
+                results.push(MarkerScanResult {
+                    req_id,
+                    file_path: file_path.to_string_lossy().to_string(),
+                    function_name,
+                    line_number: i + 1,
+                });
+            }
+        }
+    }
+
+    results
+}
+
+/// Recursively collect `.rs` files under a directory.
+fn collect_rs_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_rs_files(&path, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            out.push(path);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// REQ-RTMX-003: Closed-loop verification
+// ---------------------------------------------------------------------------
+
+/// Outcome of verifying a requirement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VerificationOutcome {
+    /// The requirement has a linked test and the test file exists.
+    Passed,
+    /// The requirement has a linked test but something is wrong.
+    Failed { reason: String },
+    /// The requirement has no test_module or test_function linked.
+    NoTestLinked,
+}
+
+/// Result of verifying a single requirement.
+#[derive(Debug, Clone)]
+pub struct VerificationResult {
+    pub req_id: String,
+    pub outcome: VerificationOutcome,
+    pub test_module: Option<String>,
+    pub test_function: Option<String>,
+}
+
+/// Verify that a requirement has linked tests and the test file exists.
+///
+/// Actual test execution is out of scope for the domain layer -- the agent
+/// is responsible for running `cargo test`. This function checks that the
+/// metadata links are present and the referenced file exists on disk.
+pub fn verify_requirement(db: &RequirementsDb, req_id: &str) -> VerificationResult {
+    let req = match db.get(req_id) {
+        Some(r) => r,
+        None => {
+            return VerificationResult {
+                req_id: req_id.to_string(),
+                outcome: VerificationOutcome::Failed {
+                    reason: format!("Requirement {req_id} not found in database"),
+                },
+                test_module: None,
+                test_function: None,
+            };
+        }
+    };
+
+    if req.test_module.trim().is_empty() || req.test_function.trim().is_empty() {
+        return VerificationResult {
+            req_id: req_id.to_string(),
+            outcome: VerificationOutcome::NoTestLinked,
+            test_module: None,
+            test_function: None,
+        };
+    }
+
+    let test_path = Path::new(&req.test_module);
+    if !test_path.exists() {
+        return VerificationResult {
+            req_id: req_id.to_string(),
+            outcome: VerificationOutcome::Failed {
+                reason: format!("Test file not found: {}", req.test_module),
+            },
+            test_module: Some(req.test_module.clone()),
+            test_function: Some(req.test_function.clone()),
+        };
+    }
+
+    VerificationResult {
+        req_id: req_id.to_string(),
+        outcome: VerificationOutcome::Passed,
+        test_module: Some(req.test_module.clone()),
+        test_function: Some(req.test_function.clone()),
     }
 }
 
