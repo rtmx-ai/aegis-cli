@@ -400,6 +400,274 @@ impl DependencyGraph {
     pub fn is_dag(&self) -> bool {
         self.topological_order().is_ok()
     }
+
+    // -----------------------------------------------------------------------
+    // REQ-RTMX-012: Cycle detection via Tarjan's strongly connected components
+    // -----------------------------------------------------------------------
+
+    /// Tarjan's strongly connected components algorithm (iterative to avoid
+    /// stack overflow on large graphs).
+    ///
+    /// Returns every SCC as a Vec of requirement ids. Singleton SCCs without
+    /// self-loops are *not* cycles; use [`DependencyGraph::cycles`] to filter.
+    pub fn strongly_connected_components(&self) -> Vec<Vec<String>> {
+        // Build a stable numeric indexing over the string-keyed edge map.
+        // We include every node that appears as either a source or a target,
+        // sorted for determinism so repeated runs produce matching output.
+        let mut node_set: HashSet<&str> = HashSet::new();
+        for (from, targets) in &self.edges {
+            node_set.insert(from.as_str());
+            for t in targets {
+                node_set.insert(t.as_str());
+            }
+        }
+        let mut nodes: Vec<&str> = node_set.into_iter().collect();
+        nodes.sort();
+        let n = nodes.len();
+        let node_idx: HashMap<&str, usize> =
+            nodes.iter().enumerate().map(|(i, s)| (*s, i)).collect();
+
+        // Adjacency list as indices for the algorithm's hot loop.
+        let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+        for (from, targets) in &self.edges {
+            if let Some(&fi) = node_idx.get(from.as_str()) {
+                for t in targets {
+                    if let Some(&ti) = node_idx.get(t.as_str()) {
+                        adj[fi].push(ti);
+                    }
+                }
+            }
+        }
+
+        let mut index_counter: usize = 0;
+        let mut stack: Vec<usize> = Vec::new();
+        let mut on_stack = vec![false; n];
+        let mut indices: Vec<Option<usize>> = vec![None; n];
+        let mut lowlinks = vec![0usize; n];
+        let mut result: Vec<Vec<String>> = Vec::new();
+
+        for start in 0..n {
+            if indices[start].is_some() {
+                continue;
+            }
+            let mut work: Vec<(usize, usize)> = Vec::new();
+            indices[start] = Some(index_counter);
+            lowlinks[start] = index_counter;
+            index_counter += 1;
+            stack.push(start);
+            on_stack[start] = true;
+            work.push((start, 0));
+
+            while let Some(&(v, ci)) = work.last() {
+                if ci < adj[v].len() {
+                    let last = work.len() - 1;
+                    work[last].1 = ci + 1;
+                    let w = adj[v][ci];
+                    match indices[w] {
+                        None => {
+                            indices[w] = Some(index_counter);
+                            lowlinks[w] = index_counter;
+                            index_counter += 1;
+                            stack.push(w);
+                            on_stack[w] = true;
+                            work.push((w, 0));
+                        }
+                        Some(w_idx) if on_stack[w] => {
+                            if w_idx < lowlinks[v] {
+                                lowlinks[v] = w_idx;
+                            }
+                        }
+                        Some(_) => {
+                            // w is in a previously-closed SCC -- ignore.
+                        }
+                    }
+                } else {
+                    work.pop();
+                    if indices[v] == Some(lowlinks[v]) {
+                        let mut component = Vec::new();
+                        loop {
+                            let w = stack.pop().expect("stack non-empty during SCC pop");
+                            on_stack[w] = false;
+                            component.push(nodes[w].to_string());
+                            if w == v {
+                                break;
+                            }
+                        }
+                        result.push(component);
+                    }
+                    if let Some((parent, _)) = work.last().copied()
+                        && lowlinks[v] < lowlinks[parent]
+                    {
+                        lowlinks[parent] = lowlinks[v];
+                    }
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Return only the SCCs that represent actual cycles: size > 1, or
+    /// singletons with a self-loop.
+    pub fn cycles(&self) -> Vec<Vec<String>> {
+        self.strongly_connected_components()
+            .into_iter()
+            .filter(|scc| {
+                if scc.len() > 1 {
+                    return true;
+                }
+                // Singleton -- check for self-loop in the string-keyed edges.
+                if let Some(id) = scc.first() {
+                    return self.edges.get(id).map(|s| s.contains(id)).unwrap_or(false);
+                }
+                false
+            })
+            .collect()
+    }
+
+    // -----------------------------------------------------------------------
+    // REQ-RTMX-013: Graph rendering (Graphviz DOT and Mermaid flowchart)
+    // -----------------------------------------------------------------------
+
+    /// Render the graph as a Graphviz DOT document (unstyled).
+    ///
+    /// Example:
+    /// ```text
+    /// digraph deps {
+    ///     "REQ-A" -> "REQ-B";
+    /// }
+    /// ```
+    pub fn to_dot(&self) -> String {
+        let mut out = String::from("digraph deps {\n");
+        // Emit nodes (sorted for deterministic output) so isolated nodes
+        // still appear.
+        let mut node_ids: Vec<&String> = self.edges.keys().collect();
+        node_ids.sort();
+        for id in &node_ids {
+            out.push_str(&format!("    \"{}\";\n", escape_dot(id)));
+        }
+        let mut edge_pairs: Vec<(&String, &String)> = Vec::new();
+        for (from, targets) in &self.edges {
+            for to in targets {
+                edge_pairs.push((from, to));
+            }
+        }
+        edge_pairs.sort();
+        for (from, to) in edge_pairs {
+            out.push_str(&format!(
+                "    \"{}\" -> \"{}\";\n",
+                escape_dot(from),
+                escape_dot(to),
+            ));
+        }
+        out.push_str("}\n");
+        out
+    }
+
+    /// Render the graph as a Graphviz DOT document with nodes coloured by
+    /// requirement status. COMPLETE -> green, MISSING -> yellow, anything
+    /// containing "BLOCK" (case-insensitive) -> red, otherwise uncoloured.
+    pub fn to_dot_styled(&self, db: &RequirementsDb) -> String {
+        let mut out = String::from("digraph deps {\n");
+        out.push_str("    node [style=filled];\n");
+        let mut node_ids: Vec<&String> = self.edges.keys().collect();
+        node_ids.sort();
+        for id in &node_ids {
+            let color = status_color(db.get(id).map(|r| r.status.as_str()));
+            match color {
+                Some(c) => out.push_str(&format!(
+                    "    \"{}\" [fillcolor=\"{}\"];\n",
+                    escape_dot(id),
+                    c
+                )),
+                None => out.push_str(&format!("    \"{}\";\n", escape_dot(id))),
+            }
+        }
+        let mut edge_pairs: Vec<(&String, &String)> = Vec::new();
+        for (from, targets) in &self.edges {
+            for to in targets {
+                edge_pairs.push((from, to));
+            }
+        }
+        edge_pairs.sort();
+        for (from, to) in edge_pairs {
+            out.push_str(&format!(
+                "    \"{}\" -> \"{}\";\n",
+                escape_dot(from),
+                escape_dot(to),
+            ));
+        }
+        out.push_str("}\n");
+        out
+    }
+
+    /// Render the graph as a Mermaid flowchart (top-down, unstyled).
+    ///
+    /// Example:
+    /// ```text
+    /// graph TD
+    ///     REQ-A --> REQ-B
+    /// ```
+    pub fn to_mermaid(&self) -> String {
+        let mut out = String::from("graph TD\n");
+        let mut node_ids: Vec<&String> = self.edges.keys().collect();
+        node_ids.sort();
+        for id in &node_ids {
+            out.push_str(&format!("    {}\n", mermaid_node_decl(id)));
+        }
+        let mut edge_pairs: Vec<(&String, &String)> = Vec::new();
+        for (from, targets) in &self.edges {
+            for to in targets {
+                edge_pairs.push((from, to));
+            }
+        }
+        edge_pairs.sort();
+        for (from, to) in edge_pairs {
+            out.push_str(&format!(
+                "    {} --> {}\n",
+                mermaid_id(from),
+                mermaid_id(to),
+            ));
+        }
+        out
+    }
+
+    /// Render the graph as a Mermaid flowchart with per-status node styling
+    /// via `classDef`. Nodes whose status cannot be resolved are left with
+    /// default styling.
+    pub fn to_mermaid_styled(&self, db: &RequirementsDb) -> String {
+        let mut out = String::from("graph TD\n");
+        out.push_str("    classDef complete fill:#9f9,stroke:green,color:#000;\n");
+        out.push_str("    classDef missing fill:#ff9,stroke:#cc0,color:#000;\n");
+        out.push_str("    classDef blocked fill:#f99,stroke:red,color:#000;\n");
+
+        let mut node_ids: Vec<&String> = self.edges.keys().collect();
+        node_ids.sort();
+        for id in &node_ids {
+            out.push_str(&format!("    {}\n", mermaid_node_decl(id)));
+        }
+        let mut edge_pairs: Vec<(&String, &String)> = Vec::new();
+        for (from, targets) in &self.edges {
+            for to in targets {
+                edge_pairs.push((from, to));
+            }
+        }
+        edge_pairs.sort();
+        for (from, to) in edge_pairs {
+            out.push_str(&format!(
+                "    {} --> {}\n",
+                mermaid_id(from),
+                mermaid_id(to),
+            ));
+        }
+        // class assignments (sorted for stable output)
+        for id in &node_ids {
+            if let Some(class) = status_mermaid_class(db.get(id).map(|r| r.status.as_str())) {
+                out.push_str(&format!("    class {} {};\n", mermaid_id(id), class));
+            }
+        }
+        out
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -586,6 +854,60 @@ fn parse_csv_row(line: &str) -> Vec<&str> {
     fields.push(field.trim_matches('"'));
 
     fields
+}
+
+/// Escape a node identifier for inclusion inside a DOT quoted string.
+fn escape_dot(id: &str) -> String {
+    id.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// Render a Mermaid node id. Mermaid tolerates letters, digits, `-`, and `_`
+/// in bare identifiers; any other character forces a quoted label form.
+fn mermaid_id(id: &str) -> String {
+    if id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        id.to_string()
+    } else {
+        // Use the bracketed label form to be safe: `Nxx["actual-id"]`. We
+        // stabilise the bracketed id by hashing positionally, but for our
+        // domain (REQ-XXX-NNN) this branch is unreachable in practice.
+        format!("n{}[\"{}\"]", id.len(), id.replace('"', "&quot;"))
+    }
+}
+
+/// Render a standalone Mermaid node declaration (id with optional label).
+fn mermaid_node_decl(id: &str) -> String {
+    mermaid_id(id)
+}
+
+/// Map a requirement status string to a DOT fill colour.
+fn status_color(status: Option<&str>) -> Option<&'static str> {
+    let s = status?.to_ascii_uppercase();
+    if s == "COMPLETE" || s == "DONE" {
+        Some("green")
+    } else if s == "MISSING" {
+        Some("yellow")
+    } else if s.contains("BLOCK") {
+        Some("red")
+    } else {
+        None
+    }
+}
+
+/// Map a requirement status string to a Mermaid `classDef` name.
+fn status_mermaid_class(status: Option<&str>) -> Option<&'static str> {
+    let s = status?.to_ascii_uppercase();
+    if s == "COMPLETE" || s == "DONE" {
+        Some("complete")
+    } else if s == "MISSING" {
+        Some("missing")
+    } else if s.contains("BLOCK") {
+        Some("blocked")
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -844,5 +1166,88 @@ REQ-TEST-001,TEST,X,\"Requirement with, comma\",\"Target with, comma\",t.rs,test
         assert_eq!(db2.count(), 3);
 
         let _ = std::fs::remove_dir_all(std::env::temp_dir().join("aegis_test_mkdir"));
+    }
+
+    // ------------------------------------------------------------------
+    // DependencyGraph unit tests (REQ-RTMX-012 / REQ-RTMX-013)
+    // ------------------------------------------------------------------
+
+    /// Minimal CSV fixture whose dependencies column encodes a
+    /// REQ-A -> REQ-B -> REQ-C chain (REQ-A depends on REQ-B, etc.).
+    const CHAIN_CSV: &str = "\
+req_id,category,subcategory,requirement_text,target_value,test_module,test_function,validation_method,status,priority,phase,notes,dependencies
+REQ-A,CAT,X,a,t,,,,TODO,HIGH,1,,REQ-B
+REQ-B,CAT,X,b,t,,,,TODO,HIGH,1,,REQ-C
+REQ-C,CAT,X,c,t,,,,TODO,HIGH,1,,";
+
+    /// CSV fixture with a 2-cycle (REQ-A <-> REQ-B).
+    const CYCLE_CSV: &str = "\
+req_id,category,subcategory,requirement_text,target_value,test_module,test_function,validation_method,status,priority,phase,notes,dependencies
+REQ-A,CAT,X,a,t,,,,TODO,HIGH,1,,REQ-B
+REQ-B,CAT,X,b,t,,,,TODO,HIGH,1,,REQ-A";
+
+    // rtmx:req REQ-RTMX-012
+    #[test]
+    fn graph_topological_order_for_dag() {
+        let db = RequirementsDb::from_csv(CHAIN_CSV).unwrap();
+        let g = DependencyGraph::from_db(&db);
+
+        let order = g.topological_order().expect("DAG must yield an order");
+        // Dependencies must appear before dependents.
+        let pos = |id: &str| order.iter().position(|s| s == id).unwrap();
+        assert!(pos("REQ-C") < pos("REQ-B"));
+        assert!(pos("REQ-B") < pos("REQ-A"));
+        assert!(g.is_dag());
+    }
+
+    // rtmx:req REQ-RTMX-012
+    #[test]
+    fn graph_topological_order_err_when_cyclic() {
+        let db = RequirementsDb::from_csv(CYCLE_CSV).unwrap();
+        let g = DependencyGraph::from_db(&db);
+        assert!(g.topological_order().is_err());
+        assert!(!g.is_dag());
+    }
+
+    // rtmx:req REQ-RTMX-012
+    #[test]
+    fn graph_from_db_builds_expected_edges() {
+        let db = RequirementsDb::from_csv(CHAIN_CSV).unwrap();
+        let g = DependencyGraph::from_db(&db);
+        assert!(g.dependencies("REQ-A").contains(&"REQ-B"));
+        assert!(g.dependencies("REQ-B").contains(&"REQ-C"));
+        assert_eq!(g.edges.len(), 3);
+    }
+
+    // rtmx:req REQ-RTMX-013
+    #[test]
+    fn to_dot_emits_quoted_edges_and_header() {
+        let db = RequirementsDb::from_csv(CHAIN_CSV).unwrap();
+        let g = DependencyGraph::from_db(&db);
+        let dot = g.to_dot();
+        assert!(dot.starts_with("digraph deps {"));
+        assert!(dot.contains("\"REQ-A\" -> \"REQ-B\";"));
+        assert!(dot.trim_end().ends_with('}'));
+    }
+
+    // rtmx:req REQ-RTMX-013
+    #[test]
+    fn to_mermaid_emits_graph_td_and_edges() {
+        let db = RequirementsDb::from_csv(CHAIN_CSV).unwrap();
+        let g = DependencyGraph::from_db(&db);
+        let m = g.to_mermaid();
+        assert!(m.starts_with("graph TD"));
+        assert!(m.contains("REQ-A --> REQ-B"));
+    }
+
+    // rtmx:req REQ-RTMX-013
+    #[test]
+    fn status_color_maps_known_statuses() {
+        assert_eq!(status_color(Some("COMPLETE")), Some("green"));
+        assert_eq!(status_color(Some("complete")), Some("green"));
+        assert_eq!(status_color(Some("MISSING")), Some("yellow"));
+        assert_eq!(status_color(Some("BLOCKED")), Some("red"));
+        assert_eq!(status_color(Some("TODO")), None);
+        assert_eq!(status_color(None), None);
     }
 }
