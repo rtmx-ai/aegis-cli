@@ -65,6 +65,11 @@ pub struct App {
     // Monotonic tick counter for spinner animation.
     pub tick_count: u64,
 
+    /// When a prompt was submitted (for inline waiting elapsed time).
+    pub prompt_submitted_at: Option<Instant>,
+    /// Monotonic counter of prompts submitted (for stable thinking verb).
+    pub prompt_count: u32,
+
     // Search: index of currently matched message.
     pub search_match_index: Option<usize>,
 
@@ -98,9 +103,32 @@ impl App {
             splash_ticks: 0,
             tool_start: None,
             tick_count: 0,
+            prompt_submitted_at: None,
+            prompt_count: 0,
             search_match_index: None,
             file_picker: None,
             command_palette: CommandPalette::new(),
+        }
+    }
+
+    /// Inline waiting text for the chat area. Returns `Some("| Thinking (5s)")`
+    /// when we are waiting for the first token, `None` otherwise.
+    pub fn waiting_text(&self) -> Option<String> {
+        if self.phase != AppPhase::Streaming || !self.stream_buffer.is_empty() {
+            return None;
+        }
+        let verb = crate::thinking::THINKING_VERBS
+            [(self.prompt_count as usize) % crate::thinking::THINKING_VERBS.len()];
+        match self.prompt_submitted_at {
+            Some(t) => {
+                let elapsed = t.elapsed().as_secs();
+                if elapsed >= 3 {
+                    Some(format!("{verb} ({elapsed}s)"))
+                } else {
+                    Some(verb.to_string())
+                }
+            }
+            None => Some(verb.to_string()),
         }
     }
 
@@ -114,6 +142,7 @@ impl App {
             TuiEvent::Terminal(ct_event) => self.handle_terminal_event(ct_event, agent_tx),
             TuiEvent::AgentToken(text) => {
                 self.phase = AppPhase::Streaming;
+                self.prompt_submitted_at = None; // First token clears waiting indicator
                 self.stream_buffer.push_str(&text);
                 Action::Continue
             }
@@ -1165,5 +1194,55 @@ mod tests {
             &tx,
         );
         assert_eq!(app.file_picker.as_ref().unwrap().selected, 0);
+    }
+
+    // rtmx:req REQ-TUI-059
+    #[test]
+    fn waiting_text_shown_during_pre_token_streaming() {
+        let mut app = make_app();
+        app.phase = AppPhase::Streaming;
+        app.stream_buffer.clear();
+        app.prompt_submitted_at = Some(Instant::now());
+        app.prompt_count = 1;
+        let wt = app.waiting_text();
+        assert!(wt.is_some(), "should show waiting text before first token");
+        // Should contain one of the THINKING_VERBS, stable for this prompt_count.
+        let text = wt.unwrap();
+        assert!(
+            crate::thinking::THINKING_VERBS
+                .iter()
+                .any(|v| text.contains(v)),
+            "waiting text should contain a thinking verb: {text}"
+        );
+    }
+
+    // rtmx:req REQ-TUI-059
+    #[test]
+    fn waiting_text_hidden_after_first_token() {
+        let mut app = make_app();
+        app.phase = AppPhase::Streaming;
+        app.prompt_submitted_at = Some(Instant::now());
+        app.prompt_count = 1;
+        // Simulate first token arrival
+        let (tx, _rx) = make_agent_tx();
+        app.handle_event(TuiEvent::AgentToken("Hello".to_string()), &tx);
+        assert!(app.prompt_submitted_at.is_none());
+        assert!(
+            app.waiting_text().is_none(),
+            "waiting text should be None after first token"
+        );
+    }
+
+    // rtmx:req REQ-TUI-059
+    #[test]
+    fn waiting_text_stable_per_prompt() {
+        let mut app = make_app();
+        app.phase = AppPhase::Streaming;
+        app.stream_buffer.clear();
+        app.prompt_submitted_at = Some(Instant::now());
+        app.prompt_count = 3;
+        let text1 = app.waiting_text().unwrap();
+        let text2 = app.waiting_text().unwrap();
+        assert_eq!(text1, text2, "verb should be stable for same prompt_count");
     }
 }

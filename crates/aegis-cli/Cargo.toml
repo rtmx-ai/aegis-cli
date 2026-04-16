@@ -23,6 +23,7 @@ async-trait = { workspace = true }
 clap = { workspace = true }
 crossterm = { workspace = true }
 dirs-next = "2"
+libc = "0.2"
 ratatui = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

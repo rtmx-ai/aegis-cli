@@ -55,6 +55,23 @@ impl ApprovalGate for HeadlessApprovalGate {
     }
 }
 
+/// Build the assembled system prompt from base identity + repo context.
+///
+/// Uses the SystemPromptManager layering: Base (aegis identity shipped with
+/// binary) + Project (repo context gathered from cwd). Keeps the model
+/// aware of its mission, tools, security posture, and current project state.
+fn build_system_prompt() -> String {
+    use aegis_agent::system_prompt::{SystemPromptLayer, SystemPromptManager};
+    let mut mgr = SystemPromptManager::with_base();
+    let work_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let repo_ctx = aegis_agent::repo_context::RepoContext::gather(&work_dir);
+    let project_section = repo_ctx.to_prompt_section();
+    if !project_section.trim().is_empty() {
+        mgr.set_layer(SystemPromptLayer::Project, project_section);
+    }
+    mgr.build()
+}
+
 /// Build version with embedded git SHA and target.
 fn long_version() -> &'static str {
     let v = format!(
@@ -568,10 +585,7 @@ async fn run_headless_chat(
     // 6. Run the agent loop
     let config = aegis_agent::loop_runner::AgentConfig {
         max_iterations: 20,
-        system_prompt: "You are a helpful coding assistant. \
-             You have access to tools: read_file, \
-             write_file, run_command, list_dir, grep."
-            .to_string(),
+        system_prompt: build_system_prompt(),
     };
 
     let agent = aegis_agent::loop_runner::AgentLoop::new(
@@ -706,10 +720,7 @@ async fn run_plaintext_turn(
 
     let config = aegis_agent::loop_runner::AgentConfig {
         max_iterations: 20,
-        system_prompt: "You are a helpful coding assistant. \
-             You have access to tools: read_file, \
-             write_file, run_command, list_dir, grep."
-            .to_string(),
+        system_prompt: build_system_prompt(),
     };
 
     // Set up stream event channel for tool-use visibility
@@ -768,6 +779,22 @@ async fn run_plaintext_turn(
     Ok(())
 }
 
+/// Retry a fallible I/O operation on EINTR (interrupted system call).
+/// Terminal setup syscalls (ioctl, write) can be interrupted by signals
+/// during job-control transitions (bg/fg in dev-run.sh). Retrying is
+/// safe because these calls are idempotent.
+fn retry_eintr<F, T>(mut f: F) -> std::io::Result<T>
+where
+    F: FnMut() -> std::io::Result<T>,
+{
+    loop {
+        match f() {
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            result => return result,
+        }
+    }
+}
+
 async fn run_interactive_chat(
     provider_config: &aegis_llm::config::ProviderConfig,
     initial_prompt: Option<String>,
@@ -779,33 +806,77 @@ async fn run_interactive_chat(
     use ratatui::backend::CrosstermBackend;
     use tokio::sync::mpsc;
 
-    // 1. Set up terminal
-    crossterm::terminal::enable_raw_mode().map_err(|e| format!("Terminal error: {e}"))?;
+    // 0. Install a panic hook that restores terminal state. Without this,
+    // a panic leaves the terminal in raw mode with alternate screen active,
+    // making the shell unusable until `reset` is run manually.
+    let default_panic = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = crossterm::terminal::disable_raw_mode();
+        let _ = crossterm::execute!(
+            std::io::stdout(),
+            crossterm::event::DisableMouseCapture,
+            crossterm::event::DisableBracketedPaste,
+            crossterm::terminal::LeaveAlternateScreen
+        );
+        default_panic(info);
+    }));
+
+    // 1. Set up terminal (retry on EINTR from job-control signals)
+    //
+    // Ignore SIGTTOU so that tcsetattr / write succeed even if we are
+    // briefly in a background process group (e.g. dev-run.sh bg/fg dance).
+    // Restored after terminal setup is complete.
+    #[cfg(unix)]
+    let prev_sigttou = unsafe { libc::signal(libc::SIGTTOU, libc::SIG_IGN) };
+
+    retry_eintr(crossterm::terminal::enable_raw_mode).map_err(|e| {
+        tracing::error!(%e, "enable_raw_mode failed");
+        format!("Terminal error: {e}")
+    })?;
     let mut stdout = std::io::stdout();
-    crossterm::execute!(
-        stdout,
-        EnterAlternateScreen,
-        crossterm::event::EnableBracketedPaste,
-        crossterm::event::EnableMouseCapture,
-        aegis_tui::terminal::CURSOR_STYLE
-    )
-    .map_err(|e| format!("Terminal error: {e}"))?;
+    retry_eintr(|| {
+        crossterm::execute!(
+            stdout,
+            EnterAlternateScreen,
+            crossterm::event::EnableBracketedPaste,
+            crossterm::event::EnableMouseCapture,
+            aegis_tui::terminal::CURSOR_STYLE
+        )
+    })
+    .map_err(|e| {
+        tracing::error!(%e, "terminal setup failed");
+        format!("Terminal error: {e}")
+    })?;
 
     // Enable Kitty keyboard protocol if the terminal supports it.
     // This allows Shift+Enter to be distinguished from Enter.
     let enhanced_keyboard = crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false);
     if enhanced_keyboard {
-        crossterm::execute!(
-            stdout,
-            crossterm::event::PushKeyboardEnhancementFlags(
-                crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+        retry_eintr(|| {
+            crossterm::execute!(
+                stdout,
+                crossterm::event::PushKeyboardEnhancementFlags(
+                    crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                )
             )
-        )
-        .map_err(|e| format!("Keyboard enhancement error: {e}"))?;
+        })
+        .map_err(|e| {
+            tracing::error!(%e, "keyboard enhancement failed");
+            format!("Keyboard enhancement error: {e}")
+        })?;
     }
 
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend).map_err(|e| format!("Terminal error: {e}"))?;
+    let mut terminal = retry_eintr(|| Terminal::new(CrosstermBackend::new(std::io::stdout())))
+        .map_err(|e| {
+            tracing::error!(%e, "Terminal::new failed");
+            format!("Terminal error: {e}")
+        })?;
+
+    // Restore previous SIGTTOU disposition now that terminal setup is done.
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGTTOU, prev_sigttou);
+    }
 
     // 2. Create unified event channel
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<TuiEvent>();
@@ -957,6 +1028,7 @@ async fn run_interactive_chat(
                         spinner_frame: (app.tick_count % 4) as u8,
                         command_palette: app.command_palette.view(),
                         ghost_text: app.input.ghost_text.clone(),
+                        waiting_text: app.waiting_text(),
                         file_picker: app.file_picker.as_ref().map(|fp| {
                             aegis_tui::layout::FilePickerView {
                                 query: fp.query.clone(),
@@ -1116,10 +1188,7 @@ async fn run_agent_for_tui(
 
     let config = aegis_agent::loop_runner::AgentConfig {
         max_iterations: 20,
-        system_prompt: "You are a helpful coding assistant. \
-             You have access to tools: read_file, \
-             write_file, run_command, list_dir, grep."
-            .to_string(),
+        system_prompt: build_system_prompt(),
     };
 
     // Create a stream event sink that translates StreamEvents into TuiEvents

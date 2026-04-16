@@ -49,22 +49,31 @@ echo "File changes in crates/ will trigger rebuild + restart."
 echo ""
 
 rm -f "$SENTINEL" "$PIDFILE"
+CRASH_COUNT=0
 
 # Main loop: run aegis in the foreground, rebuild on source changes.
 while true; do
+    LAUNCH_TIME=$(date +%s)
     # Start companion watcher in the background. It polls for source
     # changes and kills aegis (by reading PIDFILE) when detected.
     WATCH_PID=""
     "$SCRIPT_DIR/dev-watch.sh" "$PIDFILE" "$SENTINEL" &
     WATCH_PID=$!
 
-    # Run aegis: background it to capture PID, then bring to foreground
-    # so it gets full terminal control (raw mode, alt screen, input).
+    # Run aegis in the foreground so it owns the terminal from the start.
+    # A subshell writes its own PID (which becomes aegis's PID after exec)
+    # to PIDFILE, avoiding the bg/fg race that triggers SIGTTOU when aegis
+    # calls tcsetattr() while still in a background process group.
     cd "$SANDBOX"
-    "$BINARY" chat &
-    echo $! > "$PIDFILE"
-    fg %% 2>/dev/null || true
+    AEGIS_EXIT=0
+    ( echo $$ > "$PIDFILE"; exec "$BINARY" chat ) || AEGIS_EXIT=$?
     rm -f "$PIDFILE"
+
+    # Restore terminal state in case aegis was killed before its cleanup
+    # ran (SIGTERM during startup, panic, etc.). Without this, raw mode,
+    # mouse capture, and alternate screen leak into the next iteration.
+    stty sane 2>/dev/null || true
+    printf '\e[?1000l\e[?1006l\e[?1049l\e[?2004l' 2>/dev/null || true
 
     # Stop the watcher.
     if [ -n "${WATCH_PID:-}" ]; then
@@ -76,8 +85,31 @@ while true; do
     # Did the watcher trigger a rebuild, or did the user quit?
     if [ -f "$SENTINEL" ]; then
         rm -f "$SENTINEL"
+    elif [ "$AEGIS_EXIT" -ne 0 ]; then
+        # Crashed or killed (e.g., tmux detach disrupted terminal).
+        EXIT_TIME=$(date +%s)
+        ELAPSED=$(( EXIT_TIME - LAUNCH_TIME ))
+        if [ "$ELAPSED" -lt 5 ]; then
+            CRASH_COUNT=$(( CRASH_COUNT + 1 ))
+        else
+            CRASH_COUNT=1
+        fi
+        if [ "$CRASH_COUNT" -ge 3 ]; then
+            echo "[aegis crashed $CRASH_COUNT times in a row -- waiting for source changes...]"
+            CRASH_COUNT=0
+            cd "$PROJECT_DIR"
+            "$SCRIPT_DIR/dev-watch.sh" "$PIDFILE" "$SENTINEL" --once &
+            WATCH_PID=$!
+            wait "$WATCH_PID" 2>/dev/null || true
+            WATCH_PID=""
+            rm -f "$SENTINEL"
+        else
+            echo "[aegis exited unexpectedly (exit $AEGIS_EXIT) -- retrying in 2s...]"
+            sleep 2
+        fi
     else
-        # User quit -- wait for a file change before rebuilding.
+        CRASH_COUNT=0
+        # User quit cleanly -- wait for a file change before rebuilding.
         echo "[aegis exited -- waiting for source changes to rebuild...]"
         cd "$PROJECT_DIR"
 

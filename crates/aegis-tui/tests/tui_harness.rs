@@ -107,6 +107,7 @@ impl TuiHarness {
                     }),
                     command_palette: app.command_palette.view(),
                     ghost_text: app.input.ghost_text.clone(),
+                    waiting_text: app.waiting_text(),
                 };
                 aegis_tui::layout::render(frame, &view);
             })

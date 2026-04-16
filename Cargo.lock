@@ -68,6 +68,7 @@ dependencies = [
  "crossterm 0.28.1",
  "cucumber",
  "dirs-next",
+ "libc",
  "predicates",
  "ratatui",
  "serde_json",

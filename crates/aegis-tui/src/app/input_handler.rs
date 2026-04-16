@@ -131,6 +131,9 @@ impl App {
                         self.messages.push(ChatMessage::user(&text));
                         self.phase = AppPhase::Streaming;
                         self.stream_buffer.clear();
+                        self.prompt_submitted_at = Some(std::time::Instant::now());
+                        self.prompt_count = self.prompt_count.wrapping_add(1);
+                        self.thinking.reset();
                         let _ = agent_tx.send(text);
                         Action::Continue
                     }

@@ -80,6 +80,9 @@ pub struct AppState {
     pub command_palette: Option<CommandPaletteView>,
     /// Ghost text for usage hints (shown dim italic after input cursor).
     pub ghost_text: Option<String>,
+    /// Inline waiting indicator text, e.g. "Thinking (5s)". Rendered in
+    /// the chat area when the LLM has not yet produced its first token.
+    pub waiting_text: Option<String>,
 }
 
 /// View data for the file picker dropdown.
@@ -116,6 +119,7 @@ impl Default for AppState {
             file_picker: None,
             command_palette: None,
             ghost_text: None,
+            waiting_text: None,
         }
     }
 }
@@ -439,6 +443,23 @@ fn render_chat_log(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppSt
                 lines[line_idx] = Line::from(spans);
             }
         }
+    }
+
+    // Render inline waiting indicator while awaiting first token.
+    if let Some(ref waiting) = state.waiting_text
+        && state.stream_buffer.is_empty()
+    {
+        let sc = spinner_char(state.spinner_frame);
+        lines.push(Line::from(vec![
+            Span::styled(format!("{sc} "), Style::default().fg(Color::Yellow)),
+            Span::styled(
+                waiting.as_str(),
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ]));
+        lines.push(Line::from(""));
     }
 
     // Render the streaming buffer as a pending assistant message.
@@ -1001,6 +1022,43 @@ mod tests {
         assert!(output.contains("You:"));
         assert!(output.contains("read_file"));
         assert!(output.contains("main function"));
+    }
+
+    // rtmx:req REQ-TUI-059
+    #[test]
+    fn test_waiting_indicator_renders_inline() {
+        let state = AppState {
+            waiting_text: Some("Thinking".to_string()),
+            spinner_frame: 0,
+            ..Default::default()
+        };
+        let output = render_to_string(&state, 80, 20);
+        assert!(
+            output.contains("Thinking"),
+            "Should show waiting text inline: {output}"
+        );
+    }
+
+    // rtmx:req REQ-TUI-059
+    #[test]
+    fn test_waiting_indicator_hidden_when_stream_has_content() {
+        let state = AppState {
+            waiting_text: Some("Thinking".to_string()),
+            stream_buffer: "Hello there".to_string(),
+            spinner_frame: 0,
+            ..Default::default()
+        };
+        let output = render_to_string(&state, 80, 20);
+        // The waiting text should NOT appear when stream buffer has content.
+        // "Thinking" should not be in the rendered output.
+        assert!(
+            !output.contains("Thinking"),
+            "Waiting indicator should be hidden when stream has content: {output}"
+        );
+        assert!(
+            output.contains("Hello there"),
+            "Stream buffer should render: {output}"
+        );
     }
 
     // rtmx:req REQ-TUI-032

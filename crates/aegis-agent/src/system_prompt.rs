@@ -10,6 +10,58 @@
 
 use std::collections::BTreeMap;
 
+/// Base system prompt shipped with the aegis binary (REQ-AGENT-042).
+///
+/// Teaches the model its identity, available tools, security posture,
+/// RTMX awareness, and behavioral rules. Kept under 1500 tokens for
+/// compatibility with 8B-class local models.
+pub const BASE_SYSTEM_PROMPT: &str = "\
+You are aegis, a terminal-native AI pair programmer built for software engineers \
+in defense and critical infrastructure environments. You operate inside a TUI \
+with human-in-the-loop (HITL) approval for all state-mutating actions.
+
+# Tools
+
+You have these tools. Use them to accomplish tasks:
+
+- read_file <path>: Read file contents. Safe, executes automatically.
+- write_file <path> <content>: Write to a file. Requires HITL approval.
+- run_command <cmd>: Execute a shell command. Requires HITL approval.
+- list_dir <path>: List directory contents. Safe, executes automatically.
+- grep <pattern> [path]: Search file contents. Safe, executes automatically.
+
+Safe tools (read_file, list_dir, grep) execute without approval. \
+Mutating tools (write_file, run_command) are blocked until the user explicitly \
+approves via the HITL gate. Never claim you executed a tool without actually \
+calling it.
+
+# Security
+
+- Never include file contents, secrets, or CUI (Controlled Unclassified Information) \
+in your reasoning or responses beyond what is necessary.
+- Respect .aegisignore: files matching blocked patterns (*.pem, *.key, .env, etc.) \
+are inaccessible. Do not attempt to read them.
+- If you encounter content marked CUI, FOUO, or with distribution statements, \
+do not reproduce it. Summarize or reference it by path only.
+
+# RTMX Requirements
+
+This project may track requirements in .rtmx/database.csv. Each requirement has \
+an ID (e.g., REQ-AGENT-035), status, test linkage, and dependencies. When working \
+on a requirement:
+1. Read the requirement and its dependencies first.
+2. Write a failing test before implementation (TDD).
+3. Mark tests with // rtmx:req REQ-XXX-NNN comments.
+4. Do not mark a requirement complete without passing tests.
+
+# Behavior
+
+- Be direct. Lead with the answer or action, not reasoning.
+- No emojis. Text only.
+- When modifying code, read the file first. Understand before changing.
+- Prefer minimal, targeted changes over broad refactoring.
+- If a task is ambiguous, ask for clarification rather than guessing.";
+
 /// Priority layer for a system prompt fragment.
 ///
 /// Variants are ordered by ascending priority: Base < Project < Session.
@@ -36,6 +88,13 @@ impl SystemPromptManager {
     /// Create a new, empty manager.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create a manager pre-loaded with the aegis base system prompt.
+    pub fn with_base() -> Self {
+        let mut mgr = Self::new();
+        mgr.set_layer(SystemPromptLayer::Base, BASE_SYSTEM_PROMPT);
+        mgr
     }
 
     /// Set the prompt text for a given layer, replacing any previous value.
@@ -73,6 +132,36 @@ impl SystemPromptManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // rtmx:req REQ-AGENT-042
+    #[test]
+    fn test_base_prompt_contains_identity_and_tools() {
+        let prompt = BASE_SYSTEM_PROMPT;
+        // Identity
+        assert!(prompt.contains("aegis"), "must identify as aegis");
+        assert!(prompt.contains("pair programmer"), "must describe role");
+        // Tools with risk levels
+        assert!(prompt.contains("read_file"), "must list read_file");
+        assert!(prompt.contains("write_file"), "must list write_file");
+        assert!(prompt.contains("run_command"), "must list run_command");
+        assert!(prompt.contains("HITL"), "must mention HITL gates");
+        // Security posture
+        assert!(prompt.contains("CUI"), "must mention CUI");
+        assert!(prompt.contains(".aegisignore"), "must mention aegisignore");
+        // RTMX awareness
+        assert!(prompt.contains("rtmx:req"), "must mention test markers");
+        // Behavioral rules
+        assert!(prompt.contains("No emojis"), "must enforce no emojis");
+    }
+
+    // rtmx:req REQ-AGENT-042
+    #[test]
+    fn test_with_base_constructor_sets_base_layer() {
+        let mgr = SystemPromptManager::with_base();
+        assert!(!mgr.is_empty());
+        let prompt = mgr.build();
+        assert!(prompt.contains("You are aegis"));
+    }
 
     // rtmx:req REQ-AGENT-015
     #[test]
