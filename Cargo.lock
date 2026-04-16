@@ -85,6 +85,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "proptest",
+ "regex",
  "rstest",
  "serde",
  "serde_json",

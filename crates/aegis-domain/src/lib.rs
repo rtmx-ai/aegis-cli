@@ -5,6 +5,7 @@
 
 pub mod error;
 pub mod event;
+pub mod nist;
 pub mod ports;
 pub mod rtmx;
 pub mod types;
