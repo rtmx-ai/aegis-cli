@@ -33,95 +33,184 @@ Aegis eliminates the trade-off. You control the compute, network, and data bound
 
 ## Architecture
 
-```
-aegis (single static binary)
-  |
-  |-- aegis-domain        Shared kernel: types, ports, events, errors
-  |-- aegis-agent         REA loop: read context, call LLM, dispatch tools, inject results
-  |-- aegis-hitl          HITL gate: blocks mutating tools until human approves
-  |-- aegis-llm           Provider abstraction: Vertex AI, Bedrock, Azure, Ollama/vLLM
-  |-- aegis-tui           ratatui terminal UI: chat log, streaming markdown, approval dialogs
-  |-- aegis-audit         Immutable JSONL ledger: session metadata, tool calls, approvals
-  |-- aegis-security      .aegisignore filtering, sandboxing, transport policy
-  |-- aegis-infra         Plugin host: aegis-infra/v1 protocol, NDJSON event stream
-  |-- aegis-onboard       aegis init: provider setup, config generation, mode selection
-  |-- aegis-cli           Composition root: wires all crates, clap CLI entry point
-  |-- aegis-test-support  Test infrastructure: mocks, fixtures, recording helpers
+### System Overview
+
+Aegis runs as a single static binary on a developer workstation (NIPR or SIPR). All sensitive state stays local. LLM endpoints are reached over TLS 1.3 through a customer-controlled boundary (DoWIN BCAP for IL4/IL5). For air-gapped environments, the binary connects to a local Ollama/vLLM endpoint and never touches the network.
+
+```mermaid
+flowchart LR
+    subgraph workstation [" Developer Workstation (NIPR/SIPR) "]
+        aegis["aegis-cli<br/>(Rust static binary)"]
+        config["config.yaml<br/>(0600 perms)"]
+        ledger["audit ledger<br/>(JSONL, metadata only)"]
+        plugins["IaC plugins<br/>(subprocesses)"]
+        ollama["Ollama / vLLM<br/>(localhost, air-gapped)"]
+
+        aegis -- reads --> config
+        aegis -- appends --> ledger
+        aegis -- "aegis-infra/v1" --> plugins
+        aegis -. "HTTP loopback" .-> ollama
+    end
+
+    subgraph dowin [" DoWIN / BCAP "]
+        bcap["Boundary Cloud<br/>Access Point"]
+    end
+
+    subgraph gcp [" GCP Assured Workloads "]
+        vertex["Vertex AI<br/>(IL4/IL5)"]
+    end
+
+    subgraph aws [" AWS GovCloud "]
+        bedrock["Amazon Bedrock<br/>(IL4/IL5)"]
+    end
+
+    subgraph azgov [" Azure Government "]
+        azoai["Azure OpenAI<br/>(IL4/IL5)"]
+    end
+
+    aegis -. "TLS 1.3 FIPS" .-> bcap
+    bcap .-> vertex
+    bcap .-> bedrock
+    bcap .-> azoai
 ```
 
-### Crate Dependency Graph
+### Workspace Crates
 
+```mermaid
+flowchart TD
+    CLI["aegis-cli<br/>(composition root)"]
+    TUI["aegis-tui"]
+    Agent["aegis-agent"]
+    LLM["aegis-llm"]
+    HITL["aegis-hitl"]
+    Audit["aegis-audit"]
+    Security["aegis-security"]
+    Infra["aegis-infra"]
+    Onboard["aegis-onboard"]
+    Domain["aegis-domain<br/>(shared kernel)"]
+
+    CLI --> TUI & Agent & Onboard & Infra
+    Agent --> LLM
+    TUI & Agent & HITL & Audit & Security & Infra & Onboard & LLM --> Domain
 ```
-                        aegis-cli
-                     (composition root)
-                    /    |     |      \
-              aegis-tui  |  aegis-onboard  aegis-infra
-                    \    |     |      /
-                     aegis-agent
-                         |
-                     aegis-llm
-                         |
-   aegis-hitl  aegis-audit  aegis-security
-                    \    |    /
-                   aegis-domain
-                  (shared kernel)
-```
+
+| Crate | Role |
+|---|---|
+| aegis-domain | Shared kernel: types, ports, events, errors |
+| aegis-agent | REA loop, tools, orchestration (workstreams, waves, conflict matrix) |
+| aegis-hitl | HITL gate: blocks mutating tools until human approves |
+| aegis-llm | Provider abstraction: Vertex AI, Bedrock, Azure, Ollama/vLLM |
+| aegis-tui | ratatui terminal UI: chat log, streaming markdown, approval dialogs |
+| aegis-audit | Immutable JSONL ledger + async log forwarding to SIEM/syslog |
+| aegis-security | .aegisignore, sandbox, transport, prompt-injection scan, CUI/PII DLP |
+| aegis-infra | Plugin host: aegis-infra/v1 protocol, NDJSON event stream |
+| aegis-onboard | aegis init: provider setup, config generation, mode selection |
+| aegis-cli | Composition root: wires all crates, clap CLI entry point |
+| aegis-test-support | Test infrastructure: mocks, fixtures, recording helpers |
 
 ### Read-Evaluate-Act Loop
 
-```
-  User prompt
-       |
-       v
-  [1. READ]     Bundle prompt + conversation history + tool schemas
-       |
-       v
-  [2. EVALUATE] Stream to LLM endpoint (Vertex / Bedrock / Azure / local)
-       |         Model returns tool_use calls or text responses
-       v
-  [3. ACT]      Route tool calls through HITL gate
-       |         Read-only tools (read_file, grep): auto-execute
-       |         Mutating tools (write_file, run_command): require human approval
-       v
-  [4. INJECT]   Append tool results to conversation history
-       |
-       +-------> Loop until resolved or user interrupts
+```mermaid
+sequenceDiagram
+    participant User
+    participant TUI as aegis-tui
+    participant Agent as aegis-agent<br/>(REA Loop)
+    participant LLM as LLM Provider<br/>(Vertex/Bedrock/Local)
+    participant Gate as HITL Gate
+    participant Tools as Tool Executor
+    participant Ledger as Audit Ledger
+
+    User->>TUI: "Fix the failing auth test"
+    TUI->>Agent: prompt + history
+
+    loop Until resolved or max_iterations
+        Agent->>LLM: stream(messages, tool_schemas)
+        LLM-->>Agent: Token("The auth module...")
+        LLM-->>Agent: ToolUse(read_file "src/auth.rs")
+        LLM-->>Agent: Done(input: 1200, output: 50)
+
+        alt Read-only tool (auto-execute)
+            Agent->>Tools: execute(read_file)
+            Tools-->>Agent: Success(file contents)
+        else State-mutating tool (HITL required)
+            Agent->>Gate: request_approval(write_file)
+            Gate->>TUI: show approval dialog
+            TUI->>User: [Y] Approve [N] Deny [E] Edit
+            User->>TUI: Y
+            TUI->>Gate: Approved
+            Gate-->>Agent: Approved
+            Agent->>Tools: execute(write_file)
+            Tools-->>Agent: Success
+        end
+
+        Agent->>Ledger: record(ToolCallExecuted)
+        Agent->>Agent: inject result into history
+    end
+
+    Agent->>TUI: final response
+    TUI->>User: streaming markdown
 ```
 
-### Security Model
+### Security Boundaries
 
-```
-  Source code (CUI)
-       |
-  .aegisignore filter (mandatory blocklist)
-       |
-  aegis-agent (REA loop)
-       |                          \
-  HITL gate -----> Audit ledger    \
-  [Y] [N] [E]     (metadata only)  \
-       |                             \
-  Tool executor                   LLM endpoint
-  (sandboxed)                     (TLS 1.3, FIPS 140-2)
-                                  (zero retention, CMEK)
-                                  (VPC-SC perimeter)
+```mermaid
+flowchart LR
+    subgraph edge [" Workstation -- You Control "]
+        source["Source Code<br/>(CUI)"] --> ignore[".aegisignore"]
+        ignore --> aegis_bin["aegis-cli"]
+        aegis_bin --> gate["HITL Gate<br/>Y / N / E / S"]
+        gate --> sandbox["OS Sandbox<br/>bubblewrap / seatbelt"]
+        aegis_bin --> dlp["DLP Scanner<br/>CUI/PII detection"]
+        aegis_bin --> audit["Audit Ledger<br/>metadata only"]
+        audit --> forward["Async forwarder<br/>SIEM/syslog (optional)"]
+    end
+
+    subgraph net [" Network "]
+        tls["TLS 1.3<br/>FIPS 140-2"]
+    end
+
+    subgraph cloud [" Cloud Boundary -- CSP Controls "]
+        vpc["VPC-SC"] --> endpoint["LLM Endpoint<br/>zero retention"]
+        kms["CMEK"] --> endpoint
+        endpoint --> logs["Cloud Audit Logs<br/>365-day retention"]
+    end
+
+    aegis_bin -. "prompt<br/>(ephemeral)" .-> tls
+    tls .-> vpc
 ```
 
 **On the workstation:** Source code, file contents, AI responses, shell output. Never leaves your machine.
 
-**Crosses to cloud:** Prompt text only. Ephemeral, zero-retention. Encrypted in transit (TLS 1.3 FIPS). Encrypted at rest (CMEK). VPC Service Controls restrict API access to authorized networks.
+**Crosses to cloud:** Prompt text only. Scanned for CUI markings and PII before transmission. Ephemeral, zero-retention. Encrypted in transit (TLS 1.3 FIPS). Encrypted at rest (CMEK). VPC Service Controls restrict API access to authorized networks.
 
-**Audit ledger records:** Session start/stop, user identity, file paths accessed, token counts, HITL decisions. Never prompts, file contents, or AI responses.
+**Audit ledger records:** Session start/stop, user identity, file paths accessed, token counts, HITL decisions. Never prompts, file contents, or AI responses. A `verify_redaction` scan proves no CUI/PII is present.
 
 ### Plugin Protocol (aegis-infra/v1)
 
-Aegis does not embed IaC engines. It invokes plugins as subprocesses via a structured NDJSON protocol:
+Aegis does NOT embed Pulumi or provision cloud resources directly. It invokes IaC plugins as subprocesses via the aegis-infra/v1 protocol. Plugins are separate binaries built with the [@aegis/infra-sdk](https://github.com/rtmx-ai/aegis-infra-sdk).
 
-```
-aegis-cli  --[manifest]--> plugin   (report capabilities)
-aegis-cli  --[up]--------> plugin   (provision resources)
-           <--progress---  plugin   (real-time status)
-           <--check------  plugin   (health verification)
-           <--result-----  plugin   (final outputs)
+```mermaid
+sequenceDiagram
+    participant CLI as aegis-cli<br/>(Rust)
+    participant Plugin as gcp-assured-workloads<br/>(TypeScript + Pulumi)
+    participant GCP as Google Cloud<br/>(Assured Workloads)
+
+    Note over CLI,Plugin: All communication via NDJSON on stdout
+
+    CLI->>Plugin: manifest
+    Plugin-->>CLI: {"name","version","contract":"aegis-infra/v1","requires","provides"}
+
+    CLI->>Plugin: up --input '{"project_id","region","impact_level"}'
+    Plugin-->>CLI: {"type":"diagnostic","message":"Entering PREFLIGHT"}
+    Plugin-->>CLI: {"type":"progress","resource":"KMS KeyRing","status":"in_progress"}
+    Plugin->>GCP: Pulumi Automation API
+    GCP-->>Plugin: Resources provisioned
+    Plugin-->>CLI: {"type":"progress","resource":"KMS KeyRing","status":"complete"}
+    Plugin-->>CLI: {"type":"check","name":"kms_key_active","status":"pass"}
+    Plugin-->>CLI: {"type":"check","name":"vpc_sc_enforced","status":"pass"}
+    Plugin-->>CLI: {"type":"result","success":true,"outputs":{...}}
+
+    CLI->>CLI: Write outputs to ~/.aegis/config.yaml
 ```
 
 **Subcommands:** `manifest`, `preview`, `up`, `status`, `destroy`
