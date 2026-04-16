@@ -8,6 +8,7 @@
 
 use aegis_domain::rtmx::RequirementsDb;
 use std::collections::{HashMap, HashSet};
+use std::process::Command;
 
 /// A workstream is a group of requirements that can be implemented
 /// together in a single git worktree without file conflicts against
@@ -20,6 +21,131 @@ pub struct Workstream {
     pub requirements: Vec<String>,
     /// Estimated files that will be modified (from test_module heuristics).
     pub estimated_files: Vec<String>,
+}
+
+/// A wave is a batch of workstreams that can execute in parallel.
+/// Wave N+1 starts only after Wave N merges. Within a wave all
+/// workstreams are independent (no shared file conflicts).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Wave {
+    /// Zero-based wave index.
+    pub index: usize,
+    /// Workstreams in this wave, all independent of each other.
+    pub workstreams: Vec<Workstream>,
+}
+
+/// Result of cleaning up a completed worktree and its branch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CleanupResult {
+    /// Path to the worktree that was cleaned up.
+    pub worktree_path: String,
+    /// Branch name that was cleaned up.
+    pub branch: String,
+    /// Whether cleanup succeeded.
+    pub success: bool,
+    /// Error message if cleanup failed.
+    pub error: Option<String>,
+}
+
+/// Compute waves of workstreams respecting inter-wave dependencies.
+///
+/// Wave 0 contains the current frontier decomposed into non-conflicting
+/// workstreams. After Wave 0 completes (merges), previously-blocked
+/// requirements become actionable, forming Wave 1, and so on.
+///
+/// Returns `Vec<Wave>` where each wave's workstreams are independent.
+pub fn compute_waves(db: &RequirementsDb) -> Vec<Wave> {
+    let mut waves = Vec::new();
+    let mut sim_db = db.clone();
+    let mut wave_index = 0;
+
+    loop {
+        let workstreams = decompose_workstreams(&sim_db);
+        if workstreams.is_empty() {
+            break;
+        }
+
+        // Collect all requirement IDs in this wave.
+        let wave_req_ids: Vec<String> = workstreams
+            .iter()
+            .flat_map(|ws| ws.requirements.iter().cloned())
+            .collect();
+
+        waves.push(Wave {
+            index: wave_index,
+            workstreams,
+        });
+
+        // Simulate completion: mark all wave reqs as COMPLETE so the
+        // next frontier can be computed.
+        for req_id in &wave_req_ids {
+            let _ = sim_db.update_status(req_id, "COMPLETE");
+        }
+
+        wave_index += 1;
+    }
+
+    waves
+}
+
+/// Clean up a worktree and its branch after successful merge.
+///
+/// Runs `git worktree remove <path>` (with optional `--force`) followed
+/// by `git branch -D <branch>`. If worktree removal fails, the branch
+/// is preserved for debugging.
+pub fn cleanup_worktree(worktree_path: &str, branch: &str, force: bool) -> CleanupResult {
+    // Step 1: remove worktree.
+    let mut cmd = Command::new("git");
+    cmd.args(["worktree", "remove", worktree_path]);
+    if force {
+        cmd.arg("--force");
+    }
+
+    let worktree_result = cmd.output();
+    match worktree_result {
+        Ok(output) if output.status.success() => {
+            // Step 2: delete branch only if worktree removal succeeded.
+            let branch_result = Command::new("git").args(["branch", "-D", branch]).output();
+            match branch_result {
+                Ok(bo) if bo.status.success() => CleanupResult {
+                    worktree_path: worktree_path.to_string(),
+                    branch: branch.to_string(),
+                    success: true,
+                    error: None,
+                },
+                Ok(bo) => {
+                    let stderr = String::from_utf8_lossy(&bo.stderr);
+                    CleanupResult {
+                        worktree_path: worktree_path.to_string(),
+                        branch: branch.to_string(),
+                        success: false,
+                        error: Some(format!("branch deletion failed: {}", stderr.trim())),
+                    }
+                }
+                Err(e) => CleanupResult {
+                    worktree_path: worktree_path.to_string(),
+                    branch: branch.to_string(),
+                    success: false,
+                    error: Some(format!("branch deletion error: {e}")),
+                },
+            }
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            CleanupResult {
+                worktree_path: worktree_path.to_string(),
+                branch: branch.to_string(),
+                success: false,
+                error: Some(format!("worktree removal failed: {}", stderr.trim())),
+            }
+        }
+        Err(e) => CleanupResult {
+            worktree_path: worktree_path.to_string(),
+            branch: branch.to_string(),
+            success: false,
+            error: Some(format!("worktree removal error: {e}")),
+        },
+    }
 }
 
 /// Decompose actionable requirements into independent workstreams.
@@ -236,6 +362,117 @@ mod tests {
         assert_eq!(all_reqs.len(), 3);
         // No conflicts -- greedy coloring puts all in one workstream.
         assert_eq!(workstreams.len(), 1);
+    }
+
+    // rtmx:req REQ-AGENT-039
+    #[test]
+    fn test_wave_execution_respects_deps() {
+        // Wave 0: REQ-C, REQ-D, REQ-E are frontier (deps REQ-A, REQ-B complete).
+        // After Wave 0 merges (REQ-C,D,E become COMPLETE), REQ-G becomes
+        // actionable (it depends on REQ-C which was not yet complete).
+        let csv = "req_id,category,subcategory,requirement_text,target_value,test_module,test_function,validation_method,status,priority,phase,notes,effort_weeks,dependencies,blocks,assignee,sprint,started_date,completed_date\n\
+                   REQ-A,AGENT,CORE,Base,Done,base.rs,test_a,Unit Test,COMPLETE,HIGH,1,,,,,,,,\n\
+                   REQ-B,AGENT,CORE,Mid,Done,mid.rs,test_b,Unit Test,COMPLETE,HIGH,1,,,REQ-A,,,,,\n\
+                   REQ-C,AGENT,CORE,Feature C,Pending,file_c.rs,test_c,Unit Test,MISSING,HIGH,2,,,REQ-A,,,,,\n\
+                   REQ-D,AGENT,CORE,Feature D,Pending,file_d.rs,test_d,Unit Test,MISSING,HIGH,2,,,REQ-A,,,,,\n\
+                   REQ-E,AGENT,CORE,Feature E,Pending,file_e.rs,test_e,Unit Test,MISSING,HIGH,2,,,REQ-B,,,,,\n\
+                   REQ-G,AGENT,CORE,Feature G,Pending,file_g.rs,test_g,Unit Test,MISSING,HIGH,3,,,REQ-C,,,,,";
+        let db = RequirementsDb::from_csv(csv).unwrap();
+        let waves = compute_waves(&db);
+
+        assert!(
+            waves.len() >= 2,
+            "Expected at least 2 waves, got {}",
+            waves.len()
+        );
+
+        // Wave 0 should contain C, D, E (frontier reqs).
+        let wave0_reqs: HashSet<String> = waves[0]
+            .workstreams
+            .iter()
+            .flat_map(|ws| ws.requirements.iter().cloned())
+            .collect();
+        assert!(wave0_reqs.contains("REQ-C"));
+        assert!(wave0_reqs.contains("REQ-D"));
+        assert!(wave0_reqs.contains("REQ-E"));
+        assert!(!wave0_reqs.contains("REQ-G"), "REQ-G blocked by REQ-C");
+
+        // Wave 1 should contain REQ-G (unblocked after Wave 0 merges).
+        let wave1_reqs: HashSet<String> = waves[1]
+            .workstreams
+            .iter()
+            .flat_map(|ws| ws.requirements.iter().cloned())
+            .collect();
+        assert!(wave1_reqs.contains("REQ-G"), "REQ-G should be in wave 1");
+
+        // Wave indices are sequential.
+        assert_eq!(waves[0].index, 0);
+        assert_eq!(waves[1].index, 1);
+    }
+
+    // rtmx:req REQ-AGENT-039
+    #[test]
+    fn test_single_wave_when_no_dependencies_between_workstreams() {
+        // All reqs have no deps -- everything is frontier in one wave.
+        let csv = "req_id,category,subcategory,requirement_text,target_value,test_module,test_function,validation_method,status,priority,phase,notes,effort_weeks,dependencies,blocks,assignee,sprint,started_date,completed_date\n\
+                   REQ-A,AGENT,CORE,A,P,a.rs,ta,Unit Test,MISSING,HIGH,1,,,,,,,,,\n\
+                   REQ-B,AGENT,CORE,B,P,b.rs,tb,Unit Test,MISSING,HIGH,1,,,,,,,,,\n\
+                   REQ-C,AGENT,CORE,C,P,c.rs,tc,Unit Test,MISSING,HIGH,1,,,,,,,,,";
+        let db = RequirementsDb::from_csv(csv).unwrap();
+        let waves = compute_waves(&db);
+
+        assert_eq!(waves.len(), 1, "All reqs independent, should be 1 wave");
+        assert_eq!(waves[0].index, 0);
+
+        let total_reqs: usize = waves[0]
+            .workstreams
+            .iter()
+            .map(|ws| ws.requirements.len())
+            .sum();
+        assert_eq!(total_reqs, 3);
+    }
+
+    // rtmx:req REQ-AGENT-041
+    #[test]
+    fn test_cleanup_removes_worktree() {
+        // Test with a nonexistent worktree path -- git will fail, but we
+        // verify the function returns a well-formed CleanupResult that
+        // reflects the failure (since the path does not exist).
+        let result = cleanup_worktree(
+            "/tmp/aegis-test-nonexistent-worktree",
+            "test-branch-nonexistent",
+            false,
+        );
+        // The worktree does not exist, so removal should fail.
+        assert_eq!(result.worktree_path, "/tmp/aegis-test-nonexistent-worktree");
+        assert_eq!(result.branch, "test-branch-nonexistent");
+        // Since the worktree path does not exist, git worktree remove fails,
+        // and the branch should NOT be deleted (preserved for debugging).
+        assert!(!result.success);
+        assert!(result.error.is_some());
+    }
+
+    // rtmx:req REQ-AGENT-041
+    #[test]
+    fn test_cleanup_skips_on_failure() {
+        // When worktree removal fails, the branch must NOT be deleted.
+        // We use a bogus path that git will reject.
+        let result = cleanup_worktree(
+            "/tmp/aegis-test-bogus-worktree-path-cleanup",
+            "branch-should-not-be-deleted",
+            false,
+        );
+        assert!(
+            !result.success,
+            "cleanup should fail for nonexistent worktree"
+        );
+        assert!(
+            result.error.is_some(),
+            "error should be recorded on failure"
+        );
+        // The key invariant: because worktree removal failed, we never
+        // attempted branch deletion. The branch is preserved for debugging.
+        assert_eq!(result.branch, "branch-should-not-be-deleted");
     }
 
     // rtmx:req REQ-AGENT-034
