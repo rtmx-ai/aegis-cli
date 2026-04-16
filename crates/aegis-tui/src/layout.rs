@@ -296,129 +296,161 @@ fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &Ap
     frame.render_widget(status, area);
 }
 
+/// Border accent color for each message kind.
+///
+/// The user message border uses bright cyan (LightCyan) bold for visual scan
+/// ability in dense conversations (REQ-TUI-061). Other kinds use muted accents.
+fn border_color(kind: &MessageKind) -> Color {
+    match kind {
+        MessageKind::User => Color::LightCyan,
+        MessageKind::Assistant => Color::Blue,
+        MessageKind::System => Color::Cyan,
+        MessageKind::Error => Color::Red,
+        MessageKind::ToolCall { .. } | MessageKind::ToolResult => Color::Yellow,
+    }
+}
+
+/// Prepend a colored left border `"| "` to a line's spans.
+///
+/// For `MessageKind::User` the border is rendered bold (REQ-TUI-061); for all
+/// other kinds the border uses a default (non-bold) style.
+fn with_border(kind: &MessageKind, color: Color, spans: Vec<Span<'static>>) -> Line<'static> {
+    let border_style = match kind {
+        MessageKind::User => Style::default().fg(color).add_modifier(Modifier::BOLD),
+        _ => Style::default().fg(color),
+    };
+    let mut result = vec![Span::styled("| ", border_style)];
+    result.extend(spans);
+    Line::from(result)
+}
+
+/// Build the styled `Line`s representing a single chat message.
+///
+/// Exposed at crate visibility so unit tests can inspect span styles without
+/// running the full `render_chat_log` -> `Paragraph` pipeline. `area_width` is
+/// used to size the horizontal separators rendered for system messages.
+pub(crate) fn build_message_lines(msg: &ChatMessage, area_width: u16) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let bc = border_color(&msg.kind);
+    match &msg.kind {
+        MessageKind::User => {
+            // REQ-TUI-061: user messages render with bright-cyan bold prefix
+            // bar and "You:" label plus bold body so they stand out visually
+            // in dense conversations.
+            let prefix_style = Style::default()
+                .fg(Color::LightCyan)
+                .add_modifier(Modifier::BOLD);
+            let body_style = Style::default().add_modifier(Modifier::BOLD);
+            let msg_lines: Vec<&str> = msg.content.split('\n').collect();
+            for (i, line_text) in msg_lines.iter().enumerate() {
+                if i == 0 {
+                    lines.push(with_border(
+                        &msg.kind,
+                        bc,
+                        vec![
+                            Span::styled("You: ", prefix_style),
+                            Span::styled(line_text.to_string(), body_style),
+                        ],
+                    ));
+                } else {
+                    lines.push(with_border(
+                        &msg.kind,
+                        bc,
+                        vec![Span::styled(format!("     {line_text}"), body_style)],
+                    ));
+                }
+            }
+        }
+        MessageKind::Assistant => {
+            for line_text in msg.content.split('\n') {
+                lines.push(with_border(
+                    &msg.kind,
+                    bc,
+                    vec![Span::styled(line_text.to_string(), Style::default())],
+                ));
+            }
+        }
+        MessageKind::ToolCall { tool_name } => {
+            lines.push(with_border(
+                &msg.kind,
+                bc,
+                vec![
+                    Span::styled(
+                        format!("  > {tool_name}: "),
+                        Style::default().fg(Color::Yellow),
+                    ),
+                    Span::styled(msg.content.clone(), Style::default().fg(Color::DarkGray)),
+                ],
+            ));
+        }
+        MessageKind::ToolResult => {
+            for line_text in msg.content.split('\n') {
+                lines.push(with_border(
+                    &msg.kind,
+                    bc,
+                    vec![Span::styled(
+                        line_text.to_string(),
+                        Style::default().fg(Color::DarkGray),
+                    )],
+                ));
+            }
+        }
+        MessageKind::Error => {
+            for line_text in msg.content.split('\n') {
+                lines.push(with_border(
+                    &msg.kind,
+                    bc,
+                    vec![Span::styled(
+                        line_text.to_string(),
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    )],
+                ));
+            }
+        }
+        MessageKind::System => {
+            // Rich system message: separator above, indented cyan text, separator below
+            let sep_width = area_width.saturating_sub(4) as usize;
+            let thin_sep = "\u{2500}".repeat(sep_width);
+            lines.push(with_border(
+                &msg.kind,
+                bc,
+                vec![Span::styled(
+                    thin_sep.clone(),
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::DIM),
+                )],
+            ));
+            for line_text in msg.content.split('\n') {
+                lines.push(with_border(
+                    &msg.kind,
+                    bc,
+                    vec![Span::styled(
+                        format!("  {line_text}"),
+                        Style::default().fg(Color::Cyan),
+                    )],
+                ));
+            }
+            lines.push(with_border(
+                &msg.kind,
+                bc,
+                vec![Span::styled(
+                    thin_sep,
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::DIM),
+                )],
+            ));
+        }
+    }
+    lines
+}
+
 fn render_chat_log(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppState) {
     let mut lines: Vec<Line> = Vec::new();
 
-    /// Border accent color for each message kind.
-    fn border_color(kind: &MessageKind) -> Color {
-        match kind {
-            MessageKind::User => Color::Green,
-            MessageKind::Assistant => Color::Blue,
-            MessageKind::System => Color::Cyan,
-            MessageKind::Error => Color::Red,
-            MessageKind::ToolCall { .. } | MessageKind::ToolResult => Color::Yellow,
-        }
-    }
-
-    /// Prepend a colored left border `"| "` to a line's spans.
-    fn with_border(color: Color, spans: Vec<Span<'_>>) -> Line<'_> {
-        let mut result = vec![Span::styled("| ", Style::default().fg(color))];
-        result.extend(spans);
-        Line::from(result)
-    }
-
     for msg in &state.messages {
-        let bc = border_color(&msg.kind);
-        match &msg.kind {
-            MessageKind::User => {
-                let msg_lines: Vec<&str> = msg.content.split('\n').collect();
-                for (i, line_text) in msg_lines.iter().enumerate() {
-                    if i == 0 {
-                        lines.push(with_border(
-                            bc,
-                            vec![
-                                Span::styled(
-                                    "You: ",
-                                    Style::default()
-                                        .fg(Color::Green)
-                                        .add_modifier(Modifier::BOLD),
-                                ),
-                                Span::raw(line_text.to_string()),
-                            ],
-                        ));
-                    } else {
-                        lines.push(with_border(
-                            bc,
-                            vec![Span::raw(format!("     {line_text}"))],
-                        ));
-                    }
-                }
-            }
-            MessageKind::Assistant => {
-                for line_text in msg.content.split('\n') {
-                    lines.push(with_border(
-                        bc,
-                        vec![Span::styled(line_text.to_string(), Style::default())],
-                    ));
-                }
-            }
-            MessageKind::ToolCall { tool_name } => {
-                lines.push(with_border(
-                    bc,
-                    vec![
-                        Span::styled(
-                            format!("  > {tool_name}: "),
-                            Style::default().fg(Color::Yellow),
-                        ),
-                        Span::styled(msg.content.clone(), Style::default().fg(Color::DarkGray)),
-                    ],
-                ));
-            }
-            MessageKind::ToolResult => {
-                for line_text in msg.content.split('\n') {
-                    lines.push(with_border(
-                        bc,
-                        vec![Span::styled(
-                            line_text.to_string(),
-                            Style::default().fg(Color::DarkGray),
-                        )],
-                    ));
-                }
-            }
-            MessageKind::Error => {
-                for line_text in msg.content.split('\n') {
-                    lines.push(with_border(
-                        bc,
-                        vec![Span::styled(
-                            line_text.to_string(),
-                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                        )],
-                    ));
-                }
-            }
-            MessageKind::System => {
-                // Rich system message: separator above, indented cyan text, separator below
-                let sep_width = area.width.saturating_sub(4) as usize;
-                let thin_sep = "\u{2500}".repeat(sep_width);
-                lines.push(with_border(
-                    bc,
-                    vec![Span::styled(
-                        thin_sep.clone(),
-                        Style::default()
-                            .fg(Color::DarkGray)
-                            .add_modifier(Modifier::DIM),
-                    )],
-                ));
-                for line_text in msg.content.split('\n') {
-                    lines.push(with_border(
-                        bc,
-                        vec![Span::styled(
-                            format!("  {line_text}"),
-                            Style::default().fg(Color::Cyan),
-                        )],
-                    ));
-                }
-                lines.push(with_border(
-                    bc,
-                    vec![Span::styled(
-                        thin_sep,
-                        Style::default()
-                            .fg(Color::DarkGray)
-                            .add_modifier(Modifier::DIM),
-                    )],
-                ));
-            }
-        }
+        lines.extend(build_message_lines(msg, area.width));
         lines.push(Line::from(""));
     }
 
@@ -1747,5 +1779,124 @@ mod tests {
             has_border,
             "Error message should have '| ' left border accent: {output}"
         );
+    }
+
+    // rtmx:req REQ-TUI-061
+    /// User messages should render with a bright-cyan bold prefix bar, bold
+    /// "You: " label, and bold body so they stand out in dense conversations.
+    #[test]
+    fn test_user_message_has_distinct_styling() {
+        let msg = ChatMessage::user("Explain main.rs");
+        let lines = build_message_lines(&msg, 80);
+        assert!(!lines.is_empty(), "user message should produce lines");
+
+        let first = &lines[0];
+        assert!(
+            first.spans.len() >= 3,
+            "first user line should have border, prefix, and body spans: {:?}",
+            first.spans
+        );
+
+        // Border: "| " with LightCyan + BOLD.
+        let border = &first.spans[0];
+        assert_eq!(border.content, "| ", "first span should be the border bar");
+        assert_eq!(
+            border.style.fg,
+            Some(Color::LightCyan),
+            "border should be bright cyan (LightCyan): {:?}",
+            border.style,
+        );
+        assert!(
+            border.style.add_modifier.contains(Modifier::BOLD),
+            "border should be bold: {:?}",
+            border.style,
+        );
+
+        // Prefix: "You: " with LightCyan + BOLD.
+        let prefix = &first.spans[1];
+        assert_eq!(
+            prefix.content, "You: ",
+            "second span should be 'You: ' prefix"
+        );
+        assert_eq!(
+            prefix.style.fg,
+            Some(Color::LightCyan),
+            "'You:' prefix should be bright cyan (LightCyan): {:?}",
+            prefix.style,
+        );
+        assert!(
+            prefix.style.add_modifier.contains(Modifier::BOLD),
+            "'You:' prefix should be bold: {:?}",
+            prefix.style,
+        );
+
+        // Body: bold (no explicit fg, so it stays readable without color too).
+        let body = &first.spans[2];
+        assert_eq!(body.content, "Explain main.rs");
+        assert!(
+            body.style.add_modifier.contains(Modifier::BOLD),
+            "user message body should be bold (visible even in NO_COLOR terminals): {:?}",
+            body.style,
+        );
+    }
+
+    // rtmx:req REQ-TUI-061
+    /// Assistant messages must not accidentally adopt the user styling.
+    #[test]
+    fn test_assistant_message_keeps_default_styling() {
+        let msg = ChatMessage::assistant("Done.");
+        let lines = build_message_lines(&msg, 80);
+        assert!(!lines.is_empty(), "assistant message should produce lines");
+
+        let first = &lines[0];
+        let border = &first.spans[0];
+        assert_eq!(border.content, "| ");
+        assert_eq!(
+            border.style.fg,
+            Some(Color::Blue),
+            "assistant border should stay blue, not LightCyan: {:?}",
+            border.style,
+        );
+        assert!(
+            !border.style.add_modifier.contains(Modifier::BOLD),
+            "assistant border should NOT be bold: {:?}",
+            border.style,
+        );
+
+        let body = &first.spans[1];
+        assert_eq!(body.content, "Done.");
+        assert!(
+            !body.style.add_modifier.contains(Modifier::BOLD),
+            "assistant body should keep default (non-bold) styling: {:?}",
+            body.style,
+        );
+    }
+
+    // rtmx:req REQ-TUI-061
+    /// Continuation lines (second+ lines of a multi-line user message) also
+    /// keep the bright-cyan bold border so the whole message block reads as
+    /// one visual unit.
+    #[test]
+    fn test_user_multiline_continuation_keeps_bold_cyan_border() {
+        let msg = ChatMessage::user("line one\nline two");
+        let lines = build_message_lines(&msg, 80);
+        assert_eq!(
+            lines.len(),
+            2,
+            "two-line user message should produce 2 lines"
+        );
+
+        for (idx, line) in lines.iter().enumerate() {
+            let border = &line.spans[0];
+            assert_eq!(
+                border.style.fg,
+                Some(Color::LightCyan),
+                "line {idx} border should be LightCyan",
+            );
+            assert!(
+                border.style.add_modifier.contains(Modifier::BOLD),
+                "line {idx} border should be bold",
+            );
+        }
     }
 }

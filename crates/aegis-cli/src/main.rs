@@ -999,6 +999,14 @@ async fn run_interactive_chat(
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         .map_err(|e| format!("signal handler: {e}"))?;
 
+    // REQ-TUI-060: autosave bookkeeping. `last_saved_message_count` tracks
+    // the point in history we last persisted so the 30s timer can skip
+    // work when the session is clean. `last_autosave_at` stamps the last
+    // successful periodic save.
+    let mut last_saved_message_count: usize = app.messages.len();
+    let mut last_autosave_at = std::time::Instant::now();
+    const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(30);
+
     // 11. Event loop
     loop {
         // Render current state
@@ -1044,34 +1052,123 @@ async fn run_interactive_chat(
             })
             .map_err(|e| format!("Render error: {e}"))?;
 
-        // Wait for next event OR SIGTERM
+        // Wait for next event OR SIGTERM OR the 30s autosave timer.
+        //
+        // The autosave timer (REQ-TUI-060) fires every AUTOSAVE_INTERVAL and
+        // causes the loop to wake even if the terminal/agent are idle. When
+        // it wakes with no real event pending we still want to fall through
+        // to the autosave check below without exiting.
+        //
+        // Wake reasons are encoded as `EventWake`:
+        //   Event(evt) -- normal TuiEvent delivery, dispatch to handle_event
+        //   Timer      -- autosave timer, no event to dispatch
+        //   Shutdown   -- SIGTERM or channel closed, exit after final save
+        enum EventWake {
+            Event(TuiEvent),
+            Timer,
+            Shutdown,
+        }
+
         #[cfg(unix)]
-        let next_event = tokio::select! {
-            evt = event_rx.recv() => evt,
+        let wake = tokio::select! {
+            evt = event_rx.recv() => match evt {
+                Some(e) => EventWake::Event(e),
+                None => EventWake::Shutdown,
+            },
             _ = sigterm.recv() => {
                 tracing::info!("SIGTERM received, saving session and exiting");
-                None
+                EventWake::Shutdown
             }
+            _ = tokio::time::sleep(AUTOSAVE_INTERVAL) => EventWake::Timer,
         };
         #[cfg(not(unix))]
-        let next_event = event_rx.recv().await;
+        let wake = tokio::select! {
+            evt = event_rx.recv() => match evt {
+                Some(e) => EventWake::Event(e),
+                None => EventWake::Shutdown,
+            },
+            _ = tokio::time::sleep(AUTOSAVE_INTERVAL) => EventWake::Timer,
+        };
 
-        match next_event {
-            Some(event) => {
+        // REQ-TUI-060: detect assistant turn completion BEFORE dispatch so we
+        // know to save immediately after the app commits the new history.
+        let is_agent_done = matches!(&wake, EventWake::Event(TuiEvent::AgentDone { .. }));
+        let mut should_quit = false;
+        let mut exit_via_sigterm = false;
+
+        match wake {
+            EventWake::Event(event) => {
                 if app.handle_event(event, &agent_input_tx) == Action::Quit {
-                    break;
+                    should_quit = true;
                 }
             }
-            None => break,
+            EventWake::Timer => {
+                // No event to dispatch; drop through to autosave check.
+            }
+            EventWake::Shutdown => {
+                exit_via_sigterm = true;
+            }
+        }
+
+        // REQ-TUI-060: autosave after every completed assistant turn so a
+        // crash right after the turn (hot reload, panic, OOM) does not lose
+        // the just-finished response.
+        if is_agent_done && let Some(ref dir) = session_dir {
+            match save_session_now(&app, &session_id, &work_dir, dir) {
+                Ok(path) => {
+                    tracing::debug!(
+                        path = %path.display(),
+                        messages = app.messages.len(),
+                        "autosave: post-agent-done",
+                    );
+                    last_saved_message_count = app.messages.len();
+                    last_autosave_at = std::time::Instant::now();
+                }
+                Err(e) => tracing::warn!(%e, "autosave after agent-done failed"),
+            }
+        }
+
+        // REQ-TUI-060: periodic autosave every AUTOSAVE_INTERVAL if the
+        // session is dirty (new messages since last save). Skips work when
+        // nothing has changed.
+        if !should_quit
+            && !exit_via_sigterm
+            && last_autosave_at.elapsed() >= AUTOSAVE_INTERVAL
+            && app.messages.len() > last_saved_message_count
+        {
+            if let Some(ref dir) = session_dir {
+                match save_session_now(&app, &session_id, &work_dir, dir) {
+                    Ok(path) => {
+                        tracing::debug!(
+                            path = %path.display(),
+                            messages = app.messages.len(),
+                            "autosave: periodic",
+                        );
+                        last_saved_message_count = app.messages.len();
+                        last_autosave_at = std::time::Instant::now();
+                    }
+                    Err(e) => tracing::warn!(%e, "periodic autosave failed"),
+                }
+            } else {
+                // Still advance the timer so we don't spin retrying with no
+                // session_dir available.
+                last_autosave_at = std::time::Instant::now();
+            }
+        }
+
+        if should_quit || exit_via_sigterm {
+            break;
         }
     }
 
-    // 12. Save session before cleanup (REQ-BUILD-035)
+    // 12. Save session before cleanup (REQ-BUILD-035). Even though
+    // REQ-TUI-060 saves after each assistant turn, this final save still
+    // captures any messages added after the last autosave (e.g. the user
+    // typed a prompt and then hit Ctrl-C before the agent responded).
     if let Some(ref dir) = session_dir
         && !app.messages.is_empty()
     {
-        let snapshot = build_snapshot_from_app(&app, &session_id, work_dir.clone());
-        match aegis_agent::session::save_session(dir, &snapshot) {
+        match save_session_now(&app, &session_id, &work_dir, dir) {
             Ok(path) => tracing::info!(path = %path.display(), "session saved"),
             Err(e) => tracing::warn!(%e, "failed to save session"),
         }
@@ -1097,6 +1194,26 @@ async fn run_interactive_chat(
     terminal.show_cursor().ok();
 
     Ok(())
+}
+
+/// Persist the current App state atomically to the session directory.
+///
+/// Extracted from the end-of-loop save path so the event loop can call it
+/// after every `AgentDone` and on the 30s periodic timer (REQ-TUI-060).
+///
+/// Atomicity is provided by `aegis_agent::session::save_session`, which
+/// writes to a sibling tmp file then renames into place. The rename step
+/// is filesystem-atomic on POSIX and on Windows NTFS, so a crash between
+/// writes cannot leave a torn snapshot that would fail to parse on the
+/// next startup.
+fn save_session_now(
+    app: &App,
+    session_id: &str,
+    work_dir: &std::path::Path,
+    session_dir: &std::path::Path,
+) -> Result<std::path::PathBuf, std::io::Error> {
+    let snapshot = build_snapshot_from_app(app, session_id, work_dir.to_path_buf());
+    aegis_agent::session::save_session(session_dir, &snapshot)
 }
 
 /// Build a SessionSnapshot from the current App state.
@@ -1251,4 +1368,97 @@ async fn run_agent_for_tui(
 
     agent.run(prompt).await.map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aegis_tui::messages::ChatMessage;
+
+    /// Build an App populated with a synthetic multi-turn conversation.
+    fn app_with_turns(turns: usize) -> App {
+        let mut app = App::new("claude-opus-4-6");
+        for i in 0..turns {
+            app.messages
+                .push(ChatMessage::user(format!("user turn {i}")));
+            app.messages
+                .push(ChatMessage::assistant(format!("assistant reply {i}")));
+        }
+        app.input_tokens = (turns as u64) * 100;
+        app.output_tokens = (turns as u64) * 50;
+        app
+    }
+
+    // rtmx:req REQ-TUI-060
+    /// `save_session_now` writes the current App state to the session
+    /// directory as an atomic file the next startup can load.
+    #[test]
+    fn save_session_now_persists_current_app_state() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let session_dir = tmp.path();
+        let work_dir = std::path::PathBuf::from("/tmp/work");
+
+        let app = app_with_turns(2);
+        let path = save_session_now(&app, "sess-unit-001", &work_dir, session_dir)
+            .expect("save_session_now");
+
+        assert!(path.exists(), "saved snapshot must exist");
+        let loaded =
+            aegis_agent::session::load_session(&path).expect("loaded snapshot must parse");
+        assert_eq!(loaded.session_id, "sess-unit-001");
+        assert_eq!(
+            loaded.messages.len(),
+            4,
+            "2 turns -> 4 messages (user+assistant each turn)",
+        );
+        assert_eq!(loaded.input_tokens, 200);
+        assert_eq!(loaded.output_tokens, 100);
+        assert_eq!(loaded.model_name, "claude-opus-4-6");
+    }
+
+    // rtmx:req REQ-TUI-060
+    /// Calling `save_session_now` repeatedly during a conversation produces
+    /// a snapshot matching the latest App state every time -- that is the
+    /// per-turn autosave contract the event loop relies on.
+    #[test]
+    fn save_session_now_reflects_latest_app_state_per_turn() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let session_dir = tmp.path();
+        let work_dir = std::path::PathBuf::from("/tmp/work");
+        let session_id = "sess-turn-001";
+
+        for turn in 1..=3 {
+            let app = app_with_turns(turn);
+            let path = save_session_now(&app, session_id, &work_dir, session_dir)
+                .expect("save_session_now");
+            let loaded = aegis_agent::session::load_session(&path).expect("snapshot parses");
+            assert_eq!(
+                loaded.messages.len(),
+                turn * 2,
+                "after {turn} turns snapshot should hold {} messages",
+                turn * 2,
+            );
+        }
+    }
+
+    // rtmx:req REQ-TUI-060
+    /// The save path must not leave a `.tmp` file behind after the atomic
+    /// rename completes. This guards against future refactors that might
+    /// replace `std::fs::rename` with a non-atomic write.
+    #[test]
+    fn save_session_now_leaves_no_tmp_file() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let session_dir = tmp.path();
+        let work_dir = std::path::PathBuf::from("/tmp/work");
+        let session_id = "sess-atomic-002";
+
+        let app = app_with_turns(1);
+        save_session_now(&app, session_id, &work_dir, session_dir).expect("save");
+
+        let tmp_file = session_dir.join(format!(".{session_id}.json.tmp"));
+        assert!(
+            !tmp_file.exists(),
+            "atomic rename must not leave a .tmp file after a successful save",
+        );
+    }
 }
