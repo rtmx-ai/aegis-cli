@@ -86,8 +86,13 @@ impl BatchApprovalManager {
 
     /// Remove expired rules (older than 10 minutes) and exhausted rules.
     pub fn prune_expired(&mut self) {
+        self.prune_older_than(BATCH_EXPIRY);
+    }
+
+    /// Remove rules older than `max_age` and exhausted rules.
+    pub fn prune_older_than(&mut self, max_age: Duration) {
         self.rules
-            .retain(|r| r.created_at.elapsed() < BATCH_EXPIRY && r.remaining != Some(0));
+            .retain(|r| r.created_at.elapsed() < max_age && r.remaining != Some(0));
     }
 }
 
@@ -202,29 +207,20 @@ mod tests {
     fn test_batch_approval_prune_expired() {
         let mut mgr = BatchApprovalManager::new();
 
-        // Add a rule that was "created" 11 minutes ago (past the 10-min
-        // expiry). We cheat by using Instant::now() minus the duration,
-        // but Instant subtraction can panic if it underflows. Instead,
-        // create a rule, then set its created_at to a time far in the
-        // past by subtracting from now.
-        let old_time = Instant::now() - Duration::from_secs(660);
+        // Add a rule created right now.
         mgr.add_rule(BatchApproval {
             tool_name: "read_file".to_string(),
             path_prefix: None,
             remaining: None,
-            created_at: old_time,
+            created_at: Instant::now(),
         });
 
-        // Before pruning, the rule exists but is expired so
-        // check_and_consume skips it.
-        let call = ToolCall::ReadFile {
-            path: FilePath::new_unchecked("a.rs"),
-        };
-        assert!(!mgr.check_and_consume(&call));
-
-        // Prune should remove it.
-        mgr.prune_expired();
-        assert!(mgr.rules.is_empty());
+        // Rule is fresh -- prune_older_than(ZERO) treats everything as
+        // expired, removing it. This avoids Instant subtraction which
+        // panics on Windows when the result would be negative.
+        assert_eq!(mgr.rules.len(), 1);
+        mgr.prune_older_than(Duration::ZERO);
+        assert!(mgr.rules.is_empty(), "all rules should be pruned");
     }
 
     // rtmx:req REQ-HITL-004
