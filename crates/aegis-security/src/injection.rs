@@ -874,7 +874,7 @@ mod tests {
         );
     }
 
-    // rtmx:req TEST-009
+    // rtmx:req REQ-TEST-009
     #[test]
     fn detector_with_threshold_one_passes_everything() {
         // Obviously malicious input -- score is clamped to 1.0 max, but

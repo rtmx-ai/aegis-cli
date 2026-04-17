@@ -36,8 +36,12 @@ pub fn render_command_palette(frame: &mut Frame, palette: &CommandPaletteView, i
         })
         .collect();
 
+    let title = match &palette.stage_hint {
+        Some(hint) => format!(" {} ", hint),
+        None => " Commands ".to_string(),
+    };
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(" Commands "))
+        .block(Block::default().borders(Borders::ALL).title(title))
         .highlight_style(Style::default().bg(Color::DarkGray).fg(Color::White));
 
     let mut state = ListState::default();

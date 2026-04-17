@@ -51,12 +51,45 @@ impl App {
                     return Action::Continue;
                 }
                 KeyCode::Tab | KeyCode::Enter => {
+                    if self.command_palette.in_token_stage() {
+                        // Token stage: append selected value and advance
+                        if let Some(entry) = self.command_palette.selected_entry() {
+                            let value = entry.name.clone();
+                            // Append the value to input with appropriate prefix
+                            let token_text = if let Some(hint) = self.command_palette.stage_hint()
+                            {
+                                // Use the slot prefix if available
+                                let _ = hint; // stage_hint is for display
+                                format!("{} ", value)
+                            } else {
+                                format!("{} ", value)
+                            };
+                            self.input.text.push_str(&token_text);
+                            self.input.cursor = self.input.text.len();
+                            if !self.command_palette.advance_token(value) {
+                                // No more slots -- palette hides, ghost text cleared
+                                self.input.ghost_text = None;
+                            } else {
+                                // Show hint for the next slot
+                                self.input.ghost_text = self.command_palette.stage_hint();
+                            }
+                        }
+                        return Action::Continue;
+                    }
+                    // Command selection stage: complete the command name
                     let selection = self.command_palette.selected_entry();
                     if let Some(entry) = selection {
-                        let completed = format!("{} ", entry.name);
+                        let cmd_name = entry.name.clone();
+                        let completed = format!("{} ", cmd_name);
                         self.input.ghost_text = entry.usage.clone();
                         self.input.text = completed;
                         self.input.cursor = self.input.text.len();
+                        // Check if this command has a grammar for guided entry
+                        if let Some(grammar) = self.command_palette.grammar_for(&cmd_name) {
+                            self.command_palette.enter_token_stage(grammar);
+                            self.input.ghost_text = self.command_palette.stage_hint();
+                            return Action::Continue;
+                        }
                     }
                     self.command_palette.hide();
                     return Action::Continue;
@@ -65,8 +98,33 @@ impl App {
                     self.command_palette.hide();
                     return Action::Continue;
                 }
-                // Enter is handled above with Tab
                 KeyCode::Backspace => {
+                    if self.command_palette.in_token_stage() {
+                        // Check if we're at a token boundary (last char is space)
+                        let at_boundary = self.input.text.ends_with(' ');
+                        self.input.backspace();
+                        if at_boundary {
+                            // Retreat to previous slot
+                            // Remove the last token from input
+                            let trimmed = self.input.text.trim_end().to_string();
+                            if let Some(last_space) = trimmed.rfind(' ') {
+                                self.input.text = format!("{} ", &trimmed[..last_space]);
+                            } else {
+                                self.input.text = trimmed;
+                            }
+                            self.input.cursor = self.input.text.len();
+                            if !self.command_palette.retreat_token() {
+                                // Back to command selection
+                                self.command_palette.filter(&self.input.text);
+                            }
+                            self.input.ghost_text = self.command_palette.stage_hint();
+                        } else {
+                            // Filter current slot by typed prefix
+                            let last_token = self.input.text.rsplit(' ').next().unwrap_or("");
+                            self.command_palette.filter_token(last_token);
+                        }
+                        return Action::Continue;
+                    }
                     self.input.backspace();
                     if self.input.text.starts_with('/') {
                         self.command_palette.filter(&self.input.text);
@@ -77,6 +135,12 @@ impl App {
                 }
                 KeyCode::Char(ch) => {
                     self.input.insert_char(ch);
+                    if self.command_palette.in_token_stage() {
+                        // Filter current slot options by typed prefix
+                        let last_token = self.input.text.rsplit(' ').next().unwrap_or("");
+                        self.command_palette.filter_token(last_token);
+                        return Action::Continue;
+                    }
                     if self.input.text.starts_with('/') {
                         self.command_palette.filter(&self.input.text);
                     } else {
