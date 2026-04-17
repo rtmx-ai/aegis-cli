@@ -128,8 +128,13 @@ jobs:
           cargo llvm-cov report --json --output-path coverage.json
       - name: Check thresholds
         # REQ-TEST-004: Coverage threshold enforcement.
-        # Target: 80% line / 70% branch (enforced when project matures).
-        # Current: warn at < 40% line, fail at < 20% line.
+        # REQ-TEST-034: Coverage threshold gate -- CI fails if coverage
+        # drops below COVERAGE_FAIL_THRESHOLD. Adjust the env var below
+        # as the project matures toward the 80% target.
+        env:
+          COVERAGE_FAIL_THRESHOLD: "60"
+          COVERAGE_WARN_THRESHOLD: "70"
+          COVERAGE_TARGET: "80"
         run: |
           LINE_COV=$(python3 -c "
           import json, sys
@@ -141,16 +146,16 @@ jobs:
           print(f'{pct:.2f}')
           ")
           echo "Line coverage: ${LINE_COV}%"
-          FAIL_THRESHOLD=20
-          WARN_THRESHOLD=40
-          if python3 -c "exit(0 if float('${LINE_COV}') < ${FAIL_THRESHOLD} else 1)"; then
-            echo "FAIL: Line coverage ${LINE_COV}% is below minimum ${FAIL_THRESHOLD}%"
+          echo "Thresholds: fail < ${COVERAGE_FAIL_THRESHOLD}%, warn < ${COVERAGE_WARN_THRESHOLD}%, target ${COVERAGE_TARGET}%"
+          # rtmx:req REQ-TEST-034 -- gate: fail the job when coverage is below threshold
+          if python3 -c "exit(0 if float('${LINE_COV}') < float('${COVERAGE_FAIL_THRESHOLD}') else 1)"; then
+            echo "FAIL: Coverage ${LINE_COV}% is below threshold ${COVERAGE_FAIL_THRESHOLD}%"
             exit 1
           fi
-          if python3 -c "exit(0 if float('${LINE_COV}') < ${WARN_THRESHOLD} else 1)"; then
-            echo "WARN: Line coverage ${LINE_COV}% is below target ${WARN_THRESHOLD}%"
+          if python3 -c "exit(0 if float('${LINE_COV}') < float('${COVERAGE_WARN_THRESHOLD}') else 1)"; then
+            echo "WARN: Coverage ${LINE_COV}% is below warning threshold ${COVERAGE_WARN_THRESHOLD}%"
           else
-            echo "OK: Line coverage ${LINE_COV}% meets current threshold"
+            echo "OK: Coverage ${LINE_COV}% meets current threshold"
           fi
       - uses: codecov/codecov-action@v6
         with:
