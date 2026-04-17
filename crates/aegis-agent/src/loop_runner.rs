@@ -1,5 +1,6 @@
 //! The REA (Read-Evaluate-Act) loop runner.
 
+use crate::adversary_bridge::{AdversaryReviewer, ReviewDecision, ReviewMode};
 use crate::banned_commands;
 use crate::cancellation::CancellationToken;
 use crate::compaction::{self, CompactionConfig};
@@ -147,6 +148,10 @@ where
     event_sink: Option<mpsc::UnboundedSender<StreamEvent>>,
     /// Optional MCP manager for third-party tool integration (REQ-AGENT-014).
     mcp_manager: Option<Arc<Mutex<McpManager>>>,
+    /// Optional adversary reviewer for risk assessment (REQ-SECURITY-004).
+    adversary: Option<Arc<dyn AdversaryReviewer>>,
+    /// Enforcement mode for the adversary reviewer.
+    adversary_mode: ReviewMode,
 }
 
 impl<P, G, E, A, S> AgentLoop<P, G, E, A, S>
@@ -175,6 +180,8 @@ where
             cancel_token: CancellationToken::new(),
             event_sink: None,
             mcp_manager: None,
+            adversary: None,
+            adversary_mode: ReviewMode::Off,
         }
     }
 
@@ -198,6 +205,8 @@ where
             cancel_token,
             event_sink: None,
             mcp_manager: None,
+            adversary: None,
+            adversary_mode: ReviewMode::Off,
         }
     }
 
@@ -210,6 +219,22 @@ where
     /// Attach an event sink for forwarding stream events to the TUI.
     pub fn with_event_sink(mut self, sink: mpsc::UnboundedSender<StreamEvent>) -> Self {
         self.event_sink = Some(sink);
+        self
+    }
+
+    /// Attach an adversary reviewer for risk assessment (REQ-SECURITY-004).
+    ///
+    /// The reviewer is called before the HITL gate on every tool call.
+    /// In `Off` mode the reviewer is never invoked. In `Warn` mode the
+    /// assessment is logged but the tool call proceeds. In `Enforce` mode
+    /// tool calls at or above the threshold are blocked.
+    pub fn with_adversary(
+        mut self,
+        reviewer: Arc<dyn AdversaryReviewer>,
+        mode: ReviewMode,
+    ) -> Self {
+        self.adversary = Some(reviewer);
+        self.adversary_mode = mode;
         self
     }
 
@@ -346,10 +371,18 @@ where
                             reason: format!("Command matches banned pattern: {command}"),
                         }
                     } else {
-                        self.execute_tool(call).await
+                        // REQ-SECURITY-004: Adversary review before HITL
+                        match self.adversary_review(call, &history).await {
+                            Some(blocked) => blocked,
+                            None => self.execute_tool(call).await,
+                        }
                     }
                 } else {
-                    self.execute_tool(call).await
+                    // REQ-SECURITY-004: Adversary review before HITL
+                    match self.adversary_review(call, &history).await {
+                        Some(blocked) => blocked,
+                        None => self.execute_tool(call).await,
+                    }
                 };
 
                 // REQ-AGENT-012: Truncate large tool outputs
@@ -379,6 +412,64 @@ where
             "Agent exceeded max iterations ({})",
             self.config.max_iterations
         )))
+    }
+
+    /// REQ-SECURITY-004: Run adversary review on a tool call.
+    ///
+    /// Returns `Some(ToolResult)` if the adversary blocks the call, or
+    /// `None` if the call should proceed to the HITL gate and execution.
+    /// When the adversary is not configured or mode is `Off`, always
+    /// returns `None`.
+    async fn adversary_review(&self, call: &ToolCall, history: &[Message]) -> Option<ToolResult> {
+        let reviewer = self.adversary.as_ref()?;
+        if self.adversary_mode == ReviewMode::Off {
+            return None;
+        }
+
+        let tool = match call {
+            ToolCall::ReadFile { .. } => "read_file",
+            ToolCall::WriteFile { .. } => "write_file",
+            ToolCall::RunCommand { .. } => "run_command",
+            ToolCall::ListDir { .. } => "list_dir",
+            ToolCall::Grep { .. } => "grep",
+            ToolCall::McpTool { qualified_name, .. } => qualified_name.as_str(),
+        };
+
+        match reviewer.review(call, history, self.adversary_mode).await {
+            Ok(ReviewDecision::Block { assessment }) => {
+                warn!(
+                    tool_name = tool,
+                    risk = %assessment.risk,
+                    reasoning = %assessment.reasoning,
+                    "adversary blocked tool call"
+                );
+                Some(ToolResult::PermissionDenied {
+                    reason: format!(
+                        "Blocked by adversary review (risk: {}, reason: {})",
+                        assessment.risk, assessment.reasoning
+                    ),
+                })
+            }
+            Ok(ReviewDecision::Allow {
+                assessment: Some(ref a),
+            }) => {
+                info!(
+                    tool_name = tool,
+                    risk = %a.risk,
+                    "adversary reviewed tool call (allowed)"
+                );
+                None
+            }
+            Ok(ReviewDecision::Allow { assessment: None }) => None,
+            Err(e) => {
+                warn!(
+                    tool_name = tool,
+                    error = %e,
+                    "adversary review failed, allowing tool call"
+                );
+                None
+            }
+        }
     }
 
     /// Execute a single tool call through the HITL gate if needed.
