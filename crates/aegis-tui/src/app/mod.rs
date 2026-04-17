@@ -31,6 +31,9 @@ use std::path::PathBuf;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
+pub use commands::ProviderInfo;
+pub use commands::connect::{ConnectProvider, ConnectRequest, auth_guidance};
+
 /// Central application state.
 pub struct App {
     pub phase: AppPhase,
@@ -77,6 +80,13 @@ pub struct App {
     pub file_picker: Option<file_picker::FilePicker>,
 
     pub command_palette: CommandPalette,
+
+    /// Pending /connect request for the composition root to process.
+    /// Set by the TUI, consumed by main.rs after each event.
+    pub pending_connect: Option<ConnectRequest>,
+
+    /// Current provider connection info for `/connect` no-arg display.
+    pub current_provider_info: Option<ProviderInfo>,
 }
 
 /// Number of lines to scroll per PageUp/PageDown press.
@@ -108,6 +118,8 @@ impl App {
             search_match_index: None,
             file_picker: None,
             command_palette: CommandPalette::new(),
+            pending_connect: None,
+            current_provider_info: None,
         }
     }
 

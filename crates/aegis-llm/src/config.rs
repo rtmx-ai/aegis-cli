@@ -66,6 +66,56 @@ impl ProviderConfig {
         }
     }
 
+    /// Create a config for Vertex AI.
+    pub fn vertex(project_id: &str, region: &str, model: &str) -> Self {
+        let endpoint = format!(
+            "https://{region}-aiplatform.googleapis.com/v1/projects/\
+             {project_id}/locations/{region}/publishers/google/models/{model}"
+        );
+        Self {
+            kind: ProviderKind::Vertex,
+            model: model.to_string(),
+            endpoint,
+            max_tokens: default_max_tokens(),
+            temperature: default_temperature(),
+            connect_timeout_secs: default_connect_timeout_secs(),
+            read_timeout_secs: default_read_timeout_secs(),
+            project_id: Some(project_id.to_string()),
+            region: Some(region.to_string()),
+        }
+    }
+
+    /// Create a config for AWS Bedrock.
+    pub fn bedrock(region: &str, model: &str) -> Self {
+        let endpoint = format!("https://bedrock-runtime.{region}.amazonaws.com");
+        Self {
+            kind: ProviderKind::Bedrock,
+            model: model.to_string(),
+            endpoint,
+            max_tokens: default_max_tokens(),
+            temperature: default_temperature(),
+            connect_timeout_secs: default_connect_timeout_secs(),
+            read_timeout_secs: default_read_timeout_secs(),
+            project_id: None,
+            region: Some(region.to_string()),
+        }
+    }
+
+    /// Create a config for Azure OpenAI.
+    pub fn azure(endpoint: &str, model: &str) -> Self {
+        Self {
+            kind: ProviderKind::Azure,
+            model: model.to_string(),
+            endpoint: endpoint.to_string(),
+            max_tokens: default_max_tokens(),
+            temperature: default_temperature(),
+            connect_timeout_secs: default_connect_timeout_secs(),
+            read_timeout_secs: default_read_timeout_secs(),
+            project_id: None,
+            region: None,
+        }
+    }
+
     /// Validate that the model string contains a version indicator for
     /// non-local providers. A version indicator is a digit appearing after
     /// a hyphen (e.g. "gemini-2.5-pro-001", "claude-3-sonnet").
@@ -376,6 +426,39 @@ mod tests {
         }"#;
         let cfg: ProviderConfig = serde_json::from_str(json).unwrap();
         assert!(cfg.project_id.is_none());
+        assert!(cfg.region.is_none());
+    }
+
+    // rtmx:req REQ-LLM-029
+    #[test]
+    fn vertex_constructor_builds_full_endpoint() {
+        let cfg = ProviderConfig::vertex("my-proj", "us-central1", "gemini-2.5-pro-001");
+        assert_eq!(cfg.kind, ProviderKind::Vertex);
+        assert_eq!(cfg.model, "gemini-2.5-pro-001");
+        assert!(cfg.endpoint.contains("my-proj"));
+        assert!(cfg.endpoint.contains("us-central1"));
+        assert_eq!(cfg.project_id.as_deref(), Some("my-proj"));
+        assert_eq!(cfg.region.as_deref(), Some("us-central1"));
+    }
+
+    // rtmx:req REQ-LLM-029
+    #[test]
+    fn bedrock_constructor_builds_regional_endpoint() {
+        let cfg = ProviderConfig::bedrock("us-gov-west-1", "claude-3-sonnet-20241022");
+        assert_eq!(cfg.kind, ProviderKind::Bedrock);
+        assert_eq!(cfg.model, "claude-3-sonnet-20241022");
+        assert!(cfg.endpoint.contains("us-gov-west-1"));
+        assert_eq!(cfg.region.as_deref(), Some("us-gov-west-1"));
+        assert!(cfg.project_id.is_none());
+    }
+
+    // rtmx:req REQ-LLM-029
+    #[test]
+    fn azure_constructor_preserves_endpoint() {
+        let cfg = ProviderConfig::azure("https://myendpoint.openai.azure.com", "gpt-4o");
+        assert_eq!(cfg.kind, ProviderKind::Azure);
+        assert_eq!(cfg.model, "gpt-4o");
+        assert_eq!(cfg.endpoint, "https://myendpoint.openai.azure.com");
         assert!(cfg.region.is_none());
     }
 }

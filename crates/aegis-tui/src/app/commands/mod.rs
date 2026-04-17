@@ -1,5 +1,6 @@
 //! Slash command dispatcher and sub-handlers.
 
+pub(crate) mod connect;
 pub(crate) mod context;
 pub(crate) mod doctor;
 pub(crate) mod infra;
@@ -7,6 +8,7 @@ pub(crate) mod infra;
 use super::{Action, App};
 use crate::messages::ChatMessage;
 use crate::slash_commands::SlashCommand;
+use connect::{ConnectProvider, ConnectRequest};
 
 impl App {
     pub(crate) fn execute_slash_command(&mut self, cmd: SlashCommand) -> Action {
@@ -72,124 +74,7 @@ impl App {
                 Action::Continue
             }
             SlashCommand::Connect(args) => {
-                let parts: Vec<&str> = args.split_whitespace().collect();
-                let provider = parts.first().copied().unwrap_or("");
-                match provider {
-                    "" => {
-                        self.messages.push(ChatMessage::system(
-                            "Connect to an LLM provider:\n\
-                             \n\
-                             Local models:\n\
-                               /connect local              Ollama (auto-installs llama3)\n\
-                               /connect local <url>        Connect to running endpoint\n\
-                             \n\
-                             Cloud providers:\n\
-                               /connect vertex             Google Vertex AI (Gemini)\n\
-                               /connect bedrock            AWS Bedrock (Claude)\n\
-                               /connect azure <endpoint>   Azure OpenAI\n\
-                             \n\
-                             Infrastructure provisioning:\n\
-                               /infra list                 Show available plugins\n\
-                               /infra up <plugin>          Provision cloud environment\n\
-                             \n\
-                             Direct endpoint:\n\
-                               /connect http://...         Any OpenAI-compatible API"
-                                .to_string(),
-                        ));
-                    }
-                    "local" => {
-                        let model = parts.get(1).copied().unwrap_or("llama3");
-                        self.messages.push(ChatMessage::system(format!(
-                            "Setting up local model '{model}'..."
-                        )));
-                        match detect_and_setup_local(model) {
-                            LocalSetupResult::Ready(endpoint) => {
-                                // Update the model name so the TUI shows it
-                                self.model_name = model.to_string();
-                                self.messages.push(ChatMessage::system(format!(
-                                    "Ready. Ollama is running with model '{model}' at {endpoint}.\n\
-                                     You can start chatting now."
-                                )));
-                            }
-                            LocalSetupResult::PullingModel(model_name) => {
-                                self.messages.push(ChatMessage::system(format!(
-                                    "Failed to pull model '{model_name}' automatically.\n\
-                                     Try manually: ollama pull {model_name}\n\
-                                     Then: /connect local {model_name}"
-                                )));
-                            }
-                            LocalSetupResult::StartingServer => {
-                                self.messages.push(ChatMessage::system(
-                                    "Ollama is installed but failed to start automatically.\n\
-                                     Try manually: ollama serve\n\
-                                     Then: /connect local"
-                                        .to_string(),
-                                ));
-                            }
-                            LocalSetupResult::NeedInstall => {
-                                self.messages.push(ChatMessage::system(
-                                    "Ollama is not installed.\n\
-                                     \n\
-                                     Install with:\n\
-                                       macOS:  brew install ollama\n\
-                                       Linux:  curl -fsSL https://ollama.com/install.sh | sh\n\
-                                     \n\
-                                     Then: ollama serve && /connect local"
-                                        .to_string(),
-                                ));
-                            }
-                        }
-                    }
-                    "vertex" => {
-                        self.messages.push(ChatMessage::system(
-                            "Connecting to Google Vertex AI...\n\
-                             \n\
-                             Requires: gcloud auth application-default login\n\
-                             Restart aegis with: aegis chat --provider vertex"
-                                .to_string(),
-                        ));
-                    }
-                    "bedrock" => {
-                        let region = parts.get(1).copied().unwrap_or("us-east-1");
-                        self.messages.push(ChatMessage::system(format!(
-                            "Connecting to AWS Bedrock ({region})...\n\
-                             \n\
-                             Requires: AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY\n\
-                             Restart aegis with: aegis chat --provider bedrock --region {region}"
-                        )));
-                    }
-                    "azure" => {
-                        let endpoint = parts.get(1).copied().unwrap_or("");
-                        if endpoint.is_empty() {
-                            self.messages.push(ChatMessage::error(
-                                "Azure requires an endpoint URL:\n\
-                                 /connect azure https://myresource.openai.azure.com"
-                                    .to_string(),
-                            ));
-                        } else {
-                            self.messages.push(ChatMessage::system(format!(
-                                "Connecting to Azure OpenAI at {endpoint}...\n\
-                                 \n\
-                                 Requires: AZURE_OPENAI_API_KEY\n\
-                                 Restart aegis with: aegis chat --provider azure --endpoint {endpoint}"
-                            )));
-                        }
-                    }
-                    url if url.starts_with("http") => {
-                        tracing::info!(endpoint = %url, "connecting to LLM endpoint");
-                        self.messages.push(ChatMessage::system(format!(
-                            "Endpoint set to: {url}\n\
-                             Type a message to test the connection."
-                        )));
-                    }
-                    other => {
-                        self.messages.push(ChatMessage::error(format!(
-                            "Unknown provider '{other}'.\n\
-                             Options: local, vertex, bedrock, azure\n\
-                             Or: /connect http://... for direct endpoint"
-                        )));
-                    }
-                }
+                self.handle_connect_command(&args);
                 Action::Continue
             }
             SlashCommand::KeyLog => {
@@ -210,6 +95,135 @@ impl App {
             }
         }
     }
+
+    /// Handle `/connect` with parsed arguments.
+    ///
+    /// This method parses the arguments and either shows the current
+    /// connection status (no args) or queues a `ConnectRequest` for
+    /// the composition root to process.
+    fn handle_connect_command(&mut self, args: &str) {
+        match connect::parse_connect_args(args) {
+            Err(msg) if msg.is_empty() => {
+                // /connect with no args: show current provider info
+                self.show_current_connection();
+            }
+            Err(msg) => {
+                self.messages.push(ChatMessage::error(msg));
+            }
+            Ok(request) => {
+                // For local provider with no URL, try local setup
+                if request.provider == ConnectProvider::Local && request.endpoint.is_none() {
+                    self.messages
+                        .push(ChatMessage::system("Setting up local model...".to_string()));
+                    let model = request.model.as_deref().unwrap_or("llama3");
+                    match detect_and_setup_local(model) {
+                        LocalSetupResult::Ready(endpoint) => {
+                            self.model_name = model.to_string();
+                            // Queue the resolved request for main.rs
+                            let resolved = ConnectRequest {
+                                provider: ConnectProvider::Local,
+                                endpoint: Some(endpoint.clone()),
+                                model: Some(model.to_string()),
+                                project: None,
+                                region: None,
+                            };
+                            self.pending_connect = Some(resolved);
+                            self.messages.push(ChatMessage::system(format!(
+                                "Ready. Ollama is running with model \
+                                 '{model}' at {endpoint}.\n\
+                                 You can start chatting now."
+                            )));
+                        }
+                        LocalSetupResult::PullingModel(model_name) => {
+                            self.messages.push(ChatMessage::system(format!(
+                                "Failed to pull model '{model_name}' \
+                                 automatically.\n\
+                                 Try manually: ollama pull {model_name}\n\
+                                 Then: /connect local {model_name}"
+                            )));
+                        }
+                        LocalSetupResult::StartingServer => {
+                            self.messages.push(ChatMessage::system(
+                                "Ollama is installed but failed to start \
+                                 automatically.\n\
+                                 Try manually: ollama serve\n\
+                                 Then: /connect local"
+                                    .to_string(),
+                            ));
+                        }
+                        LocalSetupResult::NeedInstall => {
+                            self.messages.push(ChatMessage::system(
+                                "Ollama is not installed.\n\
+                                 \n\
+                                 Install with:\n\
+                                   macOS:  brew install ollama\n\
+                                   Linux:  curl -fsSL \
+                                     https://ollama.com/install.sh | sh\n\
+                                 \n\
+                                 Then: ollama serve && /connect local"
+                                    .to_string(),
+                            ));
+                        }
+                    }
+                    return;
+                }
+
+                // Queue the connect request for the composition root.
+                // Main.rs will resolve auth, probe the endpoint, save
+                // config.yaml, and swap the live provider.
+                let provider_label = match request.provider {
+                    ConnectProvider::Local => "local endpoint",
+                    ConnectProvider::Vertex => "Vertex AI",
+                    ConnectProvider::Bedrock => "Bedrock",
+                    ConnectProvider::Azure => "Azure OpenAI",
+                };
+                let detail = request
+                    .endpoint
+                    .as_deref()
+                    .or(request.model.as_deref())
+                    .unwrap_or("(default)");
+                self.messages.push(ChatMessage::system(format!(
+                    "Connecting to {provider_label} ({detail})..."
+                )));
+                self.pending_connect = Some(request);
+            }
+        }
+    }
+
+    /// Show current connection info: provider, model, endpoint.
+    fn show_current_connection(&mut self) {
+        let info = match &self.current_provider_info {
+            Some(info) => format!(
+                "Current connection:\n\
+                 Provider: {}\n\
+                 Model:    {}\n\
+                 Endpoint: {}{}",
+                info.provider,
+                info.model,
+                info.endpoint,
+                info.region
+                    .as_ref()
+                    .map(|r| format!("\nRegion:   {r}"))
+                    .unwrap_or_default(),
+            ),
+            None => format!(
+                "Current model: {}\n\
+                 No detailed provider info available.\n\
+                 Use /connect <provider> to configure.",
+                self.model_name
+            ),
+        };
+        self.messages.push(ChatMessage::system(info));
+    }
+}
+
+/// Provider connection info displayed by `/connect` with no args.
+#[derive(Debug, Clone)]
+pub struct ProviderInfo {
+    pub provider: String,
+    pub model: String,
+    pub endpoint: String,
+    pub region: Option<String>,
 }
 
 /// Result of detecting local model setup state.
@@ -224,7 +238,6 @@ enum LocalSetupResult {
     NeedInstall,
 }
 
-/// Detect the state of the local model setup and return the appropriate action.
 /// Detect the state of the local model setup and take action to fix it.
 fn detect_and_setup_local(model: &str) -> LocalSetupResult {
     // Check 1: Is ollama on PATH?

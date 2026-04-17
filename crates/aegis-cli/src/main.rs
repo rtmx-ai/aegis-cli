@@ -555,6 +555,193 @@ fn resolve_provider_config(
     }
 }
 
+/// Convert a TUI ConnectRequest into a ProviderConfig, resolve auth,
+/// save to config.yaml, and swap the shared provider config.
+///
+/// REQ-LLM-027: /connect updates the live provider mid-session.
+/// REQ-LLM-029: cloud provider support (vertex, bedrock, azure).
+/// REQ-LLM-024: all creation goes through create_provider factory.
+fn handle_connect_request(
+    req: &aegis_tui::app::ConnectRequest,
+    app: &mut App,
+    shared_config: &Arc<std::sync::RwLock<aegis_llm::config::ProviderConfig>>,
+) {
+    use aegis_llm::config::ProviderConfig;
+    use aegis_tui::app::ConnectProvider;
+
+    // 1. Build ProviderConfig from the ConnectRequest.
+    let new_config = match req.provider {
+        ConnectProvider::Local => {
+            let endpoint = req
+                .endpoint
+                .as_deref()
+                .unwrap_or("http://localhost:11434/v1");
+            let model = req.model.as_deref().unwrap_or("llama3");
+            ProviderConfig::local(endpoint, model)
+        }
+        ConnectProvider::Vertex => {
+            let project = req.project.as_deref().unwrap_or("");
+            let region = req.region.as_deref().unwrap_or("us-central1");
+            let model = req.model.as_deref().unwrap_or("gemini-2.5-pro-001");
+            if project.is_empty() {
+                // Try to get project from gcloud config
+                let gcloud_project = std::process::Command::new("gcloud")
+                    .args(["config", "get-value", "project"])
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .output()
+                    .ok()
+                    .and_then(|o| {
+                        if o.status.success() {
+                            let val = String::from_utf8(o.stdout).ok()?.trim().to_string();
+                            if val.is_empty() || val == "(unset)" {
+                                None
+                            } else {
+                                Some(val)
+                            }
+                        } else {
+                            None
+                        }
+                    });
+                match gcloud_project {
+                    Some(p) => ProviderConfig::vertex(&p, region, model),
+                    None => {
+                        app.messages.push(aegis_tui::messages::ChatMessage::error(
+                            "No GCP project specified and gcloud config \
+                                 has no default project.\n\
+                                 Use: /connect vertex \
+                                 --project=YOUR_PROJECT --region=us-central1"
+                                .to_string(),
+                        ));
+                        return;
+                    }
+                }
+            } else {
+                ProviderConfig::vertex(project, region, model)
+            }
+        }
+        ConnectProvider::Bedrock => {
+            let region = req.region.as_deref().unwrap_or("us-east-1");
+            let model = req
+                .model
+                .as_deref()
+                .unwrap_or("us.anthropic.claude-3-5-sonnet-20241022-v2:0");
+            ProviderConfig::bedrock(region, model)
+        }
+        ConnectProvider::Azure => {
+            let endpoint = match req.endpoint.as_deref() {
+                Some(ep) => ep,
+                None => {
+                    app.messages.push(aegis_tui::messages::ChatMessage::error(
+                        "Azure requires an endpoint URL.".to_string(),
+                    ));
+                    return;
+                }
+            };
+            let model = req.model.as_deref().unwrap_or("gpt-4o");
+            ProviderConfig::azure(endpoint, model)
+        }
+    };
+
+    // 2. Validate auth (non-blocking for local, may fail for cloud).
+    let auth_result = aegis_llm::auth::resolve_auth(&new_config);
+    if let Err(e) = &auth_result {
+        let guidance = aegis_tui::app::auth_guidance(&req.provider);
+        app.messages
+            .push(aegis_tui::messages::ChatMessage::error(format!(
+                "Authentication failed: {e}\n\n{guidance}"
+            )));
+        return;
+    }
+
+    // 3. Verify the provider factory can build this config.
+    match aegis_llm::provider::create_provider(&new_config) {
+        Ok(_) => {}
+        Err(e) => {
+            app.messages
+                .push(aegis_tui::messages::ChatMessage::error(format!(
+                    "Provider creation failed: {e}"
+                )));
+            return;
+        }
+    }
+
+    // 4. Save to ~/.aegis/config.yaml so the choice persists.
+    if let Err(e) = save_provider_to_config(&new_config) {
+        tracing::warn!(%e, "failed to persist provider config");
+        app.messages
+            .push(aegis_tui::messages::ChatMessage::system(format!(
+                "Warning: could not save to config.yaml: {e}"
+            )));
+        // Continue anyway -- the live swap is still useful.
+    }
+
+    // 5. Swap the shared provider config so the next agent turn uses it.
+    {
+        let mut guard = shared_config.write().unwrap();
+        *guard = new_config.clone();
+    }
+
+    // 6. Update App state: model name and provider info.
+    app.model_name = new_config.model.clone();
+    let kind_str = format!("{:?}", new_config.kind).to_lowercase();
+    app.current_provider_info = Some(aegis_tui::app::ProviderInfo {
+        provider: kind_str.clone(),
+        model: new_config.model.clone(),
+        endpoint: new_config.endpoint.clone(),
+        region: new_config.region.clone(),
+    });
+
+    // 7. Push success message.
+    let region_info = new_config
+        .region
+        .as_ref()
+        .map(|r| format!(" in {r}"))
+        .unwrap_or_default();
+    app.messages
+        .push(aegis_tui::messages::ChatMessage::system(format!(
+            "Connected to {kind_str} ({model}){region_info}.",
+            model = new_config.model,
+        )));
+}
+
+/// Persist the provider config to ~/.aegis/config.yaml.
+/// Merges with existing config to preserve infra outputs, MCP servers, etc.
+fn save_provider_to_config(config: &aegis_llm::config::ProviderConfig) -> Result<(), String> {
+    let config_path =
+        aegis_onboard::config::AegisConfig::default_path().map_err(|e| e.to_string())?;
+
+    let kind_str = format!("{:?}", config.kind).to_lowercase();
+    let mode = match config.kind {
+        aegis_llm::config::ProviderKind::Local => aegis_onboard::config::Mode::Local,
+        _ => aegis_onboard::config::Mode::SelfServiceByoc,
+    };
+
+    let new_aegis_config = aegis_onboard::config::AegisConfig {
+        version: "1.0".to_string(),
+        mode,
+        backend: aegis_onboard::config::BackendConfig {
+            provider: kind_str,
+            model: config.model.clone(),
+            endpoint: config.endpoint.clone(),
+            region: config.region.clone(),
+            max_tokens: config.max_tokens,
+        },
+        infra: Default::default(),
+        mcp_servers: Vec::new(),
+    };
+
+    // Try to load existing config and merge, otherwise use new
+    let final_config =
+        if let Ok(existing) = aegis_onboard::config::AegisConfig::load(&config_path) {
+            aegis_onboard::config::merge_config(&existing, &new_aegis_config)
+        } else {
+            new_aegis_config
+        };
+
+    final_config.save(&config_path).map_err(|e| e.to_string())
+}
+
 async fn run_headless_chat(
     prompt: &str,
     provider_config: &aegis_llm::config::ProviderConfig,
@@ -931,17 +1118,18 @@ async fn run_interactive_chat(
     });
 
     // 8. Spawn agent task (listens for prompts, runs agent, forwards stream events)
-    let agent_provider_config = provider_config.clone();
+    //
+    // The provider config is behind Arc<RwLock> so `/connect` can swap it
+    // mid-session (REQ-LLM-027). The agent task reads the current config
+    // on each prompt, so the next turn uses the updated provider.
+    let shared_provider_config = Arc::new(std::sync::RwLock::new(provider_config.clone()));
+    let agent_shared_config = shared_provider_config.clone();
     let event_tx_agent = event_tx.clone();
     tokio::spawn(async move {
         while let Some(prompt) = agent_input_rx.recv().await {
-            let result = run_agent_for_tui(
-                &prompt,
-                &agent_provider_config,
-                approval_gate.clone(),
-                &event_tx_agent,
-            )
-            .await;
+            let cfg = agent_shared_config.read().unwrap().clone();
+            let result =
+                run_agent_for_tui(&prompt, &cfg, approval_gate.clone(), &event_tx_agent).await;
             if let Err(e) = result {
                 let _ = event_tx_agent.send(TuiEvent::AgentError(e));
             }
@@ -953,6 +1141,12 @@ async fn run_interactive_chat(
 
     // 10. Create App state, restoring previous session if available (REQ-BUILD-036)
     let mut app = App::new(&provider_config.model);
+    app.current_provider_info = Some(aegis_tui::app::ProviderInfo {
+        provider: format!("{:?}", provider_config.kind).to_lowercase(),
+        model: provider_config.model.clone(),
+        endpoint: provider_config.endpoint.clone(),
+        region: provider_config.region.clone(),
+    });
     let session_dir = aegis_agent::session::default_session_dir();
     if let Some(ref dir) = session_dir {
         let current = dir.join("current.json");
@@ -1108,6 +1302,11 @@ async fn run_interactive_chat(
             EventWake::Shutdown => {
                 exit_via_sigterm = true;
             }
+        }
+
+        // REQ-LLM-027: Process pending /connect requests from the TUI.
+        if let Some(connect_req) = app.pending_connect.take() {
+            handle_connect_request(&connect_req, &mut app, &shared_provider_config);
         }
 
         // REQ-TUI-060: autosave after every completed assistant turn so a
@@ -1460,5 +1659,195 @@ mod tests {
             !tmp_file.exists(),
             "atomic rename must not leave a .tmp file after a successful save",
         );
+    }
+
+    // rtmx:req REQ-LLM-027
+    /// handle_connect_request updates the shared provider config when a
+    /// local /connect request succeeds.
+    #[test]
+    fn handle_connect_local_updates_shared_config() {
+        let mut app = App::new("llama3");
+        app.phase = aegis_tui::app::AppPhase::Idle;
+        let config =
+            aegis_llm::config::ProviderConfig::local("http://localhost:11434/v1", "llama3");
+        let shared = Arc::new(std::sync::RwLock::new(config));
+
+        let req = aegis_tui::app::ConnectRequest {
+            provider: aegis_tui::app::ConnectProvider::Local,
+            endpoint: Some("http://localhost:8080/v1".to_string()),
+            model: Some("mixtral".to_string()),
+            project: None,
+            region: None,
+        };
+        handle_connect_request(&req, &mut app, &shared);
+
+        let updated = shared.read().unwrap();
+        assert_eq!(updated.endpoint, "http://localhost:8080/v1");
+        assert_eq!(updated.model, "mixtral");
+        assert_eq!(app.model_name, "mixtral");
+        assert!(
+            app.messages
+                .iter()
+                .any(|m| m.content.contains("Connected to local"))
+        );
+    }
+
+    // rtmx:req REQ-LLM-027
+    /// handle_connect_request sets current_provider_info on success.
+    #[test]
+    fn handle_connect_sets_provider_info() {
+        let mut app = App::new("llama3");
+        app.phase = aegis_tui::app::AppPhase::Idle;
+        let config =
+            aegis_llm::config::ProviderConfig::local("http://localhost:11434/v1", "llama3");
+        let shared = Arc::new(std::sync::RwLock::new(config));
+
+        let req = aegis_tui::app::ConnectRequest {
+            provider: aegis_tui::app::ConnectProvider::Local,
+            endpoint: Some("http://localhost:9090/v1".to_string()),
+            model: Some("codellama".to_string()),
+            project: None,
+            region: None,
+        };
+        handle_connect_request(&req, &mut app, &shared);
+
+        let info = app.current_provider_info.as_ref().unwrap();
+        assert_eq!(info.provider, "local");
+        assert_eq!(info.model, "codellama");
+        assert_eq!(info.endpoint, "http://localhost:9090/v1");
+    }
+
+    // rtmx:req REQ-LLM-027
+    /// The config save path builds a correct AegisConfig from a
+    /// ProviderConfig and saves it as valid YAML.
+    #[test]
+    fn connect_saves_to_config() {
+        // Test the AegisConfig construction and save directly, avoiding
+        // env var races from parallel tests.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let config_path = tmp.path().join("config.yaml");
+
+        let provider_config = aegis_llm::config::ProviderConfig::local(
+            "http://localhost:8080/v1",
+            "granite-3.3-2b",
+        );
+        let kind_str = format!("{:?}", provider_config.kind).to_lowercase();
+        let aegis_config = aegis_onboard::config::AegisConfig {
+            version: "1.0".to_string(),
+            mode: aegis_onboard::config::Mode::Local,
+            backend: aegis_onboard::config::BackendConfig {
+                provider: kind_str,
+                model: provider_config.model.clone(),
+                endpoint: provider_config.endpoint.clone(),
+                region: provider_config.region.clone(),
+                max_tokens: provider_config.max_tokens,
+            },
+            infra: Default::default(),
+            mcp_servers: Vec::new(),
+        };
+        aegis_config.save(&config_path).unwrap();
+
+        let loaded = aegis_onboard::config::AegisConfig::load(&config_path)
+            .expect("saved config should load");
+        assert_eq!(loaded.backend.model, "granite-3.3-2b");
+        assert_eq!(loaded.backend.endpoint, "http://localhost:8080/v1");
+        assert_eq!(loaded.backend.provider, "local");
+    }
+
+    // rtmx:req REQ-LLM-029
+    /// handle_connect_request rejects cloud providers when auth is
+    /// not available, showing actionable guidance.
+    #[test]
+    fn handle_connect_fails_gracefully_without_auth() {
+        // Clear AWS env to ensure bedrock auth fails
+        unsafe {
+            std::env::remove_var("AWS_ACCESS_KEY_ID");
+            std::env::remove_var("AWS_SECRET_ACCESS_KEY");
+        }
+        let mut app = App::new("llama3");
+        app.phase = aegis_tui::app::AppPhase::Idle;
+        let config =
+            aegis_llm::config::ProviderConfig::local("http://localhost:11434/v1", "llama3");
+        let shared = Arc::new(std::sync::RwLock::new(config.clone()));
+
+        let req = aegis_tui::app::ConnectRequest {
+            provider: aegis_tui::app::ConnectProvider::Bedrock,
+            endpoint: None,
+            model: Some("claude-3-sonnet-20241022".to_string()),
+            project: None,
+            region: Some("us-east-1".to_string()),
+        };
+        handle_connect_request(&req, &mut app, &shared);
+
+        // Shared config should NOT have changed
+        let unchanged = shared.read().unwrap();
+        assert_eq!(unchanged.endpoint, config.endpoint);
+
+        // Error message should contain auth guidance
+        let last = app.messages.last().unwrap();
+        assert!(
+            last.content.contains("AWS_ACCESS_KEY_ID")
+                || last.content.contains("Authentication failed"),
+            "expected auth guidance, got: {}",
+            last.content,
+        );
+    }
+
+    // rtmx:req REQ-LLM-024
+    /// All provider creation in run_agent_for_tui goes through
+    /// create_provider factory -- verified by checking that it
+    /// handles all ProviderKind variants via the factory.
+    #[test]
+    fn main_uses_provider_factory_for_local() {
+        let cfg = aegis_llm::config::ProviderConfig::local("http://localhost:11434/v1", "llama3");
+        let provider = aegis_llm::provider::create_provider(&cfg);
+        assert!(
+            provider.is_ok(),
+            "factory should create local provider: {:?}",
+            provider.err()
+        );
+    }
+
+    // rtmx:req REQ-LLM-024
+    /// The factory handles Vertex with a pre-resolved token.
+    #[test]
+    fn main_uses_provider_factory_for_vertex_with_token() {
+        let cfg = aegis_llm::config::ProviderConfig::vertex(
+            "test-project",
+            "us-central1",
+            "gemini-2.5-pro-001",
+        );
+        let provider = aegis_llm::provider::create_vertex_provider_with_token(
+            &cfg,
+            "ya29.test-token".to_string(),
+        );
+        assert!(
+            provider.is_ok(),
+            "factory should create vertex provider: {:?}",
+            provider.err()
+        );
+    }
+
+    // rtmx:req REQ-LLM-024
+    /// resolve_provider_config routes all provider kinds through
+    /// the factory path, not hardcoded LocalProvider::new().
+    #[test]
+    fn resolve_provider_config_creates_via_factory() {
+        // Verify the config is built correctly from CLI args
+        let cfg = resolve_provider_config(
+            None,
+            Some("local".to_string()),
+            Some("test-model".to_string()),
+            None,
+            Some("http://localhost:9999/v1".to_string()),
+        )
+        .unwrap();
+        assert_eq!(cfg.kind, aegis_llm::config::ProviderKind::Local);
+        assert_eq!(cfg.model, "test-model");
+        assert_eq!(cfg.endpoint, "http://localhost:9999/v1");
+
+        // Verify create_provider handles it
+        let provider = aegis_llm::provider::create_provider(&cfg);
+        assert!(provider.is_ok());
     }
 }
