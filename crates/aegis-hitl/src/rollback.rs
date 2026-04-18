@@ -1,374 +1,400 @@
-//! Pre-write snapshot capture and undo/rollback functionality.
+//! Rollback journal for approved write operations.
 //!
-//! Before the agent writes to a file, `RollbackJournal::capture()` records
-//! the file's current state. The `/undo` command restores from the most
-//! recent snapshot (LIFO). Snapshots persist across restarts via JSON.
-//! rtmx:req REQ-HITL-009
-//! rtmx:req REQ-HITL-010
+//! Before an approved write_file or run_command tool call executes,
+//! `RollbackJournal::snapshot()` captures the current state of all files
+//! that will be modified. This enables `/undo` to restore previous state.
+//!
+//! The journal is bounded (default 50 entries) and lives in memory only,
+//! resetting each session.
+//!
+//! rtmx:req REQ-HITL-005
 
-use serde::{Deserialize, Serialize};
-use std::io;
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
-/// A snapshot of a file's state before a write operation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileSnapshot {
-    /// Original file path that was written to.
-    pub original_path: PathBuf,
-    /// Content of the file before the write (None if file didn't exist).
-    pub original_content: Option<String>,
-    /// Timestamp of the snapshot.
-    pub captured_at: chrono::DateTime<chrono::Utc>,
-    /// Session ID for grouping.
-    pub session_id: String,
+/// A single rollback entry capturing pre-write state.
+#[derive(Debug, Clone)]
+pub struct RollbackEntry {
+    /// Unique ID for this entry (monotonic counter).
+    pub id: u64,
+    /// The tool call that triggered this snapshot.
+    pub tool_description: String,
+    /// Timestamp when the snapshot was taken (ISO 8601).
+    pub timestamp: String,
+    /// File snapshots captured before the write.
+    pub snapshots: Vec<FileSnapshot>,
 }
 
-/// Manages file snapshots for rollback/undo.
+/// Pre-write snapshot of a single file.
+#[derive(Debug, Clone)]
+pub struct FileSnapshot {
+    /// Absolute path to the file.
+    pub path: PathBuf,
+    /// File contents before the write. None if the file did not exist (new file).
+    pub previous_contents: Option<String>,
+    /// Whether the file existed before the write.
+    pub existed: bool,
+}
+
+/// Rolling journal of recent write operations with pre-write snapshots.
 pub struct RollbackJournal {
-    snapshots: Vec<FileSnapshot>,
-    storage_dir: PathBuf,
+    entries: VecDeque<RollbackEntry>,
+    max_entries: usize,
+    next_id: u64,
+}
+
+/// Errors that can occur during rollback operations.
+#[derive(Debug, thiserror::Error)]
+pub enum RollbackError {
+    /// The requested entry ID was not found in the journal.
+    #[error("entry {id} not found in journal")]
+    EntryNotFound {
+        /// The ID that was requested.
+        id: u64,
+    },
+    /// Failed to read a file when taking a snapshot.
+    #[error("failed to read file for snapshot: {path}")]
+    SnapshotFailed {
+        /// The file path that could not be read.
+        path: PathBuf,
+        /// The underlying I/O error.
+        source: std::io::Error,
+    },
+    /// Failed to restore a file during rollback.
+    #[error("failed to restore file: {path}")]
+    RestoreFailed {
+        /// The file path that could not be restored.
+        path: PathBuf,
+        /// The underlying I/O error.
+        source: std::io::Error,
+    },
 }
 
 impl RollbackJournal {
-    /// Create a new journal that persists snapshots to `storage_dir`.
-    pub fn new(storage_dir: PathBuf) -> Self {
+    /// Create a new journal with bounded capacity.
+    pub fn new(max_entries: usize) -> Self {
         Self {
-            snapshots: Vec::new(),
-            storage_dir,
+            entries: VecDeque::new(),
+            max_entries,
+            next_id: 1,
         }
     }
 
-    /// Capture the current state of a file before it is modified.
-    /// Call this BEFORE the write_file tool executes.
-    pub fn capture(&mut self, path: &Path, session_id: &str) -> io::Result<()> {
-        let existed = path.exists();
-        let original_content = if existed {
-            Some(std::fs::read_to_string(path)?)
-        } else {
-            None
-        };
+    /// Snapshot the current state of files that will be modified.
+    /// Call this BEFORE the tool executor writes.
+    ///
+    /// Returns the entry ID assigned to this snapshot.
+    /// File read failures are recorded as best-effort: the snapshot
+    /// still proceeds but the file contents will be `None`.
+    pub fn snapshot(&mut self, paths: &[&Path], tool_description: &str) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
 
-        self.snapshots.push(FileSnapshot {
-            original_path: path.to_path_buf(),
-            original_content,
-            captured_at: chrono::Utc::now(),
-            session_id: session_id.to_string(),
-        });
-
-        tracing::info!(
-            path = %path.display(),
-            session_id = session_id,
-            existed = existed,
-            "Captured pre-write snapshot (REQ-HITL-009)"
-        );
-
-        Ok(())
-    }
-
-    /// Undo the last write operation by restoring the snapshot.
-    /// Returns the path that was restored.
-    pub fn undo_last(&mut self) -> io::Result<Option<PathBuf>> {
-        let snapshot = match self.snapshots.pop() {
-            Some(s) => s,
-            None => return Ok(None),
-        };
-
-        restore_snapshot(&snapshot)?;
-        Ok(Some(snapshot.original_path))
-    }
-
-    /// Undo all writes in the current session.
-    pub fn undo_all(&mut self, session_id: &str) -> io::Result<Vec<PathBuf>> {
-        let mut restored = Vec::new();
-        // Drain matching snapshots in reverse order (LIFO).
-        let mut remaining = Vec::new();
-        // Process all snapshots: restore those matching the session,
-        // keep the rest.
-        let all = std::mem::take(&mut self.snapshots);
-        for snapshot in all.into_iter().rev() {
-            if snapshot.session_id == session_id {
-                restore_snapshot(&snapshot)?;
-                restored.push(snapshot.original_path);
-            } else {
-                remaining.push(snapshot);
-            }
-        }
-        remaining.reverse();
-        self.snapshots = remaining;
-        Ok(restored)
-    }
-
-    /// List all snapshots (for /undo --list).
-    pub fn list(&self) -> &[FileSnapshot] {
-        &self.snapshots
-    }
-
-    /// Check if the file has been modified since the snapshot was taken.
-    /// Returns true if file content differs from snapshot.
-    pub fn has_conflict(&self, snapshot: &FileSnapshot) -> io::Result<bool> {
-        match &snapshot.original_content {
-            Some(original) => {
-                if snapshot.original_path.exists() {
-                    let current = std::fs::read_to_string(&snapshot.original_path)?;
-                    Ok(current != *original)
+        let snapshots: Vec<FileSnapshot> = paths
+            .iter()
+            .map(|p| {
+                let existed = p.exists();
+                // best-effort: record None on read failure
+                let previous_contents = if existed {
+                    std::fs::read_to_string(p).ok()
                 } else {
-                    // File existed at snapshot time but is now gone.
-                    Ok(true)
+                    None
+                };
+                FileSnapshot {
+                    path: p.to_path_buf(),
+                    previous_contents,
+                    existed,
                 }
-            }
-            None => {
-                // File did not exist at snapshot time.
-                // Conflict if it now exists (someone else recreated it).
-                Ok(snapshot.original_path.exists())
-            }
-        }
-    }
+            })
+            .collect();
 
-    /// Persist snapshots to disk (JSON file in storage_dir).
-    pub fn save(&self) -> io::Result<()> {
-        std::fs::create_dir_all(&self.storage_dir)?;
-        let path = self.storage_dir.join("snapshots.json");
-        let json = serde_json::to_string_pretty(&self.snapshots).map_err(io::Error::other)?;
-        std::fs::write(path, json)
-    }
-
-    /// Load snapshots from disk.
-    pub fn load(storage_dir: &Path) -> io::Result<Self> {
-        let path = storage_dir.join("snapshots.json");
-        if !path.exists() {
-            return Ok(Self::new(storage_dir.to_path_buf()));
-        }
-        let json = std::fs::read_to_string(&path)?;
-        let snapshots: Vec<FileSnapshot> = serde_json::from_str(&json)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        Ok(Self {
+        let entry = RollbackEntry {
+            id,
+            tool_description: tool_description.to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
             snapshots,
-            storage_dir: storage_dir.to_path_buf(),
-        })
+        };
+
+        // Evict oldest if at capacity.
+        if self.entries.len() >= self.max_entries {
+            self.entries.pop_front();
+        }
+
+        self.entries.push_back(entry);
+        id
+    }
+
+    /// Roll back a specific entry, restoring files to pre-write state.
+    /// Returns the paths that were restored.
+    pub fn rollback(&mut self, entry_id: u64) -> Result<Vec<PathBuf>, RollbackError> {
+        let pos = self
+            .entries
+            .iter()
+            .position(|e| e.id == entry_id)
+            .ok_or(RollbackError::EntryNotFound { id: entry_id })?;
+
+        let entry = self.entries.remove(pos).expect("position was valid");
+        restore_entry(&entry)
+    }
+
+    /// Roll back the most recent entry.
+    pub fn rollback_last(&mut self) -> Result<Vec<PathBuf>, RollbackError> {
+        let entry = self
+            .entries
+            .pop_back()
+            .ok_or(RollbackError::EntryNotFound { id: 0 })?;
+        restore_entry(&entry)
+    }
+
+    /// List recent entries (newest first).
+    pub fn recent(&self, count: usize) -> Vec<&RollbackEntry> {
+        self.entries.iter().rev().take(count).collect()
+    }
+
+    /// Number of entries in the journal.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Whether the journal is empty.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 }
 
-/// Restore a single snapshot -- either write original content back or
-/// delete the file if it did not previously exist.
-fn restore_snapshot(snapshot: &FileSnapshot) -> io::Result<()> {
-    match &snapshot.original_content {
-        Some(content) => {
-            if let Some(parent) = snapshot.original_path.parent() {
-                std::fs::create_dir_all(parent)?;
+/// Restore all file snapshots in an entry. Returns the paths restored.
+fn restore_entry(entry: &RollbackEntry) -> Result<Vec<PathBuf>, RollbackError> {
+    let mut restored = Vec::new();
+    for snap in &entry.snapshots {
+        if snap.existed {
+            if let Some(ref content) = snap.previous_contents {
+                if let Some(parent) = snap.path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| {
+                        RollbackError::RestoreFailed {
+                            path: snap.path.clone(),
+                            source: e,
+                        }
+                    })?;
+                }
+                std::fs::write(&snap.path, content).map_err(|e| {
+                    RollbackError::RestoreFailed {
+                        path: snap.path.clone(),
+                        source: e,
+                    }
+                })?;
             }
-            std::fs::write(&snapshot.original_path, content)?;
-            tracing::info!(
-                path = %snapshot.original_path.display(),
-                "Restored file from snapshot (REQ-HITL-010)"
-            );
-        }
-        None => {
-            // File didn't exist before -- remove it.
-            if snapshot.original_path.exists() {
-                std::fs::remove_file(&snapshot.original_path)?;
-                tracing::info!(
-                    path = %snapshot.original_path.display(),
-                    "Removed file that did not exist before write (REQ-HITL-010)"
-                );
+        } else {
+            // File did not exist before -- remove it if it now exists.
+            if snap.path.exists() {
+                std::fs::remove_file(&snap.path).map_err(|e| RollbackError::RestoreFailed {
+                    path: snap.path.clone(),
+                    source: e,
+                })?;
             }
         }
+        restored.push(snap.path.clone());
     }
-    Ok(())
+    Ok(restored)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // rtmx:req REQ-HITL-009
+    // rtmx:req REQ-HITL-005
     #[test]
-    fn capture_existing_file() {
+    fn test_snapshot_captures_existing_file_contents() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("existing.txt");
-        std::fs::write(&file, "original content").unwrap();
+        std::fs::write(&file, "hello world").unwrap();
 
-        let storage = dir.path().join("rollback");
-        let mut journal = RollbackJournal::new(storage);
-        journal.capture(&file, "sess-1").unwrap();
+        let mut journal = RollbackJournal::new(50);
+        let id = journal.snapshot(&[file.as_path()], "write_file");
 
-        assert_eq!(journal.list().len(), 1);
+        assert_eq!(id, 1);
+        assert_eq!(journal.len(), 1);
+        let entry = &journal.entries[0];
+        assert_eq!(entry.snapshots.len(), 1);
         assert_eq!(
-            journal.list()[0].original_content.as_deref(),
-            Some("original content")
+            entry.snapshots[0].previous_contents.as_deref(),
+            Some("hello world")
         );
+        assert!(entry.snapshots[0].existed);
     }
 
-    // rtmx:req REQ-HITL-009
+    // rtmx:req REQ-HITL-005
     #[test]
-    fn capture_nonexistent_file() {
+    fn test_snapshot_records_nonexistent_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("does_not_exist.txt");
+
+        let mut journal = RollbackJournal::new(50);
+        journal.snapshot(&[file.as_path()], "write_file");
+
+        let entry = &journal.entries[0];
+        assert!(!entry.snapshots[0].existed);
+        assert!(entry.snapshots[0].previous_contents.is_none());
+    }
+
+    // rtmx:req REQ-HITL-005
+    #[test]
+    fn test_rollback_restores_original_contents() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("restore.txt");
+        std::fs::write(&file, "original").unwrap();
+
+        let mut journal = RollbackJournal::new(50);
+        let id = journal.snapshot(&[file.as_path()], "write_file");
+
+        // Simulate the tool overwriting the file.
+        std::fs::write(&file, "modified").unwrap();
+
+        let paths = journal.rollback(id).unwrap();
+        assert_eq!(paths, vec![file.clone()]);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "original");
+    }
+
+    // rtmx:req REQ-HITL-005
+    #[test]
+    fn test_rollback_deletes_newly_created_file() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("new_file.txt");
 
-        let storage = dir.path().join("rollback");
-        let mut journal = RollbackJournal::new(storage);
-        journal.capture(&file, "sess-1").unwrap();
+        let mut journal = RollbackJournal::new(50);
+        let id = journal.snapshot(&[file.as_path()], "write_file");
 
-        assert_eq!(journal.list().len(), 1);
-        assert!(journal.list()[0].original_content.is_none());
-    }
-
-    // rtmx:req REQ-HITL-009
-    #[test]
-    fn capture_stores_metadata() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("meta.txt");
-        std::fs::write(&file, "data").unwrap();
-
-        let storage = dir.path().join("rollback");
-        let mut journal = RollbackJournal::new(storage);
-        journal.capture(&file, "session-42").unwrap();
-
-        let snap = &journal.list()[0];
-        assert_eq!(snap.session_id, "session-42");
-        assert!(snap.captured_at <= chrono::Utc::now());
-        assert_eq!(snap.original_path, file);
-    }
-
-    // rtmx:req REQ-HITL-009
-    #[test]
-    fn multiple_captures_stacked() {
-        let dir = tempfile::tempdir().unwrap();
-        let file_a = dir.path().join("a.txt");
-        let file_b = dir.path().join("b.txt");
-        std::fs::write(&file_a, "aaa").unwrap();
-        std::fs::write(&file_b, "bbb").unwrap();
-
-        let storage = dir.path().join("rollback");
-        let mut journal = RollbackJournal::new(storage);
-        journal.capture(&file_a, "s1").unwrap();
-        journal.capture(&file_b, "s1").unwrap();
-
-        assert_eq!(journal.list().len(), 2);
-        // Last captured is last in the vec (LIFO pop).
-        assert_eq!(journal.list()[1].original_path, file_b);
-    }
-
-    // rtmx:req REQ-HITL-010
-    #[test]
-    fn undo_last_restores_content() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("restore.txt");
-        std::fs::write(&file, "before").unwrap();
-
-        let storage = dir.path().join("rollback");
-        let mut journal = RollbackJournal::new(storage);
-        journal.capture(&file, "s1").unwrap();
-
-        // Simulate the write tool overwriting the file.
-        std::fs::write(&file, "after").unwrap();
-
-        let restored = journal.undo_last().unwrap();
-        assert_eq!(restored, Some(file.clone()));
-        assert_eq!(std::fs::read_to_string(&file).unwrap(), "before");
-    }
-
-    // rtmx:req REQ-HITL-010
-    #[test]
-    fn undo_last_deletes_new_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("brand_new.txt");
-
-        let storage = dir.path().join("rollback");
-        let mut journal = RollbackJournal::new(storage);
-        journal.capture(&file, "s1").unwrap();
-
-        // Simulate write tool creating the file.
-        std::fs::write(&file, "created").unwrap();
+        // Simulate the tool creating the file.
+        std::fs::write(&file, "brand new").unwrap();
         assert!(file.exists());
 
-        journal.undo_last().unwrap();
+        journal.rollback(id).unwrap();
         assert!(!file.exists());
     }
 
-    // rtmx:req REQ-HITL-010
+    // rtmx:req REQ-HITL-005
     #[test]
-    fn undo_all_restores_session() {
+    fn test_rollback_last_rolls_back_most_recent() {
         let dir = tempfile::tempdir().unwrap();
         let file_a = dir.path().join("a.txt");
         let file_b = dir.path().join("b.txt");
+        let file_c = dir.path().join("c.txt");
         std::fs::write(&file_a, "orig-a").unwrap();
         std::fs::write(&file_b, "orig-b").unwrap();
+        std::fs::write(&file_c, "orig-c").unwrap();
 
-        let storage = dir.path().join("rollback");
-        let mut journal = RollbackJournal::new(storage);
-        journal.capture(&file_a, "target-session").unwrap();
-        journal.capture(&file_b, "target-session").unwrap();
+        let mut journal = RollbackJournal::new(50);
+        journal.snapshot(&[file_a.as_path()], "write a");
+        journal.snapshot(&[file_b.as_path()], "write b");
+        journal.snapshot(&[file_c.as_path()], "write c");
 
-        // Simulate writes.
-        std::fs::write(&file_a, "modified-a").unwrap();
-        std::fs::write(&file_b, "modified-b").unwrap();
+        // Overwrite all files.
+        std::fs::write(&file_a, "new-a").unwrap();
+        std::fs::write(&file_b, "new-b").unwrap();
+        std::fs::write(&file_c, "new-c").unwrap();
 
-        let restored = journal.undo_all("target-session").unwrap();
-        assert_eq!(restored.len(), 2);
-        assert_eq!(std::fs::read_to_string(&file_a).unwrap(), "orig-a");
-        assert_eq!(std::fs::read_to_string(&file_b).unwrap(), "orig-b");
+        // Only the last entry (file_c) should be rolled back.
+        let paths = journal.rollback_last().unwrap();
+        assert_eq!(paths, vec![file_c.clone()]);
+        assert_eq!(std::fs::read_to_string(&file_c).unwrap(), "orig-c");
+
+        // file_a and file_b should still be modified.
+        assert_eq!(std::fs::read_to_string(&file_a).unwrap(), "new-a");
+        assert_eq!(std::fs::read_to_string(&file_b).unwrap(), "new-b");
+
+        // Journal should have 2 remaining entries.
+        assert_eq!(journal.len(), 2);
     }
 
-    // rtmx:req REQ-HITL-010
+    // rtmx:req REQ-HITL-005
     #[test]
-    fn undo_empty_returns_none() {
+    fn test_journal_capacity_evicts_oldest() {
+        let mut journal = RollbackJournal::new(3);
         let dir = tempfile::tempdir().unwrap();
-        let storage = dir.path().join("rollback");
-        let mut journal = RollbackJournal::new(storage);
 
-        assert_eq!(journal.undo_last().unwrap(), None);
+        // Add 5 entries.
+        let mut ids = Vec::new();
+        for i in 0..5 {
+            let file = dir.path().join(format!("file_{i}.txt"));
+            std::fs::write(&file, format!("content-{i}")).unwrap();
+            let id = journal.snapshot(&[file.as_path()], &format!("write {i}"));
+            ids.push(id);
+        }
+
+        // Only 3 should remain.
+        assert_eq!(journal.len(), 3);
+
+        // Oldest 2 should be evicted (ids 1 and 2).
+        let result = journal.rollback(ids[0]);
+        assert!(matches!(result, Err(RollbackError::EntryNotFound { .. })));
+        let result = journal.rollback(ids[1]);
+        assert!(matches!(result, Err(RollbackError::EntryNotFound { .. })));
+
+        // Newest 3 should still be present (ids 3, 4, 5).
+        assert!(journal.entries.iter().any(|e| e.id == ids[2]));
+        assert!(journal.entries.iter().any(|e| e.id == ids[3]));
+        assert!(journal.entries.iter().any(|e| e.id == ids[4]));
     }
 
-    // rtmx:req REQ-HITL-010
+    // rtmx:req REQ-HITL-005
     #[test]
-    fn has_conflict_detects_change() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("conflict.txt");
-        std::fs::write(&file, "original").unwrap();
-
-        let storage = dir.path().join("rollback");
-        let mut journal = RollbackJournal::new(storage);
-        journal.capture(&file, "s1").unwrap();
-
-        // Modify file after snapshot.
-        std::fs::write(&file, "changed by someone else").unwrap();
-
-        assert!(journal.has_conflict(&journal.list()[0].clone()).unwrap());
+    fn test_rollback_nonexistent_entry_returns_error() {
+        let mut journal = RollbackJournal::new(50);
+        let result = journal.rollback(999);
+        assert!(matches!(
+            result,
+            Err(RollbackError::EntryNotFound { id: 999 })
+        ));
     }
 
-    // rtmx:req REQ-HITL-010
+    // rtmx:req REQ-HITL-005
     #[test]
-    fn has_conflict_no_change() {
+    fn test_recent_returns_newest_first() {
+        let mut journal = RollbackJournal::new(50);
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("stable.txt");
-        std::fs::write(&file, "same").unwrap();
 
-        let storage = dir.path().join("rollback");
-        let mut journal = RollbackJournal::new(storage);
-        journal.capture(&file, "s1").unwrap();
+        for i in 0..3 {
+            let file = dir.path().join(format!("f{i}.txt"));
+            std::fs::write(&file, "x").unwrap();
+            journal.snapshot(&[file.as_path()], &format!("op-{i}"));
+        }
 
-        assert!(!journal.has_conflict(&journal.list()[0].clone()).unwrap());
+        let recent = journal.recent(2);
+        assert_eq!(recent.len(), 2);
+        // Newest first: id 3, then id 2.
+        assert_eq!(recent[0].id, 3);
+        assert_eq!(recent[1].id, 2);
     }
 
-    // rtmx:req REQ-HITL-010
+    // rtmx:req REQ-HITL-005
     #[test]
-    fn journal_save_load_roundtrip() {
+    fn test_empty_journal() {
+        let journal = RollbackJournal::new(50);
+        assert_eq!(journal.len(), 0);
+        assert!(journal.is_empty());
+    }
+
+    // rtmx:req REQ-HITL-005
+    #[test]
+    fn test_snapshot_multiple_files() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("roundtrip.txt");
-        std::fs::write(&file, "persisted").unwrap();
+        let file_a = dir.path().join("a.txt");
+        let file_b = dir.path().join("b.txt");
+        let file_c = dir.path().join("c.txt");
+        std::fs::write(&file_a, "aaa").unwrap();
+        std::fs::write(&file_b, "bbb").unwrap();
+        std::fs::write(&file_c, "ccc").unwrap();
 
-        let storage = dir.path().join("rollback");
-        let mut journal = RollbackJournal::new(storage.clone());
-        journal.capture(&file, "sess-rt").unwrap();
-        journal.save().unwrap();
-
-        let loaded = RollbackJournal::load(&storage).unwrap();
-        assert_eq!(loaded.list().len(), 1);
-        assert_eq!(loaded.list()[0].session_id, "sess-rt");
-        assert_eq!(
-            loaded.list()[0].original_content.as_deref(),
-            Some("persisted")
+        let mut journal = RollbackJournal::new(50);
+        journal.snapshot(
+            &[file_a.as_path(), file_b.as_path(), file_c.as_path()],
+            "write_file (3 files)",
         );
-        assert_eq!(loaded.list()[0].original_path, file);
+
+        assert_eq!(journal.len(), 1);
+        let entry = &journal.entries[0];
+        assert_eq!(entry.snapshots.len(), 3);
+        assert_eq!(entry.snapshots[0].previous_contents.as_deref(), Some("aaa"));
+        assert_eq!(entry.snapshots[1].previous_contents.as_deref(), Some("bbb"));
+        assert_eq!(entry.snapshots[2].previous_contents.as_deref(), Some("ccc"));
     }
 }
