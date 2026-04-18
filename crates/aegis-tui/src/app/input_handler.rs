@@ -97,8 +97,12 @@ impl App {
                                 // No more slots -- palette hides, ghost text cleared
                                 self.input.ghost_text = None;
                             } else {
-                                // Show hint for the next slot
-                                self.input.ghost_text = self.command_palette.stage_hint();
+                                // Show remaining pattern as ghost text
+                                // (e.g., "--region=<region> --project=<project>")
+                                self.input.ghost_text = self
+                                    .command_palette
+                                    .remaining_pattern()
+                                    .or_else(|| self.command_palette.stage_hint());
                             }
                         }
                         return Action::Continue;

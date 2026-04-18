@@ -339,6 +339,37 @@ impl CommandPalette {
     pub fn in_token_stage(&self) -> bool {
         matches!(self.stage, PaletteStage::TokenSelection { .. })
     }
+
+    /// Ghost text showing the remaining token pattern after the current slot.
+    /// For example, after selecting provider and model, returns
+    /// "--region=<region> --project=<project>".
+    pub fn remaining_pattern(&self) -> Option<String> {
+        let (grammar, slot_index) = match &self.stage {
+            PaletteStage::TokenSelection {
+                grammar,
+                slot_index,
+                ..
+            } => (grammar, *slot_index),
+            _ => return None,
+        };
+        let remaining: Vec<String> = grammar
+            .slots
+            .iter()
+            .skip(slot_index + 1)
+            .map(|s| {
+                let placeholder = format!("<{}>", s.name);
+                match &s.prefix {
+                    Some(prefix) => format!("{}{}", prefix, placeholder),
+                    None => placeholder,
+                }
+            })
+            .collect();
+        if remaining.is_empty() {
+            None
+        } else {
+            Some(remaining.join(" "))
+        }
+    }
 }
 
 impl CommandPalette {
@@ -834,6 +865,207 @@ mod tests {
                 .entries
                 .iter()
                 .any(|e| e.name == "New Project")
+        );
+    }
+
+    // rtmx:req REQ-TUI-063
+    #[test]
+    fn test_token_grammar_provides_options_per_position() {
+        let g = connect_grammar();
+        // Verify 4 slots
+        assert_eq!(g.slots.len(), 4);
+        // Provider slot has static (non-empty) Enum options
+        match &g.slots[0].kind {
+            TokenKind::Enum(opts) => {
+                assert!(!opts.is_empty(), "provider slot should have static options")
+            }
+            _ => panic!("provider slot should be Enum"),
+        }
+        // Model and region slots dynamically populate per provider
+        let vertex_models = options_for_provider("vertex", "model");
+        assert!(
+            !vertex_models.is_empty(),
+            "vertex should have model options"
+        );
+        let bedrock_models = options_for_provider("bedrock", "model");
+        assert!(
+            !bedrock_models.is_empty(),
+            "bedrock should have model options"
+        );
+        let vertex_regions = options_for_provider("vertex", "region");
+        assert!(
+            !vertex_regions.is_empty(),
+            "vertex should have region options"
+        );
+        // Project slot exists
+        assert_eq!(g.slots[3].name, "project");
+    }
+
+    // rtmx:req REQ-TUI-063b
+    #[test]
+    fn test_palette_renders_options_for_active_token() {
+        let mut p = CommandPalette::new();
+        p.show();
+        let grammar = connect_grammar();
+        p.enter_token_stage(grammar);
+        // Advance past provider (select vertex)
+        p.advance_token("vertex".to_string());
+        // Now at model slot -- filtered entries should contain vertex model options
+        let names: Vec<&str> = p.filtered.iter().map(|e| e.name.as_str()).collect();
+        assert!(
+            names.contains(&"Gemini 3.1 Pro"),
+            "model slot should show Gemini 3.1 Pro for vertex, got: {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"Claude Opus 4.7"),
+            "model slot should show Claude Opus 4.7 for vertex"
+        );
+    }
+
+    // rtmx:req REQ-TUI-063b
+    #[test]
+    fn test_palette_title_changes_per_slot() {
+        let mut p = CommandPalette::new();
+        p.show();
+        p.enter_token_stage(connect_grammar());
+        assert_eq!(p.stage_hint(), Some("Select provider:".to_string()));
+        p.advance_token("vertex".to_string());
+        assert_eq!(p.stage_hint(), Some("Select model:".to_string()));
+        p.advance_token("gemini-3.1-pro".to_string());
+        assert_eq!(p.stage_hint(), Some("Select region:".to_string()));
+        p.advance_token("us-central1".to_string());
+        assert_eq!(p.stage_hint(), Some("Select project:".to_string()));
+    }
+
+    // rtmx:req REQ-TUI-063b
+    #[test]
+    fn test_tab_selects_and_advances_to_next_slot() {
+        let mut p = CommandPalette::new();
+        p.show();
+        p.enter_token_stage(connect_grammar());
+        // At provider slot, entries should include vertex
+        assert!(p.filtered.iter().any(|e| e.name == "vertex"));
+        // Advance (simulating Tab selection of "vertex")
+        let has_more = p.advance_token("vertex".to_string());
+        assert!(has_more, "should advance to model slot");
+        // Filtered entries should now be model options, not provider options
+        assert!(
+            !p.filtered.iter().any(|e| e.name == "vertex"),
+            "provider options should no longer appear"
+        );
+        assert!(
+            p.filtered.iter().any(|e| e.name == "Gemini 3.1 Pro"),
+            "model options should appear"
+        );
+        // slot_index should be 1
+        match &p.stage {
+            PaletteStage::TokenSelection { slot_index, .. } => {
+                assert_eq!(*slot_index, 1);
+            }
+            _ => panic!("should be in token selection"),
+        }
+    }
+
+    // rtmx:req REQ-TUI-063b
+    #[test]
+    fn test_backspace_past_boundary_retreats_slot() {
+        let mut p = CommandPalette::new();
+        p.show();
+        p.enter_token_stage(connect_grammar());
+        p.advance_token("vertex".to_string());
+        // Now at model slot (index 1)
+        assert_eq!(p.stage_hint(), Some("Select model:".to_string()));
+        // Retreat back to provider slot
+        let result = p.retreat_token();
+        assert!(result, "retreat_token should succeed from slot 1");
+        assert_eq!(
+            p.stage_hint(),
+            Some("Select provider:".to_string()),
+            "should be back at provider slot"
+        );
+        assert!(
+            p.filtered.iter().any(|e| e.name == "vertex"),
+            "provider options should be restored"
+        );
+    }
+
+    // rtmx:req REQ-TUI-063b
+    #[test]
+    fn test_esc_dismisses_palette_in_token_stage() {
+        let mut p = CommandPalette::new();
+        p.show();
+        p.enter_token_stage(connect_grammar());
+        assert!(p.is_visible);
+        assert!(p.in_token_stage());
+        // Esc hides the palette
+        p.hide();
+        assert!(!p.is_visible);
+        assert!(!p.in_token_stage());
+    }
+
+    // rtmx:req REQ-TUI-063b
+    #[test]
+    fn test_char_input_filters_current_slot_options() {
+        let mut p = CommandPalette::new();
+        p.show();
+        p.enter_token_stage(connect_grammar());
+        // At provider slot, all 4 options should be present
+        assert_eq!(p.filtered.len(), 4);
+        // Filter by "vert" -- should narrow to just vertex
+        p.filter_token("vert");
+        assert_eq!(p.filtered.len(), 1);
+        assert_eq!(p.filtered[0].name, "vertex");
+        // Filter by "b" -- should match bedrock
+        p.filter_token("b");
+        assert_eq!(p.filtered.len(), 1);
+        assert_eq!(p.filtered[0].name, "bedrock");
+        // Filter by "xyz" -- no match
+        p.filter_token("xyz");
+        assert!(p.filtered.is_empty());
+    }
+
+    // rtmx:req REQ-TUI-063b
+    #[test]
+    fn test_remaining_pattern_shows_upcoming_slots() {
+        let mut p = CommandPalette::new();
+        p.show();
+        p.enter_token_stage(connect_grammar());
+        // At provider slot (0), remaining should show model, region, project
+        let remaining = p.remaining_pattern().unwrap();
+        assert!(
+            remaining.contains("--model=<model>"),
+            "remaining pattern should include model, got: {}",
+            remaining
+        );
+        assert!(
+            remaining.contains("--region=<region>"),
+            "remaining pattern should include region"
+        );
+        assert!(
+            remaining.contains("--project=<project>"),
+            "remaining pattern should include project"
+        );
+        // Advance to model slot
+        p.advance_token("vertex".to_string());
+        let remaining = p.remaining_pattern().unwrap();
+        assert!(
+            !remaining.contains("model"),
+            "model should no longer be in remaining pattern"
+        );
+        assert!(
+            remaining.contains("--region=<region>"),
+            "region should still be in remaining"
+        );
+        // Advance to region slot
+        p.advance_token("gemini-3.1-pro".to_string());
+        let remaining = p.remaining_pattern().unwrap();
+        assert_eq!(remaining, "--project=<project>");
+        // Advance to project slot (last)
+        p.advance_token("us-central1".to_string());
+        assert!(
+            p.remaining_pattern().is_none(),
+            "no remaining slots at the last position"
         );
     }
 
