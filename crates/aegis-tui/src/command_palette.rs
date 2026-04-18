@@ -3,6 +3,8 @@
 //! Shows available commands when the user types `/` in the input field.
 //! Supports prefix filtering, up/down navigation, and Tab completion.
 
+use std::collections::HashMap;
+
 /// A slash command entry for the palette.
 #[derive(Debug, Clone)]
 pub struct CommandEntry {
@@ -28,6 +30,9 @@ pub struct CommandPalette {
     pub is_visible: bool,
     /// Current stage: command selection or token-level argument selection.
     pub stage: PaletteStage,
+    /// Dynamically-injected options keyed by slot name (e.g., "project").
+    /// Populated asynchronously by CSP discovery; consumed by build_slot_entries().
+    injected_options: HashMap<String, Vec<TokenOption>>,
 }
 
 impl Default for CommandPalette {
@@ -67,6 +72,7 @@ impl CommandPalette {
             selected: 0,
             is_visible: false,
             stage: PaletteStage::CommandSelection,
+            injected_options: HashMap::new(),
         }
     }
 
@@ -125,6 +131,38 @@ impl CommandPalette {
             selected: self.selected,
             stage_hint: self.stage_hint(),
         })
+    }
+
+    /// Inject dynamically-discovered options for a named slot.
+    /// Called when async CSP discovery completes.
+    pub fn inject_options(&mut self, slot_name: &str, options: Vec<TokenOption>) {
+        self.injected_options.insert(slot_name.to_string(), options);
+    }
+
+    /// Clear injected options for a named slot.
+    pub fn clear_injected(&mut self, slot_name: &str) {
+        self.injected_options.remove(slot_name);
+    }
+
+    /// Re-run build_slot_entries for the current slot to refresh the filtered list.
+    /// Called when injected options arrive mid-palette-session.
+    pub fn refresh_current_slot(&mut self) {
+        let (slot, selected_values) = match &self.stage {
+            PaletteStage::TokenSelection {
+                grammar,
+                slot_index,
+                selected_values,
+            } => match grammar.slots.get(*slot_index) {
+                Some(s) => (s.clone(), selected_values.clone()),
+                None => return,
+            },
+            _ => return,
+        };
+        let options = self.build_slot_entries(&slot, &selected_values);
+        self.filtered = options;
+        if self.selected >= self.filtered.len() {
+            self.selected = 0;
+        }
     }
 }
 
@@ -193,7 +231,7 @@ impl CommandPalette {
     /// Transition to token selection for a command with a grammar.
     /// Populates the filtered list with the first slot's options.
     pub fn enter_token_stage(&mut self, grammar: CommandGrammar) {
-        let options = slot_entries(&grammar.slots[0], &[]);
+        let options = self.build_slot_entries(&grammar.slots[0], &[]);
         self.filtered = options;
         self.selected = 0;
         self.stage = PaletteStage::TokenSelection {
@@ -220,7 +258,7 @@ impl CommandPalette {
             self.hide();
             return false;
         }
-        let options = slot_entries(&grammar.slots[next_index], &values);
+        let options = self.build_slot_entries(&grammar.slots[next_index], &values);
         self.filtered = options;
         self.selected = 0;
         self.stage = PaletteStage::TokenSelection {
@@ -250,7 +288,7 @@ impl CommandPalette {
         }
         values.pop();
         let prev_index = slot_index - 1;
-        let options = slot_entries(&grammar.slots[prev_index], &values);
+        let options = self.build_slot_entries(&grammar.slots[prev_index], &values);
         self.filtered = options;
         self.selected = 0;
         self.stage = PaletteStage::TokenSelection {
@@ -271,7 +309,7 @@ impl CommandPalette {
             } => (grammar.clone(), *slot_index, selected_values.clone()),
             _ => return,
         };
-        let all = slot_entries(&grammar.slots[slot_index], &values);
+        let all = self.build_slot_entries(&grammar.slots[slot_index], &values);
         let p = prefix.to_lowercase();
         self.filtered = all
             .into_iter()
@@ -303,33 +341,60 @@ impl CommandPalette {
     }
 }
 
-/// Build palette entries for a token slot, dynamically populating
-/// options based on previously selected values.
-fn slot_entries(slot: &TokenSlot, selected_values: &[String]) -> Vec<CommandEntry> {
-    match &slot.kind {
-        TokenKind::Enum(options) => {
-            let effective = if options.is_empty() {
-                // Dynamic population: look up options based on previous selections
-                let provider = selected_values.first().map(|s| s.as_str()).unwrap_or("");
-                options_for_provider(provider, &slot.name)
-            } else {
-                options.clone()
-            };
-            effective
-                .iter()
-                .map(|o| CommandEntry {
-                    name: o.label.clone(),
-                    description: o.description.clone(),
+impl CommandPalette {
+    /// Build palette entries for a token slot, checking injected options first,
+    /// then falling back to hardcoded options_for_provider().
+    fn build_slot_entries(
+        &self,
+        slot: &TokenSlot,
+        selected_values: &[String],
+    ) -> Vec<CommandEntry> {
+        match &slot.kind {
+            TokenKind::Enum(options) => {
+                let effective = if options.is_empty() {
+                    // Check injected options first
+                    if let Some(injected) = self.injected_options.get(&slot.name) {
+                        if !injected.is_empty() {
+                            injected.clone()
+                        } else {
+                            // Injected but empty -- fall back to hardcoded
+                            let provider =
+                                selected_values.first().map(|s| s.as_str()).unwrap_or("");
+                            let hardcoded = options_for_provider(provider, &slot.name);
+                            if hardcoded.is_empty() {
+                                // No hardcoded either -- show loading indicator
+                                return vec![CommandEntry {
+                                    name: "Discovering projects...".into(),
+                                    description: "Querying CSP for available projects".into(),
+                                    usage: None,
+                                }];
+                            }
+                            hardcoded
+                        }
+                    } else {
+                        // No injected options -- use hardcoded
+                        let provider = selected_values.first().map(|s| s.as_str()).unwrap_or("");
+                        options_for_provider(provider, &slot.name)
+                    }
+                } else {
+                    options.clone()
+                };
+                effective
+                    .iter()
+                    .map(|o| CommandEntry {
+                        name: o.label.clone(),
+                        description: o.description.clone(),
+                        usage: None,
+                    })
+                    .collect()
+            }
+            TokenKind::FreeText { placeholder } => {
+                vec![CommandEntry {
+                    name: placeholder.clone(),
+                    description: format!("Type a value for {}", slot.name),
                     usage: None,
-                })
-                .collect()
-        }
-        TokenKind::FreeText { placeholder } => {
-            vec![CommandEntry {
-                name: placeholder.clone(),
-                description: format!("Type a value for {}", slot.name),
-                usage: None,
-            }]
+                }]
+            }
         }
     }
 }
@@ -373,9 +438,7 @@ pub fn connect_grammar() -> CommandGrammar {
             },
             TokenSlot {
                 name: "project".into(),
-                kind: TokenKind::FreeText {
-                    placeholder: "<gcp-project-id>".into(),
-                },
+                kind: TokenKind::Enum(vec![]), // populated dynamically by CSP discovery
                 required: false,
                 prefix: Some("--project=".into()),
             },
@@ -669,5 +732,130 @@ mod tests {
         let v = p.view();
         assert!(v.is_some());
         assert_eq!(v.unwrap().entries.len(), p.all_commands.len());
+    }
+
+    // rtmx:req REQ-LLM-031
+    #[test]
+    fn test_inject_options_populates_slot() {
+        let mut palette = CommandPalette::new();
+        palette.show();
+        let options = vec![
+            TokenOption {
+                value: "proj-1".into(),
+                label: "Project One".into(),
+                description: "proj-1".into(),
+            },
+            TokenOption {
+                value: "proj-2".into(),
+                label: "Project Two".into(),
+                description: "proj-2".into(),
+            },
+        ];
+        palette.inject_options("project", options);
+
+        // Enter /connect grammar and advance to project slot
+        let grammar = connect_grammar();
+        palette.enter_token_stage(grammar);
+        // Advance through provider, model, region to reach project
+        palette.advance_token("vertex".into());
+        palette.advance_token("gemini-3.1-pro".into());
+        palette.advance_token("us-central1".into());
+        // Now at project slot -- should show injected options
+        let view = palette.view();
+        assert!(view.is_some());
+        let v = view.unwrap();
+        assert!(v.entries.iter().any(|e| e.name == "Project One"));
+        assert!(v.entries.iter().any(|e| e.name == "Project Two"));
+    }
+
+    // rtmx:req REQ-LLM-031
+    #[test]
+    fn test_clear_injected_removes_options() {
+        let mut palette = CommandPalette::new();
+        palette.show();
+        palette.inject_options(
+            "project",
+            vec![TokenOption {
+                value: "p".into(),
+                label: "P".into(),
+                description: "d".into(),
+            }],
+        );
+        palette.clear_injected("project");
+        // Verify the key is removed
+        let grammar = connect_grammar();
+        palette.enter_token_stage(grammar);
+        palette.advance_token("vertex".into());
+        palette.advance_token("gemini-3.1-pro".into());
+        palette.advance_token("us-central1".into());
+        // Should fall through to hardcoded (which is empty for project)
+        // or show loading/empty state
+        let view = palette.view();
+        // Should not contain our previously-injected "P"
+        if let Some(v) = view {
+            assert!(!v.entries.iter().any(|e| e.name == "P"));
+        }
+    }
+
+    // rtmx:req REQ-LLM-031
+    #[test]
+    fn test_connect_grammar_project_slot_is_enum() {
+        let grammar = connect_grammar();
+        let project_slot = &grammar.slots[3];
+        assert_eq!(project_slot.name, "project");
+        assert!(matches!(project_slot.kind, TokenKind::Enum(_)));
+    }
+
+    // rtmx:req REQ-LLM-031
+    #[test]
+    fn test_refresh_current_slot_updates_filtered() {
+        let mut palette = CommandPalette::new();
+        palette.show();
+        let grammar = connect_grammar();
+        palette.enter_token_stage(grammar);
+        palette.advance_token("vertex".into());
+        palette.advance_token("gemini-3.1-pro".into());
+        palette.advance_token("us-central1".into());
+        // Now at project slot with no injected options
+        // Inject some options and refresh
+        palette.inject_options(
+            "project",
+            vec![TokenOption {
+                value: "new-proj".into(),
+                label: "New Project".into(),
+                description: "new-proj".into(),
+            }],
+        );
+        palette.refresh_current_slot();
+        let view = palette.view();
+        assert!(view.is_some());
+        assert!(
+            view.unwrap()
+                .entries
+                .iter()
+                .any(|e| e.name == "New Project")
+        );
+    }
+
+    // rtmx:req REQ-LLM-031
+    #[test]
+    fn test_non_project_slots_unaffected_by_injection() {
+        // Injecting options for "project" should not affect model/region slots
+        let mut palette = CommandPalette::new();
+        palette.show();
+        palette.inject_options(
+            "project",
+            vec![TokenOption {
+                value: "p".into(),
+                label: "Injected".into(),
+                description: "d".into(),
+            }],
+        );
+        let grammar = connect_grammar();
+        palette.enter_token_stage(grammar);
+        // First slot is provider -- should show vertex/bedrock/azure/local, not injected
+        let view = palette.view().unwrap();
+        assert!(view.entries.iter().any(|e| e.name == "vertex"));
+        assert!(!view.entries.iter().any(|e| e.name == "Injected"));
     }
 }
