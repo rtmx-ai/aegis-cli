@@ -28,6 +28,7 @@ concurrency:
 #   - Unit Tests (ubuntu-latest)
 #   - Unit Tests (windows-latest)
 #   - Integration Tests
+#   - Integration Tests (windows)
 #   - Doc Tests
 #   - Coverage
 #   - License & Advisory Audit
@@ -101,6 +102,27 @@ jobs:
             echo "No integration test binaries found -- skipping"
           fi
 
+  # rtmx:req REQ-TEST-043 -- Integration tests run on both ubuntu and windows
+  integration-tests-windows:
+    name: Integration Tests (windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - name: Run integration tests (exclude Unix-only MCP tests)
+        # MCP integration tests require bash/shell scripts and are Unix-only.
+        # Use --filter-expr to exclude mcp_integration tests on Windows.
+        run: |
+          $tests = cargo nextest list --test '*' --workspace 2>&1
+          if ($tests -match "test:") {
+            cargo nextest run --test '*' --workspace -E 'not test(mcp_)'
+          } else {
+            Write-Output "No integration test binaries found -- skipping"
+          }
+
   doc-tests:
     name: Doc Tests
     runs-on: ubuntu-latest
@@ -113,6 +135,7 @@ jobs:
 
   coverage:
     name: Coverage
+    # rtmx:req REQ-TEST-034 -- Coverage threshold: fail < 60%, warn < 70%, target 80%
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -428,7 +451,7 @@ jobs:
     name: Build Gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [format, lint, unit-tests, integration-tests, doc-tests, coverage, cargo-deny, sbom, deb-package, rpm-package, airgap-bundle, rtmx-health, rtmx-update]
+    needs: [format, lint, unit-tests, integration-tests, integration-tests-windows, doc-tests, coverage, cargo-deny, sbom, deb-package, rpm-package, airgap-bundle, rtmx-health, rtmx-update]
     if: always()
     steps:
       - name: Check required jobs
@@ -445,7 +468,7 @@ jobs:
     # These LTO builds are extremely CPU-intensive and triggered GitHub's
     # abuse detection on 2026-03-28. PR builds validate correctness only.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [format, lint, unit-tests, integration-tests, doc-tests]
+    needs: [format, lint, unit-tests, integration-tests, integration-tests-windows, doc-tests]
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -482,7 +505,7 @@ jobs:
   build-macos:
     name: Build (aarch64-apple-darwin)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [format, lint, unit-tests, integration-tests, doc-tests]
+    needs: [format, lint, unit-tests, integration-tests, integration-tests-windows, doc-tests]
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
