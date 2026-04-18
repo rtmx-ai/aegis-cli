@@ -25,8 +25,8 @@ pub struct CommandPaletteView {
 /// The command palette state.
 pub struct CommandPalette {
     all_commands: Vec<CommandEntry>,
-    filtered: Vec<CommandEntry>,
-    selected: usize,
+    pub(crate) filtered: Vec<CommandEntry>,
+    pub(crate) selected: usize,
     pub is_visible: bool,
     /// Current stage: command selection or token-level argument selection.
     pub stage: PaletteStage,
@@ -339,6 +339,7 @@ impl CommandPalette {
     pub fn in_token_stage(&self) -> bool {
         matches!(self.stage, PaletteStage::TokenSelection { .. })
     }
+
 }
 
 impl CommandPalette {

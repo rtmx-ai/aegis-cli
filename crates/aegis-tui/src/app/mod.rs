@@ -35,7 +35,7 @@ pub use commands::ProviderInfo;
 pub use commands::connect::{ConnectProvider, ConnectRequest, auth_guidance};
 
 /// Status of an in-flight CSP project discovery request.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum CspDiscoveryStatus {
     #[default]
     Idle,
