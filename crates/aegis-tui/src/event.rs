@@ -26,6 +26,17 @@ pub enum TuiEvent {
     ApprovalRequest(ApprovalRequestHandle),
     /// Animation tick (~150ms interval).
     Tick,
+    /// CSP project discovery completed successfully.
+    CspProjectsReady {
+        provider: String,
+        projects: Vec<(String, String)>, // (id, name) pairs
+    },
+    /// CSP project discovery failed with guidance for the user.
+    CspProjectsError {
+        provider: String,
+        message: String,
+        guidance: String,
+    },
 }
 
 /// A pending HITL approval request with the channel to send the decision back.
@@ -67,6 +78,21 @@ mod tests {
 
         let tick = TuiEvent::Tick;
         assert!(matches!(tick, TuiEvent::Tick));
+
+        // rtmx:req REQ-LLM-031
+        let csp_ready = TuiEvent::CspProjectsReady {
+            provider: "vertex".to_string(),
+            projects: vec![("my-proj".to_string(), "My Project".to_string())],
+        };
+        assert!(matches!(csp_ready, TuiEvent::CspProjectsReady { .. }));
+
+        // rtmx:req REQ-LLM-031
+        let csp_error = TuiEvent::CspProjectsError {
+            provider: "vertex".to_string(),
+            message: "gcloud not found".to_string(),
+            guidance: "Install gcloud CLI".to_string(),
+        };
+        assert!(matches!(csp_error, TuiEvent::CspProjectsError { .. }));
 
         let tool = TuiEvent::AgentToolUse(ToolCall::ReadFile {
             path: FilePath::new_unchecked("src/main.rs"),

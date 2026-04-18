@@ -34,6 +34,19 @@ use tokio::sync::mpsc;
 pub use commands::ProviderInfo;
 pub use commands::connect::{ConnectProvider, ConnectRequest, auth_guidance};
 
+/// Status of an in-flight CSP project discovery request.
+#[derive(Debug, Clone, Default)]
+pub enum CspDiscoveryStatus {
+    #[default]
+    Idle,
+    /// Discovery is in progress for the given provider.
+    Pending(String),
+    /// Discovery completed successfully.
+    Ready,
+    /// Discovery failed with a message and guidance.
+    Failed { message: String, guidance: String },
+}
+
 /// Central application state.
 pub struct App {
     pub phase: AppPhase,
@@ -87,6 +100,13 @@ pub struct App {
 
     /// Current provider connection info for `/connect` no-arg display.
     pub current_provider_info: Option<ProviderInfo>,
+
+    /// Pending CSP project discovery request for the composition root to process.
+    /// Set by the TUI when a cloud provider token is selected, consumed by main.rs.
+    pub pending_csp_discovery: Option<String>,
+
+    /// Current status of CSP project discovery (for UI feedback).
+    pub csp_discovery_status: CspDiscoveryStatus,
 }
 
 /// Number of lines to scroll per PageUp/PageDown press.
@@ -120,6 +140,8 @@ impl App {
             command_palette: CommandPalette::new(),
             pending_connect: None,
             current_provider_info: None,
+            pending_csp_discovery: None,
+            csp_discovery_status: CspDiscoveryStatus::Idle,
         }
     }
 
@@ -210,6 +232,58 @@ impl App {
                 });
                 self.pending_approval = Some(handle);
                 self.phase = AppPhase::AwaitingApproval;
+                Action::Continue
+            }
+            TuiEvent::CspProjectsReady {
+                provider: _,
+                projects,
+            } => {
+                use crate::command_palette::TokenOption;
+                let mut options: Vec<TokenOption> = projects
+                    .into_iter()
+                    .map(|(id, name)| TokenOption {
+                        value: id.clone(),
+                        label: name,
+                        description: id,
+                    })
+                    .collect();
+                // Add a manual entry fallback at the end
+                options.push(TokenOption {
+                    value: "__manual__".into(),
+                    label: "Type project ID manually...".into(),
+                    description: "Enter a project ID not listed above".into(),
+                });
+                self.command_palette.inject_options("project", options);
+                self.csp_discovery_status = CspDiscoveryStatus::Ready;
+                // If palette is currently showing the project slot, refresh it
+                self.command_palette.refresh_current_slot();
+                Action::Continue
+            }
+            TuiEvent::CspProjectsError {
+                provider,
+                message,
+                guidance,
+            } => {
+                // Show guidance as a system message
+                self.messages.push(ChatMessage::system(format!(
+                    "CSP project discovery failed for {provider}: {message}\n\
+                     {guidance}"
+                )));
+                self.csp_discovery_status = CspDiscoveryStatus::Failed {
+                    message: message.clone(),
+                    guidance,
+                };
+                // Inject a single "Type manually" fallback option
+                use crate::command_palette::TokenOption;
+                self.command_palette.inject_options(
+                    "project",
+                    vec![TokenOption {
+                        value: "__manual__".into(),
+                        label: "Type project ID manually...".into(),
+                        description: message,
+                    }],
+                );
+                self.command_palette.refresh_current_slot();
                 Action::Continue
             }
             TuiEvent::Tick => {
@@ -1438,6 +1512,69 @@ trailing";
         app.execute_copy_command();
         let last = app.messages.last().unwrap();
         assert!(last.content.contains("no code block"));
+    }
+
+    // rtmx:req REQ-LLM-031
+    #[test]
+    fn csp_discovery_status_defaults_to_idle() {
+        let status = CspDiscoveryStatus::default();
+        assert!(matches!(status, CspDiscoveryStatus::Idle));
+    }
+
+    // rtmx:req REQ-LLM-031
+    #[test]
+    fn csp_projects_ready_injects_options_and_sets_status() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        app.handle_event(
+            TuiEvent::CspProjectsReady {
+                provider: "vertex".to_string(),
+                projects: vec![
+                    ("proj-1".to_string(), "Project One".to_string()),
+                    ("proj-2".to_string(), "Project Two".to_string()),
+                ],
+            },
+            &tx,
+        );
+        assert!(matches!(
+            app.csp_discovery_status,
+            CspDiscoveryStatus::Ready
+        ));
+    }
+
+    // rtmx:req REQ-LLM-031
+    #[test]
+    fn csp_projects_error_adds_system_message_and_sets_status() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        app.handle_event(
+            TuiEvent::CspProjectsError {
+                provider: "vertex".to_string(),
+                message: "gcloud not found".to_string(),
+                guidance: "Install gcloud CLI".to_string(),
+            },
+            &tx,
+        );
+        assert!(matches!(
+            app.csp_discovery_status,
+            CspDiscoveryStatus::Failed { .. }
+        ));
+        assert!(!app.messages.is_empty());
+        assert!(
+            app.messages
+                .last()
+                .unwrap()
+                .content
+                .contains("gcloud not found")
+        );
+    }
+
+    // rtmx:req REQ-LLM-031
+    #[test]
+    fn app_new_initializes_csp_fields() {
+        let app = App::new("test-model");
+        assert!(app.pending_csp_discovery.is_none());
+        assert!(matches!(app.csp_discovery_status, CspDiscoveryStatus::Idle));
     }
 
     // rtmx:req REQ-TUI-045
