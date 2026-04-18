@@ -339,14 +339,6 @@ impl CommandPalette {
     pub fn in_token_stage(&self) -> bool {
         matches!(self.stage, PaletteStage::TokenSelection { .. })
     }
-
-    /// Inject dynamically-discovered options for a named slot.
-    /// (Stub -- real implementation in WI-3)
-    pub fn inject_options(&mut self, _slot_name: &str, _options: Vec<TokenOption>) {}
-
-    /// Refresh the filtered entries for the current slot.
-    /// (Stub -- real implementation in WI-3)
-    pub fn refresh_current_slot(&mut self) {}
 }
 
 impl CommandPalette {
