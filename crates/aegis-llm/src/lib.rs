@@ -10,6 +10,7 @@ pub mod bedrock;
 pub mod bedrock_stream;
 pub mod capabilities;
 pub mod config;
+pub mod csp_discovery;
 pub mod discovery;
 pub mod dlp_gate;
 pub mod failover;
