@@ -1309,6 +1309,35 @@ async fn run_interactive_chat(
             handle_connect_request(&connect_req, &mut app, &shared_provider_config);
         }
 
+        // REQ-LLM-031: CSP project discovery -- spawn blocking task when
+        // the TUI requests it (e.g. user picks a cloud provider in the
+        // command palette and the palette needs a project list).
+        if let Some(provider) = app.pending_csp_discovery.take() {
+            let event_tx_csp = event_tx.clone();
+            tokio::task::spawn_blocking(move || {
+                use aegis_llm::csp_discovery::{CliCspDiscoverer, CspDiscoverer};
+                let discoverer = CliCspDiscoverer;
+                match discoverer.discover_projects(&provider) {
+                    Ok(projects) => {
+                        let pairs: Vec<(String, String)> =
+                            projects.into_iter().map(|p| (p.id, p.name)).collect();
+                        let _ = event_tx_csp.send(TuiEvent::CspProjectsReady {
+                            provider,
+                            projects: pairs,
+                        });
+                    }
+                    Err(e) => {
+                        let (message, guidance) = e.to_guidance();
+                        let _ = event_tx_csp.send(TuiEvent::CspProjectsError {
+                            provider,
+                            message,
+                            guidance,
+                        });
+                    }
+                }
+            });
+        }
+
         // REQ-TUI-060: autosave after every completed assistant turn so a
         // crash right after the turn (hot reload, panic, OOM) does not lose
         // the just-finished response.
@@ -1849,5 +1878,43 @@ mod tests {
         // Verify create_provider handles it
         let provider = aegis_llm::provider::create_provider(&cfg);
         assert!(provider.is_ok());
+    }
+
+    // rtmx:req REQ-LLM-031
+    /// Verify the composition root can access CSP discovery types and that
+    /// the local provider returns an empty project list (safe in CI).
+    #[test]
+    fn csp_discovery_types_are_accessible() {
+        use aegis_llm::csp_discovery::{CliCspDiscoverer, CspDiscoverer};
+        let discoverer = CliCspDiscoverer;
+        let result = discoverer.discover_projects("local");
+        assert!(
+            result.is_ok(),
+            "local provider discovery should succeed: {:?}",
+            result.err()
+        );
+        assert!(
+            result.unwrap().is_empty(),
+            "local provider should return no projects"
+        );
+    }
+
+    // rtmx:req REQ-LLM-031
+    /// Verify the TuiEvent variants used by CSP discovery wiring compile
+    /// and can be constructed.
+    #[test]
+    fn csp_discovery_tui_events_constructible() {
+        let ready = TuiEvent::CspProjectsReady {
+            provider: "vertex".to_string(),
+            projects: vec![("proj-1".to_string(), "My Project".to_string())],
+        };
+        assert!(matches!(ready, TuiEvent::CspProjectsReady { .. }));
+
+        let err = TuiEvent::CspProjectsError {
+            provider: "bedrock".to_string(),
+            message: "not found".to_string(),
+            guidance: "install aws cli".to_string(),
+        };
+        assert!(matches!(err, TuiEvent::CspProjectsError { .. }));
     }
 }
