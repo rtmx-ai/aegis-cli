@@ -9,6 +9,7 @@ license.workspace = true
 aegis-domain = { path = "../aegis-domain" }
 tokio = { workspace = true }
 async-trait = { workspace = true }
+chrono = { workspace = true }
 indexmap = { version = "2", features = ["serde"] }
 tracing = { workspace = true }
 serde = { workspace = true }

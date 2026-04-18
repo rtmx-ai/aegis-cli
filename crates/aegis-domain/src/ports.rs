@@ -134,6 +134,22 @@ pub trait AuditLedger: Send + Sync {
     }
 }
 
+// Blanket impl: Arc<T: AuditLedger> is also an AuditLedger.
+#[async_trait]
+impl<T: AuditLedger> AuditLedger for std::sync::Arc<T> {
+    async fn record(&self, event: &DomainEvent) -> Result<(), DomainError> {
+        (**self).record(event).await
+    }
+
+    async fn record_with_req(
+        &self,
+        event: &DomainEvent,
+        req_id: Option<&str>,
+    ) -> Result<(), DomainError> {
+        (**self).record_with_req(event, req_id).await
+    }
+}
+
 /// Outgoing port: security filter (.aegisignore).
 pub trait SecurityFilter: Send + Sync {
     /// Check if a file path is blocked by .aegisignore.

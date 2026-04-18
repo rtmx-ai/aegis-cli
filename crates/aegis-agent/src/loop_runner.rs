@@ -8,11 +8,21 @@ use crate::mcp::McpManager;
 use crate::truncation::truncate_output;
 use crate::working_memory::{self, WorkingMemory};
 use aegis_domain::error::DomainError;
+use aegis_domain::event::DomainEvent;
 use aegis_domain::ports::*;
 use aegis_domain::types::*;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
 use tracing::{debug, info, warn};
+
+/// Provider attribution info for cost tracking (REQ-AUDIT-025).
+#[derive(Debug, Clone, Default)]
+pub struct ProviderInfo {
+    pub kind: String,
+    pub model: String,
+    pub project_id: Option<String>,
+    pub region: Option<String>,
+}
 
 /// Configuration for the agent loop.
 pub struct AgentConfig {
@@ -152,6 +162,8 @@ where
     adversary: Option<Arc<dyn AdversaryReviewer>>,
     /// Enforcement mode for the adversary reviewer.
     adversary_mode: ReviewMode,
+    /// Provider attribution for cost tracking (REQ-AUDIT-025).
+    provider_info: ProviderInfo,
 }
 
 impl<P, G, E, A, S> AgentLoop<P, G, E, A, S>
@@ -182,6 +194,7 @@ where
             mcp_manager: None,
             adversary: None,
             adversary_mode: ReviewMode::Off,
+            provider_info: ProviderInfo::default(),
         }
     }
 
@@ -207,12 +220,19 @@ where
             mcp_manager: None,
             adversary: None,
             adversary_mode: ReviewMode::Off,
+            provider_info: ProviderInfo::default(),
         }
     }
 
     /// Attach an MCP manager for third-party tool integration (REQ-AGENT-014).
     pub fn with_mcp_manager(mut self, mgr: McpManager) -> Self {
         self.mcp_manager = Some(Arc::new(Mutex::new(mgr)));
+        self
+    }
+
+    /// Attach provider info for cost tracking (REQ-AUDIT-025).
+    pub fn with_provider_info(mut self, info: ProviderInfo) -> Self {
+        self.provider_info = info;
         self
     }
 
@@ -321,6 +341,21 @@ where
                         // REQ-AGENT-027: Track cumulative tokens.
                         working_mem.accumulate_tokens(input_tokens, output_tokens);
                         total_output_tokens += output_tokens;
+
+                        // REQ-AUDIT-025: Emit TokensConsumed to audit ledger.
+                        let event = DomainEvent::TokensConsumed {
+                            session_id: "session".to_string(),
+                            provider_kind: self.provider_info.kind.clone(),
+                            model: self.provider_info.model.clone(),
+                            project_id: self.provider_info.project_id.clone(),
+                            region: self.provider_info.region.clone(),
+                            input_tokens,
+                            output_tokens,
+                            timestamp: chrono::Utc::now().to_rfc3339(),
+                        };
+                        if let Err(e) = self.ledger.record(&event).await {
+                            warn!("failed to record TokensConsumed event: {e}");
+                        }
                     }
                     StreamEvent::Error(msg) => {
                         return Err(DomainError::ProviderError { message: msg });
@@ -1168,6 +1203,155 @@ mod tests {
 
         let result = agent.run("Read huge.log").await.unwrap();
         assert_eq!(result.response, "Output was truncated.");
+    }
+
+    // --- REQ-AUDIT-025: TokensConsumed emission ---
+
+    // rtmx:req REQ-AUDIT-025
+    #[tokio::test]
+    async fn test_agent_done_emits_tokens_consumed_event() {
+        use aegis_domain::event::DomainEvent;
+        use std::sync::Arc;
+
+        let provider = MockLlmProvider::new();
+        provider.queue_response(vec![
+            StreamEvent::Token("Hello!".to_string()),
+            StreamEvent::Done {
+                input_tokens: 100,
+                output_tokens: 50,
+            },
+        ]);
+
+        let ledger = Arc::new(MockAuditLedger::new());
+        let agent = AgentLoop::new(
+            provider,
+            MockApprovalGate::always_approve(),
+            MockToolExecutor::new(),
+            Arc::clone(&ledger),
+            MockSecurityFilter,
+            AgentConfig::default(),
+        )
+        .with_provider_info(ProviderInfo {
+            kind: "vertex".to_string(),
+            model: "gemini-2.5-pro".to_string(),
+            project_id: Some("my-project".to_string()),
+            region: Some("us-central1".to_string()),
+        });
+
+        let result = agent.run("Hi").await.unwrap();
+        assert_eq!(result.response, "Hello!");
+        assert_eq!(result.input_tokens, 100);
+        assert_eq!(result.output_tokens, 50);
+
+        let events = ledger.events();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            DomainEvent::TokensConsumed {
+                input_tokens,
+                output_tokens,
+                ..
+            } => {
+                assert_eq!(*input_tokens, 100);
+                assert_eq!(*output_tokens, 50);
+            }
+            other => panic!("Expected TokensConsumed, got: {other:?}"),
+        }
+    }
+
+    // rtmx:req REQ-AUDIT-025
+    #[tokio::test]
+    async fn test_tokens_consumed_has_provider_context() {
+        use aegis_domain::event::DomainEvent;
+        use std::sync::Arc;
+
+        let provider = MockLlmProvider::new();
+        provider.queue_response(vec![
+            StreamEvent::Token("Ok.".to_string()),
+            StreamEvent::Done {
+                input_tokens: 50,
+                output_tokens: 25,
+            },
+        ]);
+
+        let ledger = Arc::new(MockAuditLedger::new());
+        let agent = AgentLoop::new(
+            provider,
+            MockApprovalGate::always_approve(),
+            MockToolExecutor::new(),
+            Arc::clone(&ledger),
+            MockSecurityFilter,
+            AgentConfig::default(),
+        )
+        .with_provider_info(ProviderInfo {
+            kind: "bedrock".to_string(),
+            model: "claude-sonnet-4.5".to_string(),
+            project_id: None,
+            region: Some("us-east-1".to_string()),
+        });
+
+        agent.run("Hi").await.unwrap();
+
+        let events = ledger.events();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            DomainEvent::TokensConsumed {
+                provider_kind,
+                model,
+                project_id,
+                region,
+                ..
+            } => {
+                assert_eq!(provider_kind, "bedrock");
+                assert_eq!(model, "claude-sonnet-4.5");
+                assert!(project_id.is_none());
+                assert_eq!(region.as_deref(), Some("us-east-1"));
+            }
+            other => panic!("Expected TokensConsumed, got: {other:?}"),
+        }
+    }
+
+    // rtmx:req REQ-AUDIT-025
+    #[tokio::test]
+    async fn test_local_provider_emits_zero_cost_event() {
+        use aegis_domain::event::DomainEvent;
+        use std::sync::Arc;
+
+        let provider = MockLlmProvider::new();
+        provider.queue_response(vec![
+            StreamEvent::Token("Done.".to_string()),
+            StreamEvent::Done {
+                input_tokens: 200,
+                output_tokens: 100,
+            },
+        ]);
+
+        let ledger = Arc::new(MockAuditLedger::new());
+        let agent = AgentLoop::new(
+            provider,
+            MockApprovalGate::always_approve(),
+            MockToolExecutor::new(),
+            Arc::clone(&ledger),
+            MockSecurityFilter,
+            AgentConfig::default(),
+        )
+        .with_provider_info(ProviderInfo {
+            kind: "local".to_string(),
+            model: "llama3".to_string(),
+            project_id: None,
+            region: None,
+        });
+
+        let result = agent.run("Hi").await.unwrap();
+        assert_eq!(result.response, "Done.");
+
+        let events = ledger.events();
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            DomainEvent::TokensConsumed { provider_kind, .. } => {
+                assert_eq!(provider_kind, "local");
+            }
+            other => panic!("Expected TokensConsumed, got: {other:?}"),
+        }
     }
 
     // rtmx:req REQ-AGENT-012

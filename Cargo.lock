@@ -16,6 +16,7 @@ dependencies = [
  "aegis-security",
  "aegis-test-support",
  "async-trait",
+ "chrono",
  "indexmap",
  "mockall",
  "rstest",
