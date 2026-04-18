@@ -11,6 +11,7 @@ pub mod command_palette;
 pub mod command_palette_render;
 pub mod diff;
 pub mod event;
+pub mod hyperlinks;
 pub mod input;
 pub mod layout;
 pub mod markdown;

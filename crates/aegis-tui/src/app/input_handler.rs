@@ -531,6 +531,79 @@ mod tests {
         app.handle_key(key, tx);
     }
 
+    // rtmx:req REQ-TUI-062
+    #[test]
+    fn test_slash_command_appears_in_chat_history() {
+        let mut app = App::new("test-model");
+        app.phase = AppPhase::Idle;
+        let (tx, _rx) = agent_tx();
+
+        // Type "/doctor" and press Enter
+        for ch in "/doctor".chars() {
+            let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
+            app.handle_key(key, &tx);
+        }
+        // Dismiss the command palette if visible
+        app.command_palette.hide();
+
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        app.handle_key(enter, &tx);
+
+        // The first message should be the user's slash command text
+        assert!(
+            !app.messages.is_empty(),
+            "should have at least one message after slash command"
+        );
+        assert_eq!(
+            app.messages[0].kind,
+            crate::messages::MessageKind::User,
+            "first message should be User kind"
+        );
+        assert_eq!(
+            app.messages[0].content, "/doctor",
+            "first message content should be the slash command text"
+        );
+
+        // The system response from /doctor should follow
+        assert!(
+            app.messages.len() >= 2,
+            "should have system response after user message"
+        );
+        assert_eq!(
+            app.messages[1].kind,
+            crate::messages::MessageKind::System,
+            "second message should be System (doctor output)"
+        );
+    }
+
+    // rtmx:req REQ-TUI-062
+    #[test]
+    fn test_regular_message_still_appears_in_history() {
+        let mut app = App::new("test-model");
+        app.phase = AppPhase::Idle;
+        let (tx, mut rx) = agent_tx();
+
+        // Type "hello" and press Enter
+        for ch in "hello".chars() {
+            let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
+            app.handle_key(key, &tx);
+        }
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        app.handle_key(enter, &tx);
+
+        // The message should appear in history
+        assert_eq!(app.messages.len(), 1, "should have one user message");
+        assert_eq!(app.messages[0].kind, crate::messages::MessageKind::User);
+        assert_eq!(app.messages[0].content, "hello");
+
+        // The message should also have been sent to the agent channel
+        let sent = rx.try_recv().unwrap();
+        assert_eq!(sent, "hello");
+
+        // Phase should be Streaming (waiting for agent response)
+        assert_eq!(app.phase, AppPhase::Streaming);
+    }
+
     // rtmx:req REQ-LLM-031
     #[test]
     fn test_selecting_vertex_triggers_csp_discovery() {
