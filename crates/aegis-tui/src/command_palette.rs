@@ -339,7 +339,6 @@ impl CommandPalette {
     pub fn in_token_stage(&self) -> bool {
         matches!(self.stage, PaletteStage::TokenSelection { .. })
     }
-
 }
 
 impl CommandPalette {
