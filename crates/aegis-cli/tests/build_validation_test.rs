@@ -473,6 +473,24 @@ fn read_release_yml() -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
+// rtmx:req REQ-BUILD-056
+#[test]
+fn test_msi_upgrade_code_is_not_placeholder() {
+    let wxs = workspace_root().join("crates/aegis-cli/wix/main.wxs");
+    let content =
+        std::fs::read_to_string(&wxs).unwrap_or_else(|e| panic!("read {}: {e}", wxs.display()));
+    assert!(
+        !content.contains("F1A2B3C4-D5E6-7890-ABCD-EF1234567890"),
+        "MSI UpgradeCode still contains placeholder GUID -- \
+         generate a real UUID v4 before release"
+    );
+    // Verify it has *some* UpgradeCode that looks like a GUID
+    assert!(
+        content.contains("UpgradeCode='"),
+        "WiX source must define an UpgradeCode"
+    );
+}
+
 fn read_ci_yml() -> String {
     let path = workspace_root().join(".github/workflows/ci.yml");
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))

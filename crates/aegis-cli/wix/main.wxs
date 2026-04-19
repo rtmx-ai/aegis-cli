@@ -5,14 +5,16 @@
   Build with: cargo wix --package aegis-cli --nocapture
   Output: target/wix/aegis-cli-<version>-x86_64.msi
 
-  REQ-BUILD-055: Replace UpgradeCode GUID before first public release.
+  REQ-BUILD-055: UpgradeCode GUID replaced (REQ-BUILD-056 enforces via CI test).
+  WARNING: Do NOT change the UpgradeCode after first release -- it identifies
+  this product line for in-place upgrades across all deployed installations.
 -->
 <Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
 
     <Product
         Id='*'
         Name='aegis'
-        UpgradeCode='F1A2B3C4-D5E6-7890-ABCD-EF1234567890'
+        UpgradeCode='E10B5C98-3D43-4D7F-92F3-6303DB263EF1'
         Manufacturer='RTMX AI'
         Language='1033'
         Codepage='1252'
