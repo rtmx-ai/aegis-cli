@@ -4,6 +4,7 @@ pub(crate) mod connect;
 pub(crate) mod context;
 pub(crate) mod doctor;
 pub(crate) mod infra;
+pub(crate) mod undo;
 
 use super::{Action, App};
 use crate::messages::ChatMessage;
@@ -85,8 +86,8 @@ impl App {
                 )));
                 Action::Continue
             }
-            SlashCommand::Undo => {
-                self.execute_undo_command();
+            SlashCommand::Undo(args) => {
+                self.handle_undo_command(&args);
                 Action::Continue
             }
             SlashCommand::Copy => {

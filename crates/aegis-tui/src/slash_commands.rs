@@ -28,9 +28,10 @@ pub enum SlashCommand {
     Model(String),
     /// Connect to an LLM endpoint: /connect <url>
     Connect(String),
-    /// Revert the most recent approved write. Scaffold only: actual
-    /// rollback requires HITL edit tracking (REQ-HITL-005).
-    Undo,
+    /// Revert approved writes. Accepts "--all", a numeric entry ID,
+    /// or empty (rolls back the most recent entry). Wired to
+    /// `aegis_hitl::rollback::RollbackJournal` (REQ-HITL-005).
+    Undo(String),
     /// Copy the last fenced code block from the most recent assistant
     /// message to the system clipboard.
     Copy,
@@ -116,7 +117,7 @@ pub fn parse_slash_command(input: &str) -> ParseResult {
                 .join(" ");
             ParseResult::Command(SlashCommand::Connect(raw_arg))
         }
-        "/undo" => ParseResult::Command(SlashCommand::Undo),
+        "/undo" => ParseResult::Command(SlashCommand::Undo(arg)),
         "/copy" => ParseResult::Command(SlashCommand::Copy),
         _ => ParseResult::Unknown(cmd),
     }
@@ -389,7 +390,7 @@ mod tests {
     fn parse_undo_command() {
         assert_eq!(
             parse_slash_command("/undo"),
-            ParseResult::Command(SlashCommand::Undo)
+            ParseResult::Command(SlashCommand::Undo(String::new()))
         );
     }
 
@@ -398,16 +399,16 @@ mod tests {
     fn parse_undo_command_case_insensitive() {
         assert_eq!(
             parse_slash_command("/UNDO"),
-            ParseResult::Command(SlashCommand::Undo)
+            ParseResult::Command(SlashCommand::Undo(String::new()))
         );
     }
 
     // rtmx:req REQ-TUI-027
     #[test]
-    fn parse_undo_ignores_trailing_args() {
+    fn parse_undo_carries_args() {
         assert_eq!(
-            parse_slash_command("/undo last"),
-            ParseResult::Command(SlashCommand::Undo)
+            parse_slash_command("/undo --all"),
+            ParseResult::Command(SlashCommand::Undo("--all".to_string()))
         );
     }
 
