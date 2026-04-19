@@ -179,3 +179,63 @@ Feature: Infrastructure Plugin Protocol (aegis-infra/v1)
     And progress events should be relayed to the TUI
     And no result should be written to config.yaml
     And no cloud resources should be created
+
+  # ---------------------------------------------------------------------------
+  # REQ-INFRA-013: Plugin credential refresh protocol (v1.1)
+  # ---------------------------------------------------------------------------
+
+  # @req REQ-INFRA-013
+  Scenario: Host responds to credential_request from a v1.1 plugin
+    Given a plugin with protocol_version "aegis-infra/v1.1"
+    And the AuthManager holds valid GCP credentials with TTL > 0
+    When the plugin emits {"type": "credential_request", "provider": "gcp", "scopes": ["cloud-platform"]}
+    Then the host should write to the plugin's stdin:
+      """
+      {"type": "credential_response", "provider": "gcp", "access_token": "<token>", "expires_in": <ttl>}
+      """
+    And the access_token should be a freshly resolved token from the AuthManager
+
+  # @req REQ-INFRA-013
+  Scenario: Host refreshes expired credentials before responding to plugin
+    Given a plugin emits a credential_request for "gcp"
+    And the AuthManager's cached GCP token has expired
+    When the host processes the credential_request
+    Then the host should call auth_manager.resolve_or_refresh() to get a fresh token
+    And respond with the refreshed token and its new expires_in
+
+  # @req REQ-INFRA-013
+  Scenario: AWS credential response includes all SigV4 fields
+    Given a plugin emits {"type": "credential_request", "provider": "aws"}
+    And valid AWS STS credentials are available
+    When the host responds
+    Then the credential_response should include access_key_id, secret_access_key, session_token, and expires_in
+
+  # @req REQ-INFRA-013
+  Scenario: V1 plugins never receive credential responses
+    Given a plugin with protocol_version "aegis-infra/v1" (not v1.1)
+    When the plugin does not emit any credential_request events
+    Then the host should never write to the plugin's stdin
+    And the plugin should authenticate via inherited environment variables
+
+  # @req REQ-INFRA-013
+  Scenario: Credential request for unknown provider returns error
+    Given a plugin emits {"type": "credential_request", "provider": "oracle"}
+    When the host processes the request
+    Then the host should respond with {"type": "credential_response", "provider": "oracle", "error": "unsupported provider: oracle"}
+
+  # @req REQ-INFRA-013
+  Scenario: Plugin SDK requestCredentials helper wraps the protocol
+    Given a plugin built with @aegis/infra-sdk v1.1
+    When the plugin calls sdk.requestCredentials("gcp", ["cloud-platform"])
+    Then the SDK should emit a credential_request on stdout
+    And read the credential_response from stdin
+    And return the access_token and expires_in to the plugin code
+
+  # @req REQ-INFRA-013
+  Scenario: Host injects environment variables at spawn for backward compatibility
+    Given a plugin with protocol_version "aegis-infra/v1.1"
+    And the AuthManager holds valid GCP credentials
+    When the host spawns the plugin subprocess
+    Then GOOGLE_APPLICATION_CREDENTIALS should be set in the plugin's environment
+    And the credential file should have 0600 permissions
+    And the file should be cleaned up after the plugin exits

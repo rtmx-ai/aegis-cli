@@ -480,3 +480,65 @@ Feature: Agentic REA Loop with Tool Use
     Given the provider is a local Ollama instance
     When the agent sends rapid successive requests
     Then no rate limiting delay should be applied
+
+  # ---------------------------------------------------------------------------
+  # REQ-AGENT-044: Agent loop pause/retry on auth token expiry
+  # ---------------------------------------------------------------------------
+
+  # @req REQ-AGENT-044
+  @wip
+  Scenario: Agent retries current turn after auth token refresh
+    Given the agent is mid-turn with a valid conversation history
+    And the LLM provider returns HTTP 401 (token expired)
+    When the agent loop catches the AuthExpired error
+    Then it should emit a DomainEvent::AuthRefreshNeeded
+    And call auth_manager.wait_for_refresh(provider_kind, timeout: 5min)
+    And on successful refresh, recreate the provider with fresh credentials
+    And retry the same turn with the same prompt and history
+
+  # @req REQ-AGENT-044
+  @wip
+  Scenario: Agent surfaces error after auth refresh timeout
+    Given the agent encounters an HTTP 401 mid-turn
+    And the AuthManager cannot refresh within 5 minutes
+    When the refresh wait times out
+    Then the agent should surface an error to the user
+    And the error message should include re-auth instructions
+    And the conversation history should be preserved for retry
+
+  # @req REQ-AGENT-044
+  @wip
+  Scenario: Agent retries at most once per turn to prevent infinite loops
+    Given the agent retried a turn once due to auth expiry
+    And the refreshed token also fails with HTTP 401
+    When the second auth error occurs
+    Then the agent should not retry again
+    And the error should be surfaced to the user as a ProviderError
+    And a system message should suggest "/connect" to re-authenticate
+
+  # @req REQ-AGENT-044
+  @wip
+  Scenario: Context is fully preserved across auth retry
+    Given the agent has a 5-message conversation history
+    And an HTTP 401 triggers an auth retry
+    When the turn is retried with fresh credentials
+    Then the conversation history should contain the same 5 messages
+    And the system prompt should be unchanged
+    And the tool schemas should be unchanged
+
+  # @req REQ-AGENT-044
+  @wip
+  Scenario: Auth retry is not attempted for HTTP 400 or 403
+    Given the agent receives an HTTP 400 (bad request) from the provider
+    When the error is processed
+    Then the agent should NOT treat it as an auth error
+    And no auth refresh should be attempted
+    And the error should be surfaced as a standard ProviderError
+
+  # @req REQ-AGENT-044
+  @wip
+  Scenario: TUI displays refresh status during auth retry
+    Given the agent is waiting for auth refresh
+    When the TUI receives the AuthRefreshNeeded event
+    Then the status bar should show "Refreshing credentials..."
+    And a system message "Token expired. Refreshing..." should appear in the chat log
