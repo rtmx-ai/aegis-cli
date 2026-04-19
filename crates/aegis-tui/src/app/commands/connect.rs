@@ -343,4 +343,97 @@ mod tests {
         assert_eq!(req.provider, ConnectProvider::Vertex);
         assert_eq!(req.project.as_deref(), Some("test"));
     }
+
+    // rtmx:req REQ-TUI-063d
+    #[test]
+    fn test_connect_guided_flow_vertex() {
+        let req = parse_connect_args(
+            "vertex --model=gemini-3.1-pro --region=us-central1 --project=my-proj",
+        )
+        .unwrap();
+        assert_eq!(req.provider, ConnectProvider::Vertex);
+        assert_eq!(req.model.as_deref(), Some("gemini-3.1-pro"));
+        assert_eq!(req.region.as_deref(), Some("us-central1"));
+        assert_eq!(req.project.as_deref(), Some("my-proj"));
+    }
+
+    // rtmx:req REQ-TUI-063d
+    #[test]
+    fn test_connect_guided_flow_bedrock() {
+        let req =
+            parse_connect_args("bedrock --model=claude-opus-sonnet-4.5 --region=us-gov-west-1")
+                .unwrap();
+        assert_eq!(req.provider, ConnectProvider::Bedrock);
+        assert_eq!(req.model.as_deref(), Some("claude-opus-sonnet-4.5"));
+        assert_eq!(req.region.as_deref(), Some("us-gov-west-1"));
+    }
+
+    // rtmx:req REQ-TUI-063d
+    #[test]
+    fn test_connect_guided_flow_local() {
+        let req = parse_connect_args("local --model=llama3").unwrap();
+        assert_eq!(req.provider, ConnectProvider::Local);
+        assert_eq!(req.model.as_deref(), Some("llama3"));
+    }
+
+    // rtmx:req REQ-TUI-063d
+    #[test]
+    fn test_connect_guided_flow_azure() {
+        let req = parse_connect_args(
+            "azure --model=gpt-5.1 --region=usgovvirginia \
+             --endpoint=https://myendpoint.openai.azure.com",
+        )
+        .unwrap();
+        assert_eq!(req.provider, ConnectProvider::Azure);
+        assert_eq!(req.model.as_deref(), Some("gpt-5.1"));
+        assert_eq!(req.region.as_deref(), Some("usgovvirginia"));
+        assert_eq!(
+            req.endpoint.as_deref(),
+            Some("https://myendpoint.openai.azure.com")
+        );
+    }
+
+    // rtmx:req REQ-TUI-063d
+    #[test]
+    fn test_connect_grammar_builds_parseable_string() {
+        use crate::command_palette::{connect_grammar, options_for_provider};
+
+        let grammar = connect_grammar();
+        // Pick the first provider (vertex)
+        let provider = "vertex";
+        let model_opts = options_for_provider(provider, "model");
+        let region_opts = options_for_provider(provider, "region");
+
+        assert!(!model_opts.is_empty(), "vertex should have model options");
+        assert!(!region_opts.is_empty(), "vertex should have region options");
+
+        // Build a token string the way the guided palette would
+        let mut tokens = String::new();
+        tokens.push_str(provider);
+        // Append model with its prefix
+        let model_prefix = grammar.slots[1].prefix.as_deref().unwrap_or("");
+        tokens.push_str(&format!(" {}{}", model_prefix, model_opts[0].value));
+        // Append region with its prefix
+        let region_prefix = grammar.slots[2].prefix.as_deref().unwrap_or("");
+        tokens.push_str(&format!(" {}{}", region_prefix, region_opts[0].value));
+
+        let req = parse_connect_args(&tokens).unwrap();
+        assert_eq!(req.provider, ConnectProvider::Vertex);
+        assert_eq!(req.model.as_deref(), Some(model_opts[0].value.as_str()));
+        assert_eq!(req.region.as_deref(), Some(region_opts[0].value.as_str()));
+    }
+
+    // rtmx:req REQ-TUI-063d
+    #[test]
+    fn test_connect_with_project_id() {
+        let req = parse_connect_args(
+            "vertex --model=claude-sonnet-4.6 --region=us-east4 \
+             --project=aegis-prod-il5",
+        )
+        .unwrap();
+        assert_eq!(req.provider, ConnectProvider::Vertex);
+        assert_eq!(req.model.as_deref(), Some("claude-sonnet-4.6"));
+        assert_eq!(req.region.as_deref(), Some("us-east4"));
+        assert_eq!(req.project.as_deref(), Some("aegis-prod-il5"));
+    }
 }

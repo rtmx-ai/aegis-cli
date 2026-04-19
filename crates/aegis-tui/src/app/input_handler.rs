@@ -83,13 +83,22 @@ impl App {
                             }
 
                             // Append the value to input with appropriate prefix
-                            let token_text = if let Some(hint) = self.command_palette.stage_hint()
-                            {
-                                // Use the slot prefix if available
-                                let _ = hint; // stage_hint is for display
-                                format!("{} ", value)
-                            } else {
-                                format!("{} ", value)
+                            let token_text = {
+                                let prefix = match &self.command_palette.stage {
+                                    PaletteStage::TokenSelection {
+                                        grammar,
+                                        slot_index,
+                                        ..
+                                    } => grammar
+                                        .slots
+                                        .get(*slot_index)
+                                        .and_then(|s| s.prefix.clone()),
+                                    _ => None,
+                                };
+                                match prefix {
+                                    Some(p) => format!("{}{} ", p, value),
+                                    None => format!("{} ", value),
+                                }
                             };
                             self.input.text.push_str(&token_text);
                             self.input.cursor = self.input.text.len();
