@@ -114,14 +114,14 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - name: Run integration tests (exclude Unix-only MCP tests)
         # MCP integration tests require bash/shell scripts and are Unix-only.
-        # Use --filter-expr to exclude mcp_integration tests on Windows.
+        # Use -E filter to exclude mcp_integration tests on Windows.
+        shell: bash
         run: |
-          $tests = cargo nextest list --test '*' --workspace 2>&1
-          if ($tests -match "test:") {
+          if cargo nextest list --test '*' --workspace 2>&1 | grep -q "test:"; then
             cargo nextest run --test '*' --workspace -E 'not test(mcp_)'
-          } else {
-            Write-Output "No integration test binaries found -- skipping"
-          }
+          else
+            echo "No integration test binaries found -- skipping"
+          fi
 
   doc-tests:
     name: Doc Tests
