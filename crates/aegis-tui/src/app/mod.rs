@@ -26,6 +26,7 @@ use crate::input::InputState;
 use crate::messages::ChatMessage;
 use crate::thinking::ThinkingAnimation;
 use aegis_domain::types::ToolCall;
+use aegis_hitl::rollback::RollbackJournal;
 use crossterm::event::Event as CtEvent;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -107,6 +108,9 @@ pub struct App {
 
     /// Current status of CSP project discovery (for UI feedback).
     pub csp_discovery_status: CspDiscoveryStatus,
+
+    /// Rollback journal for `/undo`: captures pre-write file state.
+    pub rollback_journal: RollbackJournal,
 }
 
 /// Number of lines to scroll per PageUp/PageDown press.
@@ -142,6 +146,7 @@ impl App {
             current_provider_info: None,
             pending_csp_discovery: None,
             csp_discovery_status: CspDiscoveryStatus::Idle,
+            rollback_journal: RollbackJournal::new(50),
         }
     }
 
@@ -322,20 +327,6 @@ impl App {
 }
 
 impl App {
-    /// Execute the `/undo` slash command.
-    ///
-    /// Scaffold only. A real undo requires hooking into the HITL-managed
-    /// edit ledger so we can restore the pre-write contents of the most
-    /// recently approved `write_file` call.
-    // TODO(REQ-HITL-005): wire to aegis-hitl edit tracking / rollback.
-    pub(crate) fn execute_undo_command(&mut self) {
-        self.messages.push(ChatMessage::system(
-            "Undo not yet wired to tool executor. \
-             Check the audit ledger for the most recent write."
-                .to_string(),
-        ));
-    }
-
     /// Execute the `/copy` slash command: copy the last fenced code block
     /// from the most recent assistant message to the system clipboard.
     pub(crate) fn execute_copy_command(&mut self) {
@@ -1421,26 +1412,30 @@ mod tests {
 
     // rtmx:req REQ-TUI-027
     #[test]
-    fn test_undo_reverts_last_write() {
-        // Scaffold: with no write history available to the TUI, /undo
-        // pushes a system message directing the user to the audit ledger.
+    fn test_undo_empty_journal_shows_nothing_to_undo() {
         let mut app = make_app();
-        app.execute_slash_command(SlashCommand::Undo);
+        app.execute_slash_command(SlashCommand::Undo(String::new()));
         assert_eq!(app.messages.len(), 1);
         let content = &app.messages[0].content;
         assert!(
-            content.contains("Undo") && content.contains("audit ledger"),
-            "expected undo scaffold message, got: {content}"
+            content.contains("Nothing to undo"),
+            "expected empty-journal message, got: {content}"
         );
     }
 
     // rtmx:req REQ-TUI-027
     #[test]
-    fn test_undo_with_no_writes_shows_message() {
+    fn test_undo_rolls_back_last_entry() {
         let mut app = make_app();
-        app.execute_undo_command();
-        assert_eq!(app.messages.len(), 1);
-        assert!(app.messages[0].content.contains("Undo not yet wired"));
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "original").unwrap();
+        app.rollback_journal
+            .snapshot(&[file.as_path()], "write_file");
+        std::fs::write(&file, "modified").unwrap();
+        app.execute_slash_command(SlashCommand::Undo(String::new()));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "original");
+        assert!(app.messages[0].content.contains("Rolled back last write"));
     }
 
     // rtmx:req REQ-TUI-045
