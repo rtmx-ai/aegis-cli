@@ -1,6 +1,6 @@
 //! TUI layout: status line (top), chat log (fill), input (bottom).
 
-use crate::app::status::format_tokens;
+use crate::app::status::{format_cost, format_tokens};
 use crate::app::{AppPhase, ApprovalDisplayInfo};
 use crate::brand;
 use crate::messages::{ChatMessage, MessageKind};
@@ -30,6 +30,8 @@ pub struct StatusInfo {
     pub input_tokens: u64,
     /// Output tokens accumulated this session.
     pub output_tokens: u64,
+    /// Session cost in USD accumulated this session.
+    pub session_cost_usd: f64,
 }
 
 impl StatusInfo {
@@ -217,8 +219,14 @@ fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &Ap
         AppPhase::AwaitingApproval => ("APPROVE?", Color::Rgb(255, 191, 0)),
     };
 
-    // Right section: tokens (only if non-zero)
+    // Right section: cost + tokens (only if non-zero)
     let has_tokens = info.input_tokens > 0 || info.output_tokens > 0;
+    let has_cost = info.session_cost_usd > 0.0;
+    let cost_text = if has_cost {
+        format_cost(info.session_cost_usd)
+    } else {
+        String::new()
+    };
     let right_text = if has_tokens {
         format!(
             "in: {} | out: {}",
@@ -229,10 +237,11 @@ fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &Ap
         String::new()
     };
     // Full right section including brackets for width calculation
-    let right = if has_tokens {
-        format!("[tokens {}]", right_text)
-    } else {
-        String::new()
+    let right = match (has_cost, has_tokens) {
+        (true, true) => format!("{} [tokens {}]", cost_text, right_text),
+        (false, true) => format!("[tokens {}]", right_text),
+        (true, false) => cost_text.clone(),
+        (false, false) => String::new(),
     };
 
     // Build spans based on available width
@@ -265,29 +274,40 @@ fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &Ap
         }
     }
 
-    // Right: tokens (if room permits), with distinct colors for in vs out
+    // Right: cost + tokens (if room permits)
     if !right.is_empty() {
         let used: usize = spans.iter().map(|s| s.content.len()).sum();
         if used + right.len() + 4 < width {
             let padding = width.saturating_sub(used + right.len() + 1);
             spans.push(Span::raw(" ".repeat(padding)));
-            spans.push(Span::styled(
-                "[tokens in: ",
-                Style::default().fg(Color::DarkGray),
-            ));
-            spans.push(Span::styled(
-                format_tokens(info.input_tokens),
-                Style::default().fg(Color::Green),
-            ));
-            spans.push(Span::styled(
-                " | out: ",
-                Style::default().fg(Color::DarkGray),
-            ));
-            spans.push(Span::styled(
-                format_tokens(info.output_tokens),
-                Style::default().fg(Color::Rgb(100, 149, 237)),
-            ));
-            spans.push(Span::styled("]", Style::default().fg(Color::DarkGray)));
+            if has_cost {
+                spans.push(Span::styled(
+                    cost_text.clone(),
+                    Style::default().fg(Color::Green),
+                ));
+                if has_tokens {
+                    spans.push(Span::raw(" "));
+                }
+            }
+            if has_tokens {
+                spans.push(Span::styled(
+                    "[tokens in: ",
+                    Style::default().fg(Color::DarkGray),
+                ));
+                spans.push(Span::styled(
+                    format_tokens(info.input_tokens),
+                    Style::default().fg(Color::Green),
+                ));
+                spans.push(Span::styled(
+                    " | out: ",
+                    Style::default().fg(Color::DarkGray),
+                ));
+                spans.push(Span::styled(
+                    format_tokens(info.output_tokens),
+                    Style::default().fg(Color::Rgb(100, 149, 237)),
+                ));
+                spans.push(Span::styled("]", Style::default().fg(Color::DarkGray)));
+            }
         }
     }
 
@@ -1837,6 +1857,34 @@ mod tests {
             body.style.add_modifier.contains(Modifier::BOLD),
             "user message body should be bold (visible even in NO_COLOR terminals): {:?}",
             body.style,
+        );
+    }
+
+    // rtmx:req REQ-TUI-020
+    #[test]
+    fn status_line_shows_cost_when_nonzero() {
+        let mut state = AppState::default();
+        state.status.session_cost_usd = 0.42;
+        state.status.input_tokens = 1500;
+        state.status.output_tokens = 300;
+        let output = render_to_string(&state, 100, 20);
+        assert!(
+            output.contains("$0.42"),
+            "Should show cost when nonzero: {output}"
+        );
+    }
+
+    // rtmx:req REQ-TUI-020
+    #[test]
+    fn status_line_omits_cost_when_zero() {
+        let mut state = AppState::default();
+        state.status.session_cost_usd = 0.0;
+        state.status.input_tokens = 1500;
+        state.status.output_tokens = 300;
+        let output = render_to_string(&state, 100, 20);
+        assert!(
+            !output.contains('$'),
+            "Should not show $ when cost is zero: {output}"
         );
     }
 
