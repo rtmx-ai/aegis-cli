@@ -38,6 +38,15 @@ pub fn format_tokens(count: u64) -> String {
     }
 }
 
+/// Format a USD cost for human-readable display.
+pub fn format_cost(usd: f64) -> String {
+    if usd >= 1.0 && (usd - usd.round()).abs() < 0.005 {
+        format!("${}", usd as u64)
+    } else {
+        format!("${:.2}", usd)
+    }
+}
+
 impl App {
     /// Build a `StatusInfo` for the structured status line.
     pub fn status_info(&self) -> crate::layout::StatusInfo {
@@ -63,6 +72,7 @@ impl App {
             phase_detail,
             input_tokens: self.input_tokens,
             output_tokens: self.output_tokens,
+            session_cost_usd: self.session_cost_usd,
         }
     }
 
@@ -165,5 +175,29 @@ mod tests {
     fn format_elapsed_boundary_at_60s() {
         assert_eq!(format_elapsed(59), Some("59s".to_string()));
         assert_eq!(format_elapsed(60), Some("1m 0s".to_string()));
+    }
+
+    // rtmx:req REQ-TUI-020
+    #[test]
+    fn format_cost_zero() {
+        assert_eq!(format_cost(0.0), "$0.00");
+    }
+
+    // rtmx:req REQ-TUI-020
+    #[test]
+    fn format_cost_cents() {
+        assert_eq!(format_cost(0.42), "$0.42");
+    }
+
+    // rtmx:req REQ-TUI-020
+    #[test]
+    fn format_cost_dollars_with_cents() {
+        assert_eq!(format_cost(5.25), "$5.25");
+    }
+
+    // rtmx:req REQ-TUI-020
+    #[test]
+    fn format_cost_large_whole_dollar() {
+        assert_eq!(format_cost(150.0), "$150");
     }
 }

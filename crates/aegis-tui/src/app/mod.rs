@@ -69,6 +69,11 @@ pub struct App {
     pub output_tokens: u64,
     pub model_name: String,
 
+    // Cost tracking
+    pub session_cost_usd: f64,
+    pub cost_per_m_input: f64,
+    pub cost_per_m_output: f64,
+
     // Scrolling
     pub scroll_offset: u16,
     pub auto_scroll: bool,
@@ -128,6 +133,9 @@ impl App {
             input_tokens: 0,
             output_tokens: 0,
             model_name: model_name.into(),
+            session_cost_usd: 0.0,
+            cost_per_m_input: 0.0,
+            cost_per_m_output: 0.0,
             scroll_offset: 0,
             auto_scroll: true,
             splash_ticks: 0,
@@ -197,6 +205,10 @@ impl App {
             } => {
                 self.input_tokens += input_tokens;
                 self.output_tokens += output_tokens;
+                // Compute incremental cost for this turn
+                let input_cost = (input_tokens as f64 / 1_000_000.0) * self.cost_per_m_input;
+                let output_cost = (output_tokens as f64 / 1_000_000.0) * self.cost_per_m_output;
+                self.session_cost_usd += input_cost + output_cost;
                 self.tool_start = None;
                 // Flush stream buffer into a finalized assistant message
                 if !self.stream_buffer.is_empty() {
@@ -1575,6 +1587,73 @@ trailing";
         let app = App::new("test-model");
         assert!(app.pending_csp_discovery.is_none());
         assert!(matches!(app.csp_discovery_status, CspDiscoveryStatus::Idle));
+    }
+
+    // rtmx:req REQ-TUI-020
+    #[test]
+    fn test_session_cost_accumulates_on_agent_done() {
+        let mut app = make_app();
+        app.cost_per_m_input = 3.0; // $3 per million input tokens
+        app.cost_per_m_output = 15.0; // $15 per million output tokens
+        let (tx, _rx) = make_agent_tx();
+        // Turn 1: 1000 input, 500 output
+        app.handle_event(
+            TuiEvent::AgentDone {
+                input_tokens: 1_000,
+                output_tokens: 500,
+            },
+            &tx,
+        );
+        // cost = (1000/1M)*3 + (500/1M)*15 = 0.003 + 0.0075 = 0.0105
+        assert!(
+            (app.session_cost_usd - 0.0105).abs() < 1e-9,
+            "cost after turn 1: {}",
+            app.session_cost_usd,
+        );
+        // Turn 2: 2000 input, 1000 output
+        app.handle_event(
+            TuiEvent::AgentDone {
+                input_tokens: 2_000,
+                output_tokens: 1_000,
+            },
+            &tx,
+        );
+        // additional = (2000/1M)*3 + (1000/1M)*15 = 0.006 + 0.015 = 0.021
+        let expected = 0.0105 + 0.021;
+        assert!(
+            (app.session_cost_usd - expected).abs() < 1e-9,
+            "cost after turn 2: {}",
+            app.session_cost_usd,
+        );
+    }
+
+    // rtmx:req REQ-TUI-020
+    #[test]
+    fn test_session_cost_zero_for_local() {
+        let mut app = make_app();
+        // Rates stay 0.0 (local model)
+        let (tx, _rx) = make_agent_tx();
+        app.handle_event(
+            TuiEvent::AgentDone {
+                input_tokens: 5_000,
+                output_tokens: 2_000,
+            },
+            &tx,
+        );
+        assert_eq!(app.session_cost_usd, 0.0);
+    }
+
+    // rtmx:req REQ-TUI-020
+    #[test]
+    fn test_status_info_includes_cost() {
+        let mut app = make_app();
+        app.session_cost_usd = 1.23;
+        let info = app.status_info();
+        assert!(
+            (info.session_cost_usd - 1.23).abs() < 1e-9,
+            "StatusInfo should carry session_cost_usd: {}",
+            info.session_cost_usd,
+        );
     }
 
     // rtmx:req REQ-TUI-045
