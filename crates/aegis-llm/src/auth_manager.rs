@@ -45,6 +45,17 @@ pub enum AuthStatusEvent {
     },
 }
 
+/// Represents a pending device code flow.
+#[derive(Debug, Clone)]
+pub struct DeviceCodeFlow {
+    pub provider: ProviderKind,
+    pub verification_url: String,
+    pub user_code: String,
+    pub device_code: String,
+    pub poll_interval_secs: u64,
+    pub expires_at: Instant,
+}
+
 /// Cached credential state for a single provider.
 #[derive(Debug, Clone)]
 pub struct AuthState {
@@ -196,6 +207,82 @@ impl AuthManager {
         if let Ok(mut creds) = self.credentials.write() {
             creds.insert(kind, state);
         }
+    }
+
+    /// Initiate a device code flow for the given provider.
+    /// Emits `DeviceCodePending` event with URL and code for TUI display.
+    /// Returns the `DeviceCodeFlow` for polling.
+    ///
+    /// For now, this is a structured placeholder that:
+    /// 1. Constructs the correct OAuth endpoint URL per provider
+    /// 2. Emits the `DeviceCodePending` event
+    /// 3. Returns a `DeviceCodeFlow` struct
+    ///
+    /// Actual HTTP requests to OAuth endpoints will be wired in
+    /// the composition root when reqwest is available.
+    pub fn initiate_device_code(
+        &self,
+        provider: ProviderKind,
+    ) -> Result<DeviceCodeFlow, DomainError> {
+        let (verification_url, poll_interval) = match provider {
+            ProviderKind::Vertex => {
+                ("https://accounts.google.com/o/oauth2/device".to_string(), 5)
+            }
+            ProviderKind::Bedrock => (
+                "https://device.sso.us-gov-west-1.amazonaws.com/".to_string(),
+                5,
+            ),
+            ProviderKind::Azure => (
+                "https://login.microsoftonline.com/common/oauth2/v2.0/devicecode".to_string(),
+                5,
+            ),
+            ProviderKind::Local => {
+                return Err(DomainError::ConfigError {
+                    message: "device code flow not applicable for local provider".into(),
+                });
+            }
+        };
+
+        // Generate placeholder codes (real implementation will call OAuth endpoint)
+        let flow = DeviceCodeFlow {
+            provider,
+            verification_url: verification_url.clone(),
+            user_code: "PENDING".to_string(),
+            device_code: String::new(),
+            poll_interval_secs: poll_interval,
+            expires_at: Instant::now() + Duration::from_secs(300),
+        };
+
+        // Emit event for TUI display
+        let _ = self.status_tx.send(AuthStatusEvent::DeviceCodePending {
+            provider,
+            url: verification_url,
+            user_code: flow.user_code.clone(),
+        });
+
+        Ok(flow)
+    }
+
+    /// Complete a device code flow by caching the resolved credentials.
+    /// Called by the composition root after polling succeeds.
+    pub fn complete_device_code(
+        &self,
+        flow: &DeviceCodeFlow,
+        auth: ProviderAuth,
+        ttl_secs: u64,
+        refresh_token: Option<String>,
+    ) {
+        self.cache_auth(flow.provider, auth, Some(ttl_secs), refresh_token);
+        let _ = self.status_tx.send(AuthStatusEvent::DeviceCodeComplete {
+            provider: flow.provider,
+        });
+    }
+
+    /// Signal that a device code flow has timed out or failed.
+    pub fn fail_device_code(&self, provider: ProviderKind, reason: String) {
+        let _ = self
+            .status_tx
+            .send(AuthStatusEvent::RefreshFailed { provider, reason });
     }
 
     /// Check whether an `AuthState` is still valid (not expired).
@@ -383,5 +470,132 @@ mod tests {
         mgr.revoke(ProviderKind::Vertex);
         assert!(!mgr.is_valid(ProviderKind::Vertex));
         assert!(mgr.is_valid(ProviderKind::Bedrock));
+    }
+
+    // --- Device code flow tests ---
+
+    // rtmx:req REQ-LLM-035
+    #[test]
+    fn test_initiate_device_code_vertex() {
+        let (mgr, mut rx) = make_manager();
+        let flow = mgr.initiate_device_code(ProviderKind::Vertex).unwrap();
+        assert!(flow.verification_url.contains("google"));
+        assert_eq!(flow.provider, ProviderKind::Vertex);
+
+        let event = rx.try_recv().unwrap();
+        match event {
+            AuthStatusEvent::DeviceCodePending { provider, url, .. } => {
+                assert_eq!(provider, ProviderKind::Vertex);
+                assert!(url.contains("google"));
+            }
+            other => panic!("expected DeviceCodePending, got: {other:?}"),
+        }
+    }
+
+    // rtmx:req REQ-LLM-035
+    #[test]
+    fn test_initiate_device_code_bedrock() {
+        let (mgr, _rx) = make_manager();
+        let flow = mgr.initiate_device_code(ProviderKind::Bedrock).unwrap();
+        assert!(flow.verification_url.contains("sso"));
+        assert_eq!(flow.provider, ProviderKind::Bedrock);
+    }
+
+    // rtmx:req REQ-LLM-035
+    #[test]
+    fn test_initiate_device_code_azure() {
+        let (mgr, _rx) = make_manager();
+        let flow = mgr.initiate_device_code(ProviderKind::Azure).unwrap();
+        assert!(flow.verification_url.contains("microsoft"));
+        assert_eq!(flow.provider, ProviderKind::Azure);
+    }
+
+    // rtmx:req REQ-LLM-035
+    #[test]
+    fn test_initiate_device_code_local_errors() {
+        let (mgr, _rx) = make_manager();
+        let result = mgr.initiate_device_code(ProviderKind::Local);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            DomainError::ConfigError { message } => {
+                assert!(message.contains("local provider"));
+            }
+            other => panic!("expected ConfigError, got: {other:?}"),
+        }
+    }
+
+    // rtmx:req REQ-LLM-035
+    #[test]
+    fn test_complete_device_code_caches_auth() {
+        let (mgr, _rx) = make_manager();
+        let flow = mgr.initiate_device_code(ProviderKind::Vertex).unwrap();
+
+        let auth = ProviderAuth::Gcp {
+            access_token: "ya29.device-code-token".to_string(),
+        };
+        mgr.complete_device_code(&flow, auth, 3600, None);
+
+        assert!(mgr.is_valid(ProviderKind::Vertex));
+    }
+
+    // rtmx:req REQ-LLM-035
+    #[test]
+    fn test_complete_device_code_emits_event() {
+        let (mgr, mut rx) = make_manager();
+        let flow = mgr.initiate_device_code(ProviderKind::Vertex).unwrap();
+
+        // Drain the DeviceCodePending event from initiation.
+        let _ = rx.try_recv().unwrap();
+
+        let auth = ProviderAuth::Gcp {
+            access_token: "ya29.device-code-token".to_string(),
+        };
+        mgr.complete_device_code(&flow, auth, 3600, None);
+
+        let event = rx.try_recv().unwrap();
+        match event {
+            AuthStatusEvent::DeviceCodeComplete { provider } => {
+                assert_eq!(provider, ProviderKind::Vertex);
+            }
+            other => panic!("expected DeviceCodeComplete, got: {other:?}"),
+        }
+    }
+
+    // rtmx:req REQ-LLM-035
+    #[test]
+    fn test_fail_device_code_emits_event() {
+        let (mgr, mut rx) = make_manager();
+        mgr.fail_device_code(
+            ProviderKind::Bedrock,
+            "authorization_pending timeout".to_string(),
+        );
+
+        let event = rx.try_recv().unwrap();
+        match event {
+            AuthStatusEvent::RefreshFailed { provider, reason } => {
+                assert_eq!(provider, ProviderKind::Bedrock);
+                assert!(reason.contains("timeout"));
+            }
+            other => panic!("expected RefreshFailed, got: {other:?}"),
+        }
+    }
+
+    // rtmx:req REQ-LLM-035
+    #[test]
+    fn test_device_code_flow_has_5min_expiry() {
+        let (mgr, _rx) = make_manager();
+        let before = Instant::now() + Duration::from_secs(295);
+        let flow = mgr.initiate_device_code(ProviderKind::Vertex).unwrap();
+        let after = Instant::now() + Duration::from_secs(305);
+
+        // expires_at should be approximately 300s from now.
+        assert!(
+            flow.expires_at >= before,
+            "expires_at should be at least ~295s from now"
+        );
+        assert!(
+            flow.expires_at <= after,
+            "expires_at should be at most ~305s from now"
+        );
     }
 }
