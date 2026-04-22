@@ -38,6 +38,19 @@ pub fn format_tokens(count: u64) -> String {
     }
 }
 
+/// Format auth TTL for status bar display.
+///
+/// Returns a compact string like `"GCP 47m"` or `"AWS <1m"`.
+/// Used when the auth provider and TTL are known.
+pub fn format_auth_ttl(provider: &str, secs: u64) -> String {
+    let minutes = secs / 60;
+    if minutes > 0 {
+        format!("{} {}m", provider, minutes)
+    } else {
+        format!("{} <1m", provider)
+    }
+}
+
 /// Format a USD cost for human-readable display.
 pub fn format_cost(usd: f64) -> String {
     if usd >= 1.0 && (usd - usd.round()).abs() < 0.005 {
@@ -73,6 +86,8 @@ impl App {
             input_tokens: self.input_tokens,
             output_tokens: self.output_tokens,
             session_cost_usd: self.session_cost_usd,
+            auth_provider_name: self.auth_provider_name.clone(),
+            auth_ttl_secs: self.auth_ttl_secs,
         }
     }
 
@@ -175,6 +190,24 @@ mod tests {
     fn format_elapsed_boundary_at_60s() {
         assert_eq!(format_elapsed(59), Some("59s".to_string()));
         assert_eq!(format_elapsed(60), Some("1m 0s".to_string()));
+    }
+
+    // rtmx:req REQ-LLM-036
+    #[test]
+    fn test_format_auth_ttl_minutes() {
+        assert_eq!(format_auth_ttl("GCP", 2820), "GCP 47m");
+    }
+
+    // rtmx:req REQ-LLM-036
+    #[test]
+    fn test_format_auth_ttl_under_one_minute() {
+        assert_eq!(format_auth_ttl("AWS", 30), "AWS <1m");
+    }
+
+    // rtmx:req REQ-LLM-036
+    #[test]
+    fn test_format_auth_ttl_exact_minute() {
+        assert_eq!(format_auth_ttl("Azure", 60), "Azure 1m");
     }
 
     // rtmx:req REQ-TUI-020

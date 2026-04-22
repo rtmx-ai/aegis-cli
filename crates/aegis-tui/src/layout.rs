@@ -1,6 +1,6 @@
 //! TUI layout: status line (top), chat log (fill), input (bottom).
 
-use crate::app::status::{format_cost, format_tokens};
+use crate::app::status::{format_auth_ttl, format_cost, format_tokens};
 use crate::app::{AppPhase, ApprovalDisplayInfo};
 use crate::brand;
 use crate::messages::{ChatMessage, MessageKind};
@@ -32,6 +32,10 @@ pub struct StatusInfo {
     pub output_tokens: u64,
     /// Session cost in USD accumulated this session.
     pub session_cost_usd: f64,
+    /// Auth provider name (e.g. "GCP", "AWS", "Azure"). None for local/no-auth.
+    pub auth_provider_name: Option<String>,
+    /// Auth token time-to-live in seconds. None for local/no-auth.
+    pub auth_ttl_secs: Option<u64>,
 }
 
 impl StatusInfo {
@@ -271,6 +275,24 @@ fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &Ap
                 phase_section,
                 Style::default().fg(phase_color),
             ));
+        }
+    }
+
+    // Auth TTL indicator (between phase and cost/tokens)
+    if let (Some(provider), Some(ttl)) = (&info.auth_provider_name, info.auth_ttl_secs) {
+        let auth_text = format_auth_ttl(provider, ttl);
+        let auth_display = format!("[{auth_text}]");
+        let used: usize = spans.iter().map(|s| s.content.len()).sum();
+        if used + auth_display.len() + 4 < width {
+            let auth_color = if ttl > 600 {
+                Color::Green
+            } else if ttl >= 120 {
+                Color::Yellow
+            } else {
+                Color::Red
+            };
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(auth_display, Style::default().fg(auth_color)));
         }
     }
 
@@ -1798,6 +1820,57 @@ mod tests {
         assert!(
             has_border,
             "Error message should have '| ' left border accent: {output}"
+        );
+    }
+
+    // rtmx:req REQ-LLM-036
+    #[test]
+    fn test_status_bar_shows_auth_ttl_green() {
+        let mut state = AppState::default();
+        state.status.auth_provider_name = Some("GCP".to_string());
+        state.status.auth_ttl_secs = Some(2820);
+        let output = render_to_string(&state, 100, 20);
+        assert!(
+            output.contains("GCP 47m"),
+            "Should show auth TTL in status bar: {output}"
+        );
+    }
+
+    // rtmx:req REQ-LLM-036
+    #[test]
+    fn test_status_bar_shows_auth_ttl_yellow() {
+        let mut state = AppState::default();
+        state.status.auth_provider_name = Some("AWS".to_string());
+        state.status.auth_ttl_secs = Some(480);
+        let output = render_to_string(&state, 100, 20);
+        assert!(
+            output.contains("AWS 8m"),
+            "Should show auth TTL in yellow range: {output}"
+        );
+    }
+
+    // rtmx:req REQ-LLM-036
+    #[test]
+    fn test_status_bar_shows_auth_ttl_red() {
+        let mut state = AppState::default();
+        state.status.auth_provider_name = Some("Azure".to_string());
+        state.status.auth_ttl_secs = Some(90);
+        let output = render_to_string(&state, 100, 20);
+        assert!(
+            output.contains("Azure 1m"),
+            "Should show auth TTL in red range: {output}"
+        );
+    }
+
+    // rtmx:req REQ-LLM-036
+    #[test]
+    fn test_status_bar_omits_auth_when_none() {
+        let state = AppState::default();
+        let output = render_to_string(&state, 100, 20);
+        // Should not contain any auth TTL indicator brackets with provider names
+        assert!(
+            !output.contains("GCP") && !output.contains("AWS") && !output.contains("Azure"),
+            "Should not show auth indicator when None: {output}"
         );
     }
 
