@@ -48,6 +48,19 @@ pub struct AgentResult {
     pub output_tokens: u64,
 }
 
+/// Check if an error message indicates an authentication or authorization failure.
+///
+/// Used by the agent loop to classify stream errors so the composition root
+/// can attempt credential refresh before retrying (REQ-AGENT-044).
+fn is_auth_error(error_msg: &str) -> bool {
+    let lower = error_msg.to_lowercase();
+    lower.contains("401")
+        || lower.contains("unauthorized")
+        || lower.contains("token expired")
+        || lower.contains("credentials have expired")
+        || (lower.contains("auth") && lower.contains("expired"))
+}
+
 /// The tool schemas the agent exposes to the LLM.
 fn builtin_tool_schemas() -> Vec<ToolSchema> {
     vec![
@@ -358,9 +371,21 @@ where
                         }
                     }
                     StreamEvent::Error(msg) => {
+                        if is_auth_error(&msg) {
+                            warn!(error = %msg, "auth error detected in stream");
+                            return Err(DomainError::AuthExpired {
+                                provider_kind: self.provider_info.kind.clone(),
+                            });
+                        }
                         return Err(DomainError::ProviderError { message: msg });
                     }
                     StreamEvent::RetryableError { message, .. } => {
+                        if is_auth_error(&message) {
+                            warn!(error = %message, "auth error detected in stream");
+                            return Err(DomainError::AuthExpired {
+                                provider_kind: self.provider_info.kind.clone(),
+                            });
+                        }
                         return Err(DomainError::ProviderError { message });
                     }
                 }
@@ -1352,6 +1377,70 @@ mod tests {
             }
             other => panic!("Expected TokensConsumed, got: {other:?}"),
         }
+    }
+
+    // --- REQ-AGENT-044: Auth expiry detection ---
+
+    // rtmx:req REQ-AGENT-044
+    #[test]
+    fn test_is_auth_error_detects_401() {
+        assert!(is_auth_error("HTTP 401 Unauthorized"));
+    }
+
+    // rtmx:req REQ-AGENT-044
+    #[test]
+    fn test_is_auth_error_detects_token_expired() {
+        assert!(is_auth_error("token expired"));
+    }
+
+    // rtmx:req REQ-AGENT-044
+    #[test]
+    fn test_is_auth_error_ignores_other_errors() {
+        assert!(!is_auth_error("HTTP 500 Internal Server Error"));
+    }
+
+    // rtmx:req REQ-AGENT-044
+    #[test]
+    fn test_is_auth_error_detects_credentials_expired() {
+        assert!(is_auth_error("credentials have expired"));
+    }
+
+    // rtmx:req REQ-AGENT-044
+    #[tokio::test]
+    async fn test_auth_expired_error_surfaces_from_stream() {
+        let provider = MockLlmProvider::new();
+        provider.queue_response(vec![StreamEvent::Error(
+            "HTTP 401 Unauthorized".to_string(),
+        )]);
+
+        let agent = make_agent(provider);
+        let result = agent.run("Hi").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("authentication token expired"),
+            "Expected AuthExpired error, got: {msg}"
+        );
+    }
+
+    // rtmx:req REQ-AGENT-044
+    #[tokio::test]
+    async fn test_retryable_auth_error_surfaces_as_auth_expired() {
+        let provider = MockLlmProvider::new();
+        provider.queue_response(vec![StreamEvent::RetryableError {
+            message: "token expired for vertex-ai".to_string(),
+            retryable: true,
+        }]);
+
+        let agent = make_agent(provider);
+        let result = agent.run("Hi").await;
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("authentication token expired"),
+            "Expected AuthExpired error, got: {msg}"
+        );
     }
 
     // rtmx:req REQ-AGENT-012
