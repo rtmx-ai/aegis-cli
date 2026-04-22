@@ -11,4 +11,5 @@ pub mod dlp;
 pub mod injection;
 pub mod transport;
 
+pub mod keychain;
 pub mod sandbox;
