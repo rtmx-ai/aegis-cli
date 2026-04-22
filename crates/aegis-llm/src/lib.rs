@@ -5,6 +5,7 @@
 //! handles auth, streaming, and tool call parsing for its API.
 
 pub mod auth;
+pub mod auth_manager;
 pub mod azure;
 pub mod bedrock;
 pub mod bedrock_stream;

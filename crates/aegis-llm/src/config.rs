@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Which LLM backend to use.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ProviderKind {
     Local,

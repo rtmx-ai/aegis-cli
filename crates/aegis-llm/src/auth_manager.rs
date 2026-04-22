@@ -1,0 +1,387 @@
+//! Shared credential store with lifecycle tracking.
+//!
+//! `AuthManager` provides a thread-safe cache of resolved `ProviderAuth`
+//! credentials, keyed by `ProviderKind`. It tracks expiry, emits status
+//! events for the TUI, and delegates to `resolve_auth()` when a credential
+//! is missing or expired.
+
+use std::collections::HashMap;
+use std::sync::RwLock;
+use std::time::{Duration, Instant};
+
+use tokio::sync::mpsc;
+
+use crate::auth::{ProviderAuth, resolve_auth};
+use crate::config::{ProviderConfig, ProviderKind};
+use aegis_domain::error::DomainError;
+
+/// Events emitted by `AuthManager` to notify the TUI of credential state changes.
+#[derive(Debug, Clone)]
+pub enum AuthStatusEvent {
+    /// Token resolved successfully.
+    Authenticated {
+        provider: ProviderKind,
+        ttl_secs: u64,
+    },
+    /// Token expiring soon (< 120s).
+    ExpiryWarning {
+        provider: ProviderKind,
+        remaining_secs: u64,
+    },
+    /// Token has expired.
+    Expired { provider: ProviderKind },
+    /// Device code flow started -- TUI should display URL and code.
+    DeviceCodePending {
+        provider: ProviderKind,
+        url: String,
+        user_code: String,
+    },
+    /// Device code approved -- token received.
+    DeviceCodeComplete { provider: ProviderKind },
+    /// Refresh attempt failed.
+    RefreshFailed {
+        provider: ProviderKind,
+        reason: String,
+    },
+}
+
+/// Cached credential state for a single provider.
+#[derive(Debug, Clone)]
+pub struct AuthState {
+    pub auth: ProviderAuth,
+    pub expires_at: Option<Instant>,
+    pub refresh_token: Option<String>,
+    pub provider_kind: ProviderKind,
+}
+
+/// Thread-safe credential store with lifecycle tracking.
+pub struct AuthManager {
+    credentials: RwLock<HashMap<ProviderKind, AuthState>>,
+    status_tx: mpsc::UnboundedSender<AuthStatusEvent>,
+}
+
+/// Return the default TTL in seconds for a given provider kind.
+///
+/// Local providers have no expiry. GCP and Azure tokens expire in 1 hour.
+/// AWS STS temporary credentials last up to 12 hours.
+fn default_ttl_secs(kind: ProviderKind) -> Option<u64> {
+    match kind {
+        ProviderKind::Local => None,
+        ProviderKind::Vertex => Some(3600),
+        ProviderKind::Bedrock => Some(43200),
+        ProviderKind::Azure => Some(3600),
+    }
+}
+
+impl AuthManager {
+    /// Construct an `AuthManager` with an empty credential cache.
+    ///
+    /// The `status_tx` channel is used to emit `AuthStatusEvent` notifications
+    /// to the TUI or other observers.
+    pub fn new(status_tx: mpsc::UnboundedSender<AuthStatusEvent>) -> Self {
+        Self {
+            credentials: RwLock::new(HashMap::new()),
+            status_tx,
+        }
+    }
+
+    /// Resolve a credential for the given provider config, using the cache
+    /// if a valid (non-expired) credential is available.
+    ///
+    /// On cache miss or expiry, delegates to `resolve_auth()` from the auth
+    /// module, caches the result with a provider-appropriate TTL, and emits
+    /// an `AuthStatusEvent::Authenticated` event.
+    pub fn resolve_or_refresh(
+        &self,
+        config: &ProviderConfig,
+    ) -> Result<ProviderAuth, DomainError> {
+        // Fast path: check if we have a valid cached credential.
+        {
+            let creds = self
+                .credentials
+                .read()
+                .map_err(|e| DomainError::ProviderError {
+                    message: format!("credential cache lock poisoned: {e}"),
+                })?;
+            if let Some(state) = creds.get(&config.kind)
+                && self.is_state_valid(state)
+            {
+                return Ok(state.auth.clone());
+            }
+        }
+
+        // Slow path: resolve fresh credentials.
+        let auth = resolve_auth(config)?;
+        let ttl = default_ttl_secs(config.kind);
+        let expires_at = ttl.map(|secs| Instant::now() + Duration::from_secs(secs));
+
+        let state = AuthState {
+            auth: auth.clone(),
+            expires_at,
+            refresh_token: None,
+            provider_kind: config.kind,
+        };
+
+        {
+            let mut creds = self
+                .credentials
+                .write()
+                .map_err(|e| DomainError::ProviderError {
+                    message: format!("credential cache lock poisoned: {e}"),
+                })?;
+            creds.insert(config.kind, state);
+        }
+
+        // Best-effort event emission; receiver may have been dropped.
+        let _ = self.status_tx.send(AuthStatusEvent::Authenticated {
+            provider: config.kind,
+            ttl_secs: ttl.unwrap_or(0),
+        });
+
+        Ok(auth)
+    }
+
+    /// Check whether a cached credential exists and has not expired.
+    pub fn is_valid(&self, kind: ProviderKind) -> bool {
+        let creds = match self.credentials.read() {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        match creds.get(&kind) {
+            Some(state) => self.is_state_valid(state),
+            None => false,
+        }
+    }
+
+    /// Return the remaining time-to-live for a cached credential.
+    ///
+    /// Returns `None` if no credential is cached, or if the credential
+    /// has no expiry (e.g. local providers).
+    pub fn ttl(&self, kind: ProviderKind) -> Option<Duration> {
+        let creds = self.credentials.read().ok()?;
+        let state = creds.get(&kind)?;
+        let expires_at = state.expires_at?;
+        let now = Instant::now();
+        if expires_at > now {
+            Some(expires_at - now)
+        } else {
+            Some(Duration::ZERO)
+        }
+    }
+
+    /// Remove a cached credential. Useful when switching providers via
+    /// the `/connect` slash command.
+    pub fn revoke(&self, kind: ProviderKind) {
+        if let Ok(mut creds) = self.credentials.write() {
+            creds.remove(&kind);
+        }
+    }
+
+    /// Directly cache a credential with an explicit TTL and optional
+    /// refresh token. Used by the device code flow and tests.
+    pub fn cache_auth(
+        &self,
+        kind: ProviderKind,
+        auth: ProviderAuth,
+        ttl_secs: Option<u64>,
+        refresh_token: Option<String>,
+    ) {
+        let expires_at = ttl_secs.map(|secs| Instant::now() + Duration::from_secs(secs));
+        let state = AuthState {
+            auth,
+            expires_at,
+            refresh_token,
+            provider_kind: kind,
+        };
+        if let Ok(mut creds) = self.credentials.write() {
+            creds.insert(kind, state);
+        }
+    }
+
+    /// Check whether an `AuthState` is still valid (not expired).
+    fn is_state_valid(&self, state: &AuthState) -> bool {
+        match state.expires_at {
+            None => true,
+            Some(expires_at) => Instant::now() < expires_at,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_manager() -> (AuthManager, mpsc::UnboundedReceiver<AuthStatusEvent>) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        (AuthManager::new(tx), rx)
+    }
+
+    // rtmx:req REQ-LLM-034
+    #[test]
+    fn test_resolve_caches_credential() {
+        let (mgr, _rx) = make_manager();
+        let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
+
+        // First resolve populates the cache.
+        let auth1 = mgr.resolve_or_refresh(&cfg).unwrap();
+        assert_eq!(auth1, ProviderAuth::NoAuth);
+        assert!(mgr.is_valid(ProviderKind::Local));
+
+        // Second resolve returns the cached credential.
+        let auth2 = mgr.resolve_or_refresh(&cfg).unwrap();
+        assert_eq!(auth2, ProviderAuth::NoAuth);
+    }
+
+    // rtmx:req REQ-LLM-034
+    #[test]
+    fn test_expired_credential_triggers_re_resolve() {
+        let (mgr, _rx) = make_manager();
+
+        // Directly cache a credential that is already expired.
+        let expired_at = Instant::now() - Duration::from_secs(1);
+        {
+            let mut creds = mgr.credentials.write().unwrap();
+            creds.insert(
+                ProviderKind::Local,
+                AuthState {
+                    auth: ProviderAuth::NoAuth,
+                    expires_at: Some(expired_at),
+                    refresh_token: None,
+                    provider_kind: ProviderKind::Local,
+                },
+            );
+        }
+
+        // The expired credential should not be considered valid.
+        assert!(!mgr.is_valid(ProviderKind::Local));
+
+        // resolve_or_refresh should call resolve_auth again.
+        let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
+        let auth = mgr.resolve_or_refresh(&cfg).unwrap();
+        assert_eq!(auth, ProviderAuth::NoAuth);
+
+        // Now it should be valid again (re-cached without expiry for Local).
+        assert!(mgr.is_valid(ProviderKind::Local));
+    }
+
+    // rtmx:req REQ-LLM-034
+    #[test]
+    fn test_is_valid_returns_false_for_missing() {
+        let (mgr, _rx) = make_manager();
+        assert!(!mgr.is_valid(ProviderKind::Vertex));
+        assert!(!mgr.is_valid(ProviderKind::Bedrock));
+        assert!(!mgr.is_valid(ProviderKind::Azure));
+        assert!(!mgr.is_valid(ProviderKind::Local));
+    }
+
+    // rtmx:req REQ-LLM-034
+    #[test]
+    fn test_ttl_returns_remaining_duration() {
+        let (mgr, _rx) = make_manager();
+
+        // Cache a Vertex credential with 3600s TTL.
+        mgr.cache_auth(
+            ProviderKind::Vertex,
+            ProviderAuth::Gcp {
+                access_token: "ya29.test".to_string(),
+            },
+            Some(3600),
+            None,
+        );
+
+        let ttl = mgr.ttl(ProviderKind::Vertex).unwrap();
+        // Should be close to 3600s (allow 5s tolerance for test execution).
+        assert!(ttl.as_secs() >= 3595);
+        assert!(ttl.as_secs() <= 3600);
+    }
+
+    // rtmx:req REQ-LLM-034
+    #[test]
+    fn test_revoke_clears_cached_credential() {
+        let (mgr, _rx) = make_manager();
+
+        mgr.cache_auth(
+            ProviderKind::Vertex,
+            ProviderAuth::Gcp {
+                access_token: "ya29.test".to_string(),
+            },
+            Some(3600),
+            None,
+        );
+        assert!(mgr.is_valid(ProviderKind::Vertex));
+
+        mgr.revoke(ProviderKind::Vertex);
+        assert!(!mgr.is_valid(ProviderKind::Vertex));
+    }
+
+    // rtmx:req REQ-LLM-034
+    #[test]
+    fn test_authenticated_event_emitted_on_resolve() {
+        let (mgr, mut rx) = make_manager();
+        let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
+
+        mgr.resolve_or_refresh(&cfg).unwrap();
+
+        let event = rx.try_recv().unwrap();
+        match event {
+            AuthStatusEvent::Authenticated { provider, ttl_secs } => {
+                assert_eq!(provider, ProviderKind::Local);
+                // Local providers have no TTL, so ttl_secs should be 0.
+                assert_eq!(ttl_secs, 0);
+            }
+            other => panic!("expected Authenticated event, got: {other:?}"),
+        }
+    }
+
+    // rtmx:req REQ-LLM-034
+    #[test]
+    fn test_local_provider_has_no_expiry() {
+        let (mgr, _rx) = make_manager();
+        let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
+
+        mgr.resolve_or_refresh(&cfg).unwrap();
+
+        // Local provider should have no TTL (None).
+        assert!(mgr.ttl(ProviderKind::Local).is_none());
+        // But it should still be valid.
+        assert!(mgr.is_valid(ProviderKind::Local));
+    }
+
+    // rtmx:req REQ-LLM-034
+    #[test]
+    fn test_multiple_providers_cached_independently() {
+        let (mgr, _rx) = make_manager();
+
+        let vertex_auth = ProviderAuth::Gcp {
+            access_token: "ya29.vertex-token".to_string(),
+        };
+        let bedrock_auth = ProviderAuth::Aws {
+            access_key_id: "AKIA_TEST".to_string(),
+            secret_access_key: "secret_test".to_string(),
+            session_token: None,
+            region: "us-east-1".to_string(),
+        };
+
+        mgr.cache_auth(ProviderKind::Vertex, vertex_auth.clone(), Some(3600), None);
+        mgr.cache_auth(
+            ProviderKind::Bedrock,
+            bedrock_auth.clone(),
+            Some(43200),
+            None,
+        );
+
+        assert!(mgr.is_valid(ProviderKind::Vertex));
+        assert!(mgr.is_valid(ProviderKind::Bedrock));
+
+        // Verify each returns its own auth by checking TTL differences.
+        let vertex_ttl = mgr.ttl(ProviderKind::Vertex).unwrap();
+        let bedrock_ttl = mgr.ttl(ProviderKind::Bedrock).unwrap();
+        assert!(vertex_ttl.as_secs() <= 3600);
+        assert!(bedrock_ttl.as_secs() > 3600);
+
+        // Revoking one does not affect the other.
+        mgr.revoke(ProviderKind::Vertex);
+        assert!(!mgr.is_valid(ProviderKind::Vertex));
+        assert!(mgr.is_valid(ProviderKind::Bedrock));
+    }
+}
