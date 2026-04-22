@@ -116,6 +116,11 @@ pub struct App {
 
     /// Rollback journal for `/undo`: captures pre-write file state.
     pub rollback_journal: RollbackJournal,
+
+    /// Auth provider name for status bar display (e.g. "GCP", "AWS").
+    pub auth_provider_name: Option<String>,
+    /// Auth token time-to-live in seconds for status bar display.
+    pub auth_ttl_secs: Option<u64>,
 }
 
 /// Number of lines to scroll per PageUp/PageDown press.
@@ -155,6 +160,8 @@ impl App {
             pending_csp_discovery: None,
             csp_discovery_status: CspDiscoveryStatus::Idle,
             rollback_journal: RollbackJournal::new(50),
+            auth_provider_name: None,
+            auth_ttl_secs: None,
         }
     }
 
@@ -301,6 +308,11 @@ impl App {
                     }],
                 );
                 self.command_palette.refresh_current_slot();
+                Action::Continue
+            }
+            TuiEvent::AuthStatus { provider, ttl_secs } => {
+                self.auth_provider_name = Some(provider);
+                self.auth_ttl_secs = ttl_secs;
                 Action::Continue
             }
             TuiEvent::Tick => {
@@ -1649,6 +1661,28 @@ trailing";
             "StatusInfo should carry session_cost_usd: {}",
             info.session_cost_usd,
         );
+    }
+
+    // rtmx:req REQ-LLM-036
+    #[test]
+    fn test_auth_status_event_updates_app_state() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        assert!(app.auth_provider_name.is_none());
+        assert!(app.auth_ttl_secs.is_none());
+        app.handle_event(
+            TuiEvent::AuthStatus {
+                provider: "GCP".to_string(),
+                ttl_secs: Some(3600),
+            },
+            &tx,
+        );
+        assert_eq!(
+            app.auth_provider_name.as_deref(),
+            Some("GCP"),
+            "auth_provider_name should be set"
+        );
+        assert_eq!(app.auth_ttl_secs, Some(3600), "auth_ttl_secs should be set");
     }
 
     // rtmx:req REQ-TUI-045

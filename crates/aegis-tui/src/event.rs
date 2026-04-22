@@ -37,6 +37,11 @@ pub enum TuiEvent {
         message: String,
         guidance: String,
     },
+    /// Auth credential status changed.
+    AuthStatus {
+        provider: String,
+        ttl_secs: Option<u64>,
+    },
 }
 
 /// A pending HITL approval request with the channel to send the decision back.
@@ -93,6 +98,13 @@ mod tests {
             guidance: "Install gcloud CLI".to_string(),
         };
         assert!(matches!(csp_error, TuiEvent::CspProjectsError { .. }));
+
+        // rtmx:req REQ-LLM-036
+        let auth_status = TuiEvent::AuthStatus {
+            provider: "GCP".to_string(),
+            ttl_secs: Some(3600),
+        };
+        assert!(matches!(auth_status, TuiEvent::AuthStatus { .. }));
 
         let tool = TuiEvent::AgentToolUse(ToolCall::ReadFile {
             path: FilePath::new_unchecked("src/main.rs"),
