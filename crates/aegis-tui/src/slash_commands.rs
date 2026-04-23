@@ -35,6 +35,8 @@ pub enum SlashCommand {
     /// Copy the last fenced code block from the most recent assistant
     /// message to the system clipboard.
     Copy,
+    /// Show session cost breakdown: model, tokens, cost, rates.
+    Cost,
 }
 
 /// Result of attempting to parse a slash command.
@@ -119,6 +121,7 @@ pub fn parse_slash_command(input: &str) -> ParseResult {
         }
         "/undo" => ParseResult::Command(SlashCommand::Undo(arg)),
         "/copy" => ParseResult::Command(SlashCommand::Copy),
+        "/cost" => ParseResult::Command(SlashCommand::Cost),
         _ => ParseResult::Unknown(cmd),
     }
 }
@@ -427,6 +430,23 @@ mod tests {
         assert_eq!(
             parse_slash_command("/COPY"),
             ParseResult::Command(SlashCommand::Copy)
+        );
+    }
+
+    // rtmx:req REQ-TUI-064
+    #[test]
+    fn test_parse_cost_command() {
+        assert_eq!(
+            parse_slash_command("/cost"),
+            ParseResult::Command(SlashCommand::Cost)
+        );
+        assert_eq!(
+            parse_slash_command("/COST"),
+            ParseResult::Command(SlashCommand::Cost)
+        );
+        assert_eq!(
+            parse_slash_command("  /cost  "),
+            ParseResult::Command(SlashCommand::Cost)
         );
     }
 }

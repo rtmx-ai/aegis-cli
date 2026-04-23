@@ -42,6 +42,16 @@ pub enum TuiEvent {
         provider: String,
         ttl_secs: Option<u64>,
     },
+    /// Device code auth flow: display URL and user code for the user to approve.
+    AuthDeviceCode {
+        provider: String,
+        url: String,
+        user_code: String,
+    },
+    /// Device code auth flow completed successfully.
+    AuthDeviceCodeComplete { provider: String },
+    /// Device code auth flow failed.
+    AuthDeviceCodeFailed { provider: String, reason: String },
 }
 
 /// A pending HITL approval request with the channel to send the decision back.
@@ -110,6 +120,31 @@ mod tests {
             path: FilePath::new_unchecked("src/main.rs"),
         });
         assert!(matches!(tool, TuiEvent::AgentToolUse(_)));
+
+        // rtmx:req REQ-TUI-065
+        let device_code = TuiEvent::AuthDeviceCode {
+            provider: "GCP".to_string(),
+            url: "https://device.auth/code".to_string(),
+            user_code: "ABCD-1234".to_string(),
+        };
+        assert!(matches!(device_code, TuiEvent::AuthDeviceCode { .. }));
+
+        let device_complete = TuiEvent::AuthDeviceCodeComplete {
+            provider: "GCP".to_string(),
+        };
+        assert!(matches!(
+            device_complete,
+            TuiEvent::AuthDeviceCodeComplete { .. }
+        ));
+
+        let device_failed = TuiEvent::AuthDeviceCodeFailed {
+            provider: "GCP".to_string(),
+            reason: "Timeout".to_string(),
+        };
+        assert!(matches!(
+            device_failed,
+            TuiEvent::AuthDeviceCodeFailed { .. }
+        ));
     }
 
     // rtmx:req REQ-TUI-001

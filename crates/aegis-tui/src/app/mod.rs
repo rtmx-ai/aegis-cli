@@ -315,6 +315,33 @@ impl App {
                 self.auth_ttl_secs = ttl_secs;
                 Action::Continue
             }
+            TuiEvent::AuthDeviceCode {
+                provider,
+                url,
+                user_code,
+            } => {
+                self.messages.push(ChatMessage::system(format!(
+                    "Authenticate with {provider}:\n\
+                     \n\
+                     1. Open: {url}\n\
+                     2. Enter code: {user_code}\n\
+                     \n\
+                     Waiting for approval..."
+                )));
+                Action::Continue
+            }
+            TuiEvent::AuthDeviceCodeComplete { provider } => {
+                self.messages
+                    .push(ChatMessage::system(format!("Connected to {provider}.")));
+                Action::Continue
+            }
+            TuiEvent::AuthDeviceCodeFailed { provider, reason } => {
+                self.messages.push(ChatMessage::system(format!(
+                    "Authentication failed for {provider}: {reason}\n\
+                     Try again with /connect"
+                )));
+                Action::Continue
+            }
             TuiEvent::Tick => {
                 self.tick_count = self.tick_count.wrapping_add(1);
                 if self.phase == AppPhase::Splash {
@@ -1683,6 +1710,221 @@ trailing";
             "auth_provider_name should be set"
         );
         assert_eq!(app.auth_ttl_secs, Some(3600), "auth_ttl_secs should be set");
+    }
+
+    // rtmx:req REQ-TUI-065
+    #[test]
+    fn test_device_code_event_adds_system_message() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        app.handle_event(
+            TuiEvent::AuthDeviceCode {
+                provider: "GCP".to_string(),
+                url: "https://device.auth/code".to_string(),
+                user_code: "ABCD-1234".to_string(),
+            },
+            &tx,
+        );
+        assert_eq!(app.messages.len(), 1);
+        assert_eq!(app.messages[0].kind, crate::messages::MessageKind::System);
+        assert!(
+            app.messages[0].content.contains("GCP"),
+            "should mention provider: {}",
+            app.messages[0].content
+        );
+    }
+
+    // rtmx:req REQ-TUI-065
+    #[test]
+    fn test_device_code_complete_adds_success_message() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        app.handle_event(
+            TuiEvent::AuthDeviceCodeComplete {
+                provider: "GCP".to_string(),
+            },
+            &tx,
+        );
+        assert_eq!(app.messages.len(), 1);
+        assert_eq!(app.messages[0].kind, crate::messages::MessageKind::System);
+        assert!(
+            app.messages[0].content.contains("Connected to GCP"),
+            "should confirm connection: {}",
+            app.messages[0].content
+        );
+    }
+
+    // rtmx:req REQ-TUI-065
+    #[test]
+    fn test_device_code_failed_adds_error_message() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        app.handle_event(
+            TuiEvent::AuthDeviceCodeFailed {
+                provider: "GCP".to_string(),
+                reason: "User denied".to_string(),
+            },
+            &tx,
+        );
+        assert_eq!(app.messages.len(), 1);
+        assert!(
+            app.messages[0].content.contains("User denied"),
+            "should contain reason: {}",
+            app.messages[0].content
+        );
+        assert!(
+            app.messages[0].content.contains("/connect"),
+            "should suggest /connect: {}",
+            app.messages[0].content
+        );
+    }
+
+    // rtmx:req REQ-TUI-065
+    #[test]
+    fn test_device_code_message_contains_url() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        app.handle_event(
+            TuiEvent::AuthDeviceCode {
+                provider: "GCP".to_string(),
+                url: "https://accounts.google.com/device".to_string(),
+                user_code: "XYZ-999".to_string(),
+            },
+            &tx,
+        );
+        assert!(
+            app.messages[0]
+                .content
+                .contains("https://accounts.google.com/device"),
+            "should contain the URL: {}",
+            app.messages[0].content
+        );
+    }
+
+    // rtmx:req REQ-TUI-065
+    #[test]
+    fn test_device_code_message_contains_user_code() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        app.handle_event(
+            TuiEvent::AuthDeviceCode {
+                provider: "GCP".to_string(),
+                url: "https://device.auth/code".to_string(),
+                user_code: "QWERTY-42".to_string(),
+            },
+            &tx,
+        );
+        assert!(
+            app.messages[0].content.contains("QWERTY-42"),
+            "should contain the user code: {}",
+            app.messages[0].content
+        );
+    }
+
+    // rtmx:req REQ-TUI-065
+    #[test]
+    fn test_device_code_event_constructible() {
+        let dc = TuiEvent::AuthDeviceCode {
+            provider: "AWS".to_string(),
+            url: "https://aws.example.com/device".to_string(),
+            user_code: "AWS-CODE".to_string(),
+        };
+        assert!(matches!(dc, TuiEvent::AuthDeviceCode { .. }));
+
+        let complete = TuiEvent::AuthDeviceCodeComplete {
+            provider: "AWS".to_string(),
+        };
+        assert!(matches!(complete, TuiEvent::AuthDeviceCodeComplete { .. }));
+
+        let failed = TuiEvent::AuthDeviceCodeFailed {
+            provider: "AWS".to_string(),
+            reason: "timeout".to_string(),
+        };
+        assert!(matches!(failed, TuiEvent::AuthDeviceCodeFailed { .. }));
+    }
+
+    // rtmx:req REQ-TUI-064
+    #[test]
+    fn test_cost_command_shows_session_summary() {
+        let mut app = make_app();
+        app.input_tokens = 5_000;
+        app.output_tokens = 2_000;
+        app.session_cost_usd = 0.42;
+        app.cost_per_m_input = 3.0;
+        app.cost_per_m_output = 15.0;
+        let action = app.execute_slash_command(SlashCommand::Cost);
+        assert_eq!(action, Action::Continue);
+        assert_eq!(app.messages.len(), 1);
+        let content = &app.messages[0].content;
+        assert!(content.contains("Model:"), "should show model label");
+        assert!(content.contains("Tokens:"), "should show token counts");
+        assert!(content.contains("Session cost:"), "should show cost");
+    }
+
+    // rtmx:req REQ-TUI-064
+    #[test]
+    fn test_cost_command_shows_model_name() {
+        let mut app = App::new("gemini-3.1-pro");
+        app.phase = AppPhase::Idle;
+        app.execute_slash_command(SlashCommand::Cost);
+        let content = &app.messages[0].content;
+        assert!(
+            content.contains("gemini-3.1-pro"),
+            "should contain model name, got: {content}"
+        );
+    }
+
+    // rtmx:req REQ-TUI-064
+    #[test]
+    fn test_cost_command_shows_tokens() {
+        let mut app = make_app();
+        app.input_tokens = 1_500;
+        app.output_tokens = 45_600;
+        app.execute_slash_command(SlashCommand::Cost);
+        let content = &app.messages[0].content;
+        assert!(
+            content.contains("1.5k"),
+            "should show formatted input tokens"
+        );
+        assert!(
+            content.contains("45.6k"),
+            "should show formatted output tokens"
+        );
+    }
+
+    // rtmx:req REQ-TUI-064
+    #[test]
+    fn test_cost_command_local_shows_zero() {
+        let mut app = make_app();
+        app.input_tokens = 10_000;
+        app.output_tokens = 5_000;
+        // cost_per_m_input and cost_per_m_output are 0.0 by default (local)
+        app.execute_slash_command(SlashCommand::Cost);
+        let content = &app.messages[0].content;
+        assert!(
+            content.contains("$0.00"),
+            "local model should show $0.00 cost, got: {content}"
+        );
+        assert!(
+            !content.contains("Rates:"),
+            "should not show rates when both are zero"
+        );
+    }
+
+    // rtmx:req REQ-TUI-064
+    #[test]
+    fn test_cost_command_shows_rates() {
+        let mut app = make_app();
+        app.cost_per_m_input = 3.0;
+        app.cost_per_m_output = 15.0;
+        app.execute_slash_command(SlashCommand::Cost);
+        let content = &app.messages[0].content;
+        assert!(
+            content.contains("Rates:"),
+            "should show rates when nonzero, got: {content}"
+        );
+        assert!(content.contains("$3.00/M input"));
+        assert!(content.contains("$15.00/M output"));
     }
 
     // rtmx:req REQ-TUI-045

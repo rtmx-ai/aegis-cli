@@ -2,6 +2,7 @@
 
 pub(crate) mod connect;
 pub(crate) mod context;
+pub(crate) mod cost;
 pub(crate) mod doctor;
 pub(crate) mod infra;
 pub(crate) mod undo;
@@ -29,6 +30,7 @@ impl App {
                      /infra <subcmd>       Plugin ops: status, list, preview <name>\n\
                      /doctor               Run connectivity and health checks\n\
                      /context              Show current context summary\n\
+                     /cost                 Show session cost breakdown\n\
                      /copy                 Copy last code block to clipboard\n\
                      /undo                 Revert most recent approved write\n\
                      /clear                Clear chat log\n\
@@ -92,6 +94,10 @@ impl App {
             }
             SlashCommand::Copy => {
                 self.execute_copy_command();
+                Action::Continue
+            }
+            SlashCommand::Cost => {
+                self.handle_cost_command();
                 Action::Continue
             }
         }

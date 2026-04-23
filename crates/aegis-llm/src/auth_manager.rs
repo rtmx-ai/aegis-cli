@@ -285,6 +285,71 @@ impl AuthManager {
             .send(AuthStatusEvent::RefreshFailed { provider, reason });
     }
 
+    /// Return providers whose cached credentials are expired or near-expiry
+    /// and have a refresh token available.
+    ///
+    /// For each cached credential:
+    /// - If expired (remaining = 0): emits `Expired`, included in return vec.
+    /// - If near-expiry (remaining < threshold) AND has refresh_token: emits
+    ///   `ExpiryWarning`, included in return vec.
+    /// - If near-expiry but no refresh_token: emits `ExpiryWarning` only
+    ///   (not included in return vec).
+    /// - Credentials with no expiry (e.g. Local) are skipped entirely.
+    pub fn check_expiry(&self, refresh_threshold_secs: u64) -> Vec<ProviderKind> {
+        let creds = match self.credentials.read() {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut needs_refresh = Vec::new();
+        let now = Instant::now();
+
+        for (kind, state) in creds.iter() {
+            let expires_at = match state.expires_at {
+                Some(ea) => ea,
+                None => continue, // no expiry (e.g. Local)
+            };
+
+            let remaining = if expires_at > now {
+                (expires_at - now).as_secs()
+            } else {
+                0
+            };
+
+            if remaining == 0 {
+                let _ = self
+                    .status_tx
+                    .send(AuthStatusEvent::Expired { provider: *kind });
+                needs_refresh.push(*kind);
+            } else if remaining < refresh_threshold_secs {
+                let _ = self.status_tx.send(AuthStatusEvent::ExpiryWarning {
+                    provider: *kind,
+                    remaining_secs: remaining,
+                });
+                if state.refresh_token.is_some() {
+                    needs_refresh.push(*kind);
+                }
+            }
+        }
+
+        needs_refresh
+    }
+
+    /// Check whether a cached credential has a refresh token.
+    pub fn has_refresh_token(&self, kind: ProviderKind) -> bool {
+        let creds = match self.credentials.read() {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        matches!(creds.get(&kind), Some(state) if state.refresh_token.is_some())
+    }
+
+    /// Return the refresh token for a cached credential, if present.
+    pub fn get_refresh_token(&self, kind: ProviderKind) -> Option<String> {
+        let creds = self.credentials.read().ok()?;
+        creds.get(&kind)?.refresh_token.clone()
+    }
+
     /// Check whether an `AuthState` is still valid (not expired).
     fn is_state_valid(&self, state: &AuthState) -> bool {
         match state.expires_at {
@@ -597,5 +662,215 @@ mod tests {
             flow.expires_at <= after,
             "expires_at should be at most ~305s from now"
         );
+    }
+
+    // --- Token refresh check tests ---
+
+    // rtmx:req REQ-LLM-037
+    #[test]
+    fn test_check_expiry_returns_empty_when_all_valid() {
+        let (mgr, _rx) = make_manager();
+        mgr.cache_auth(
+            ProviderKind::Vertex,
+            ProviderAuth::Gcp {
+                access_token: "ya29.valid".to_string(),
+            },
+            Some(3600),
+            Some("refresh-tok".to_string()),
+        );
+
+        let result = mgr.check_expiry(120);
+        assert!(result.is_empty());
+    }
+
+    // rtmx:req REQ-LLM-037
+    #[test]
+    fn test_check_expiry_returns_provider_when_near_expiry() {
+        let (mgr, _rx) = make_manager();
+
+        // Cache a credential that expires in 60s (below 120s threshold).
+        mgr.cache_auth(
+            ProviderKind::Vertex,
+            ProviderAuth::Gcp {
+                access_token: "ya29.expiring".to_string(),
+            },
+            Some(60),
+            Some("refresh-tok".to_string()),
+        );
+
+        let result = mgr.check_expiry(120);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], ProviderKind::Vertex);
+    }
+
+    // rtmx:req REQ-LLM-037
+    #[test]
+    fn test_check_expiry_emits_warning_event() {
+        let (mgr, mut rx) = make_manager();
+
+        mgr.cache_auth(
+            ProviderKind::Vertex,
+            ProviderAuth::Gcp {
+                access_token: "ya29.expiring".to_string(),
+            },
+            Some(60),
+            Some("refresh-tok".to_string()),
+        );
+
+        let _ = mgr.check_expiry(120);
+
+        let event = rx.try_recv().unwrap();
+        match event {
+            AuthStatusEvent::ExpiryWarning {
+                provider,
+                remaining_secs,
+            } => {
+                assert_eq!(provider, ProviderKind::Vertex);
+                assert!(remaining_secs <= 60);
+            }
+            other => panic!("expected ExpiryWarning, got: {other:?}"),
+        }
+    }
+
+    // rtmx:req REQ-LLM-037
+    #[test]
+    fn test_check_expiry_emits_expired_event() {
+        let (mgr, mut rx) = make_manager();
+
+        // Cache an already-expired credential.
+        {
+            let mut creds = mgr.credentials.write().unwrap();
+            creds.insert(
+                ProviderKind::Bedrock,
+                AuthState {
+                    auth: ProviderAuth::Aws {
+                        access_key_id: "AKIA".to_string(),
+                        secret_access_key: "secret".to_string(),
+                        session_token: None,
+                        region: "us-east-1".to_string(),
+                    },
+                    expires_at: Some(Instant::now() - Duration::from_secs(10)),
+                    refresh_token: Some("refresh".to_string()),
+                    provider_kind: ProviderKind::Bedrock,
+                },
+            );
+        }
+
+        let result = mgr.check_expiry(120);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], ProviderKind::Bedrock);
+
+        let event = rx.try_recv().unwrap();
+        match event {
+            AuthStatusEvent::Expired { provider } => {
+                assert_eq!(provider, ProviderKind::Bedrock);
+            }
+            other => panic!("expected Expired, got: {other:?}"),
+        }
+    }
+
+    // rtmx:req REQ-LLM-037
+    #[test]
+    fn test_check_expiry_skips_no_refresh_token() {
+        let (mgr, mut rx) = make_manager();
+
+        // Near-expiry but NO refresh token -- should emit warning but NOT
+        // include in the returned vec.
+        mgr.cache_auth(
+            ProviderKind::Azure,
+            ProviderAuth::Azure {
+                tenant_id: "tenant".to_string(),
+                client_id: "client".to_string(),
+                api_key: Some("azure-tok".to_string()),
+            },
+            Some(30),
+            None, // no refresh token
+        );
+
+        let result = mgr.check_expiry(120);
+        assert!(
+            result.is_empty(),
+            "should not include provider without refresh token"
+        );
+
+        // Warning event should still be emitted.
+        let event = rx.try_recv().unwrap();
+        match event {
+            AuthStatusEvent::ExpiryWarning { provider, .. } => {
+                assert_eq!(provider, ProviderKind::Azure);
+            }
+            other => panic!("expected ExpiryWarning, got: {other:?}"),
+        }
+    }
+
+    // rtmx:req REQ-LLM-037
+    #[test]
+    fn test_has_refresh_token_true() {
+        let (mgr, _rx) = make_manager();
+        mgr.cache_auth(
+            ProviderKind::Vertex,
+            ProviderAuth::Gcp {
+                access_token: "ya29.tok".to_string(),
+            },
+            Some(3600),
+            Some("my-refresh-token".to_string()),
+        );
+        assert!(mgr.has_refresh_token(ProviderKind::Vertex));
+    }
+
+    // rtmx:req REQ-LLM-037
+    #[test]
+    fn test_has_refresh_token_false() {
+        let (mgr, _rx) = make_manager();
+        mgr.cache_auth(
+            ProviderKind::Vertex,
+            ProviderAuth::Gcp {
+                access_token: "ya29.tok".to_string(),
+            },
+            Some(3600),
+            None,
+        );
+        assert!(!mgr.has_refresh_token(ProviderKind::Vertex));
+        // Also false for uncached provider.
+        assert!(!mgr.has_refresh_token(ProviderKind::Bedrock));
+    }
+
+    // rtmx:req REQ-LLM-037
+    #[test]
+    fn test_get_refresh_token_returns_value() {
+        let (mgr, _rx) = make_manager();
+        mgr.cache_auth(
+            ProviderKind::Bedrock,
+            ProviderAuth::Aws {
+                access_key_id: "AKIA".to_string(),
+                secret_access_key: "secret".to_string(),
+                session_token: None,
+                region: "us-east-1".to_string(),
+            },
+            Some(43200),
+            Some("bedrock-refresh-token".to_string()),
+        );
+
+        assert_eq!(
+            mgr.get_refresh_token(ProviderKind::Bedrock),
+            Some("bedrock-refresh-token".to_string())
+        );
+        // None for provider without refresh token or uncached.
+        assert_eq!(mgr.get_refresh_token(ProviderKind::Vertex), None);
+    }
+
+    // rtmx:req REQ-LLM-037
+    #[test]
+    fn test_check_expiry_local_no_expiry() {
+        let (mgr, mut rx) = make_manager();
+
+        // Local provider has no expiry -- check_expiry should skip it entirely.
+        mgr.cache_auth(ProviderKind::Local, ProviderAuth::NoAuth, None, None);
+
+        let result = mgr.check_expiry(120);
+        assert!(result.is_empty());
+
+        // No events should have been emitted.
+        assert!(rx.try_recv().is_err());
     }
 }
