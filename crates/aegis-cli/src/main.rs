@@ -132,6 +132,15 @@ enum Commands {
     },
     /// Check infrastructure health via plugin status
     Doctor,
+    /// Review HITL approval/denial history from the audit ledger
+    History {
+        /// Filter to a specific session ID
+        #[arg(long)]
+        session: Option<String>,
+        /// Show only denied entries
+        #[arg(long)]
+        denied: bool,
+    },
 }
 
 fn main() {
@@ -183,6 +192,7 @@ fn main() {
             eprintln!("aegis doctor: not yet implemented");
             std::process::exit(1);
         }
+        Some(Commands::History { session, denied }) => run_history(session, denied),
         None => {
             if needs_first_run_wizard() {
                 // First run: launch the init wizard
@@ -233,6 +243,52 @@ fn run_init(local: bool) -> Result<(), String> {
     eprintln!("Configuration written to {}", result.config_path.display());
     eprintln!("Mode: {:?}. Backend: local (Ollama).", result.mode);
     eprintln!("Run 'aegis chat' to start a session.");
+    Ok(())
+}
+
+/// Run the `aegis history` subcommand (REQ-HITL-006).
+///
+/// Searches the audit ledger for HITL approval/denial events and
+/// displays them in a formatted table. Supports filtering by session
+/// ID and by denied-only.
+fn run_history(session: Option<String>, denied: bool) -> Result<(), String> {
+    let log_dir = dirs_next::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".aegis/logs");
+
+    if !log_dir.exists() {
+        eprintln!("No audit logs found at {}", log_dir.display());
+        return Ok(());
+    }
+
+    // Search the audit ledger for all HITL event types.
+    // We run one query per event type and merge results, since the
+    // search API filters on a single event_type at a time.
+    let mut all_entries = Vec::new();
+    for event_type in aegis_hitl::history::HITL_EVENT_TYPES {
+        let search_query = aegis_audit::search::SearchQuery {
+            event_type: Some((*event_type).to_string()),
+            session_id: session.clone(),
+            ..Default::default()
+        };
+        match aegis_audit::search::search_ledger(&log_dir, &search_query) {
+            Ok(result) => all_entries.extend(result.entries),
+            Err(e) => {
+                return Err(format!("Failed to search audit ledger: {e}"));
+            }
+        }
+    }
+
+    // Extract and filter structured history entries.
+    let query = aegis_hitl::history::HistoryQuery {
+        session_id: session,
+        denied_only: denied,
+    };
+    let history = aegis_hitl::history::extract_history(&all_entries, &query);
+
+    // Format and display.
+    println!("{}", aegis_hitl::history::format_history(&history));
+
     Ok(())
 }
 
