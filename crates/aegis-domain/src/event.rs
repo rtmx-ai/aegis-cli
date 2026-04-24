@@ -37,6 +37,12 @@ pub enum DomainEvent {
         requirement_id: RequirementId,
         timestamp: DateTime<Utc>,
     },
+    /// Emergency kill switch activated by the operator (Ctrl+K).
+    /// Halts the agent loop and denies all queued tool calls.
+    KillSwitch {
+        session_id: SessionId,
+        timestamp: DateTime<Utc>,
+    },
     /// Token usage for a single LLM turn, with provider attribution.
     TokensConsumed {
         session_id: String,

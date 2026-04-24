@@ -21,6 +21,15 @@ impl App {
             )));
         }
 
+        // Emergency kill switch: Ctrl+K halts the agent in any phase.
+        if key.code == KeyCode::Char('k') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.messages.push(ChatMessage::system(
+                "Kill switch activated. Agent halted.".to_string(),
+            ));
+            self.phase = AppPhase::Idle;
+            return Action::KillSwitch;
+        }
+
         // Phase-specific key handling
         match self.phase {
             AppPhase::Splash => {
@@ -611,6 +620,85 @@ mod tests {
 
         // Phase should be Streaming (waiting for agent response)
         assert_eq!(app.phase, AppPhase::Streaming);
+    }
+
+    // rtmx:req REQ-HITL-007
+    #[test]
+    fn ctrl_k_returns_kill_switch_action_in_idle() {
+        let mut app = App::new("test-model");
+        app.phase = AppPhase::Idle;
+        let (tx, _rx) = agent_tx();
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        let action = app.handle_key(key, &tx);
+        assert_eq!(action, Action::KillSwitch);
+    }
+
+    // rtmx:req REQ-HITL-007
+    #[test]
+    fn ctrl_k_returns_kill_switch_during_streaming() {
+        let mut app = App::new("test-model");
+        app.phase = AppPhase::Streaming;
+        let (tx, _rx) = agent_tx();
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        let action = app.handle_key(key, &tx);
+        assert_eq!(action, Action::KillSwitch);
+    }
+
+    // rtmx:req REQ-HITL-007
+    #[test]
+    fn ctrl_k_returns_kill_switch_during_tool_executing() {
+        let mut app = App::new("test-model");
+        app.phase = AppPhase::ToolExecuting;
+        let (tx, _rx) = agent_tx();
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        let action = app.handle_key(key, &tx);
+        assert_eq!(action, Action::KillSwitch);
+    }
+
+    // rtmx:req REQ-HITL-007
+    #[test]
+    fn ctrl_k_returns_kill_switch_during_awaiting_approval() {
+        let mut app = App::new("test-model");
+        app.phase = AppPhase::AwaitingApproval;
+        let (tx, _rx) = agent_tx();
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        let action = app.handle_key(key, &tx);
+        assert_eq!(action, Action::KillSwitch);
+    }
+
+    // rtmx:req REQ-HITL-007
+    #[test]
+    fn ctrl_k_adds_system_message() {
+        let mut app = App::new("test-model");
+        app.phase = AppPhase::Idle;
+        let (tx, _rx) = agent_tx();
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        app.handle_key(key, &tx);
+        assert!(!app.messages.is_empty(), "should have a system message");
+        assert!(
+            app.messages
+                .last()
+                .unwrap()
+                .content
+                .contains("Kill switch activated"),
+            "system message should mention kill switch: {}",
+            app.messages.last().unwrap().content
+        );
+    }
+
+    // rtmx:req REQ-HITL-007
+    #[test]
+    fn ctrl_k_resets_phase_to_idle() {
+        let mut app = App::new("test-model");
+        app.phase = AppPhase::Streaming;
+        let (tx, _rx) = agent_tx();
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        app.handle_key(key, &tx);
+        assert_eq!(
+            app.phase,
+            AppPhase::Idle,
+            "phase should be Idle after kill switch"
+        );
     }
 
     // rtmx:req REQ-LLM-031

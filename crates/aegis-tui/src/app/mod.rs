@@ -1927,6 +1927,62 @@ trailing";
         assert!(content.contains("$15.00/M output"));
     }
 
+    // rtmx:req REQ-HITL-007
+    #[test]
+    fn ctrl_k_via_tui_event_returns_kill_switch() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        let action = app.handle_event(TuiEvent::Terminal(CtEvent::Key(key)), &tx);
+        assert_eq!(action, Action::KillSwitch);
+        assert_eq!(app.phase, AppPhase::Idle);
+        assert!(
+            app.messages
+                .last()
+                .unwrap()
+                .content
+                .contains("Kill switch activated"),
+        );
+    }
+
+    // rtmx:req REQ-HITL-007
+    #[test]
+    fn ctrl_k_during_streaming_halts_agent() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        // Start streaming
+        app.handle_event(TuiEvent::AgentToken("partial output".to_string()), &tx);
+        assert_eq!(app.phase, AppPhase::Streaming);
+        // Hit kill switch
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        let action = app.handle_event(TuiEvent::Terminal(CtEvent::Key(key)), &tx);
+        assert_eq!(action, Action::KillSwitch);
+        assert_eq!(app.phase, AppPhase::Idle);
+    }
+
+    // rtmx:req REQ-HITL-007
+    #[test]
+    fn ctrl_k_during_awaiting_approval_halts_agent() {
+        let mut app = make_app();
+        let (tx, _rx) = make_agent_tx();
+        let (resp_tx, _resp_rx) = tokio::sync::oneshot::channel();
+        let handle = ApprovalRequestHandle {
+            tool_call: ToolCall::WriteFile {
+                path: FilePath::new_unchecked("danger.sh"),
+                content: "rm -rf /".to_string(),
+            },
+            description: "Write to danger.sh".to_string(),
+            response_tx: resp_tx,
+        };
+        app.handle_event(TuiEvent::ApprovalRequest(handle), &tx);
+        assert_eq!(app.phase, AppPhase::AwaitingApproval);
+        // Hit kill switch
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        let action = app.handle_event(TuiEvent::Terminal(CtEvent::Key(key)), &tx);
+        assert_eq!(action, Action::KillSwitch);
+        assert_eq!(app.phase, AppPhase::Idle);
+    }
+
     // rtmx:req REQ-TUI-045
     #[test]
     fn copy_command_reports_bytes_or_error_when_block_present() {

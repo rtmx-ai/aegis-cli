@@ -21,4 +21,11 @@ pub enum AppPhase {
 pub enum Action {
     Continue,
     Quit,
+    /// Emergency kill switch (Ctrl+K): halt the agent loop, deny all queued
+    /// tool calls, and log a KILL_SWITCH event to the audit ledger.
+    /// The composition root (main.rs) should:
+    ///   1. Call `cancellation_token.cancel()` to stop the agent loop.
+    ///   2. Record a `DomainEvent::KillSwitch` to the audit ledger.
+    ///   3. Deny any pending HITL approval requests.
+    KillSwitch,
 }
