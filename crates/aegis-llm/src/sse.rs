@@ -328,6 +328,7 @@ mod tests {
     }
 
     // rtmx:req REQ-LLM-009
+    // rtmx:req REQ-LLM-022
     #[tokio::test]
     async fn sse_parser_emits_retryable_error_on_stream_error() {
         // Simulate a stream that yields one chunk then an error.
@@ -362,6 +363,7 @@ mod tests {
     }
 
     // rtmx:req REQ-LLM-009
+    // rtmx:req REQ-LLM-022
     #[tokio::test]
     async fn sse_parser_emits_done_for_empty_stream_without_output() {
         // An empty stream with no prior output should just emit Done, not error.

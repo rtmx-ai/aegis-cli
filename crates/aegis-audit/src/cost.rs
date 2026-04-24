@@ -580,6 +580,7 @@ mod tests {
         assert_eq!(session.cost_usd, expected);
     }
 
+    // rtmx:req REQ-AUDIT-021a
     // rtmx:req REQ-AUDIT-021b
     #[test]
     fn test_scan_single_file_extracts_tokens_consumed() {
@@ -618,6 +619,7 @@ mod tests {
         assert_eq!(records[0].output_tokens, 567);
     }
 
+    // rtmx:req REQ-AUDIT-021a
     // rtmx:req REQ-AUDIT-021b
     #[test]
     fn test_scan_single_file_skips_non_tokens_consumed() {
@@ -665,6 +667,7 @@ mod tests {
         assert_eq!(records[0].session_id, "s-1");
     }
 
+    // rtmx:req REQ-AUDIT-021a
     // rtmx:req REQ-AUDIT-021b
     #[test]
     fn test_scan_ledger_files_across_multiple_files() {
