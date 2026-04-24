@@ -89,8 +89,8 @@ with open(markers_path) as f:
                     results.append({
                         "req_id": current_req,
                         "test_name": cand,
+                        "test_file": file_path,
                         "passed": test_results[cand],
-                        "package": "aegis-cli",
                     })
                     break
 
@@ -104,7 +104,7 @@ LINES=$(jq 'length' "$RESULTS_JSON")
 echo "Generated $LINES results in $RESULTS_JSON" >&2
 
 if [ "$LINES" -gt 0 ]; then
-    rtmx from-go "$RESULTS_JSON" --update $DRY_RUN -v 2>&1 | tail -20
+    rtmx verify --results "$RESULTS_JSON" --update --force $DRY_RUN 2>&1 | tail -20
 else
     echo "No results to import." >&2
     exit 1
