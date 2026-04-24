@@ -17,6 +17,7 @@ pub mod dlp_gate;
 pub mod failover;
 pub mod local;
 pub mod provider;
+pub mod providers;
 pub mod rates;
 pub mod retry;
 pub mod sse;

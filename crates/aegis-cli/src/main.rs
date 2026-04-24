@@ -141,6 +141,48 @@ enum Commands {
         #[arg(long)]
         denied: bool,
     },
+    /// Discover and probe LLM providers
+    Providers {
+        #[command(subcommand)]
+        action: ProvidersAction,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum ProvidersAction {
+    /// List available models from a provider endpoint
+    List {
+        /// Provider: local, vertex, bedrock, azure
+        #[arg(long, default_value = "local")]
+        provider: String,
+        /// Provider endpoint URL (defaults to provider standard)
+        #[arg(long)]
+        endpoint: Option<String>,
+        /// GCP project ID (Vertex only)
+        #[arg(long)]
+        project: Option<String>,
+        /// Cloud region
+        #[arg(long)]
+        region: Option<String>,
+    },
+    /// Test connectivity to a provider endpoint with a minimal request
+    Test {
+        /// Provider: local, vertex, bedrock, azure
+        #[arg(long)]
+        provider: String,
+        /// Provider endpoint URL
+        #[arg(long)]
+        endpoint: Option<String>,
+        /// Model to probe
+        #[arg(long)]
+        model: String,
+        /// GCP project ID (Vertex only)
+        #[arg(long)]
+        project: Option<String>,
+        /// Cloud region
+        #[arg(long)]
+        region: Option<String>,
+    },
 }
 
 fn main() {
@@ -193,6 +235,7 @@ fn main() {
             std::process::exit(1);
         }
         Some(Commands::History { session, denied }) => run_history(session, denied),
+        Some(Commands::Providers { action }) => run_providers(action),
         None => {
             if needs_first_run_wizard() {
                 // First run: launch the init wizard
@@ -290,6 +333,69 @@ fn run_history(session: Option<String>, denied: bool) -> Result<(), String> {
     println!("{}", aegis_hitl::history::format_history(&history));
 
     Ok(())
+}
+
+fn run_providers(action: ProvidersAction) -> Result<(), String> {
+    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("Runtime error: {e}"))?;
+
+    match action {
+        ProvidersAction::List {
+            provider,
+            endpoint,
+            project: _project,
+            region: _region,
+        } => {
+            let kind = parse_provider_kind(&provider)?;
+            let endpoint = endpoint.unwrap_or_else(|| default_endpoint(kind));
+            let models = rt
+                .block_on(aegis_llm::providers::list_models(kind, &endpoint))
+                .map_err(|e| format!("Failed to list models: {e}"))?;
+            println!("{}", aegis_llm::providers::format_model_table(&models));
+            Ok(())
+        }
+        ProvidersAction::Test {
+            provider,
+            endpoint,
+            model,
+            project: _project,
+            region: _region,
+        } => {
+            let kind = parse_provider_kind(&provider)?;
+            let endpoint = endpoint.unwrap_or_else(|| default_endpoint(kind));
+            let result = rt
+                .block_on(aegis_llm::providers::test_endpoint(kind, &endpoint, &model))
+                .map_err(|e| format!("Probe failed: {e}"))?;
+            println!("{}", aegis_llm::providers::format_probe_result(&result));
+            if result.status_code != 200 {
+                std::process::exit(1);
+            }
+            Ok(())
+        }
+    }
+}
+
+fn parse_provider_kind(provider: &str) -> Result<aegis_llm::config::ProviderKind, String> {
+    use aegis_llm::config::ProviderKind;
+    match provider.to_lowercase().as_str() {
+        "local" => Ok(ProviderKind::Local),
+        "vertex" => Ok(ProviderKind::Vertex),
+        "bedrock" => Ok(ProviderKind::Bedrock),
+        "azure" => Ok(ProviderKind::Azure),
+        other => Err(format!(
+            "Unknown provider '{}'. Options: local, vertex, bedrock, azure",
+            other
+        )),
+    }
+}
+
+fn default_endpoint(kind: aegis_llm::config::ProviderKind) -> String {
+    use aegis_llm::config::ProviderKind;
+    match kind {
+        ProviderKind::Local => "http://localhost:11434/v1".to_string(),
+        ProviderKind::Vertex => "https://us-central1-aiplatform.googleapis.com".to_string(),
+        ProviderKind::Bedrock => "https://bedrock-runtime.us-east-1.amazonaws.com".to_string(),
+        ProviderKind::Azure => String::new(),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
