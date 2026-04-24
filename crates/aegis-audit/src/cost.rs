@@ -6,7 +6,8 @@
 //! `aegis-llm`.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
 // Scanner: extract TokensConsumed records from JSONL ledger files
@@ -41,6 +42,161 @@ pub fn scan_ledger_files(logs_dir: &Path) -> Vec<TokensConsumedRecord> {
         }
     }
     records
+}
+
+// ---------------------------------------------------------------------------
+// Incremental scan cache (REQ-AUDIT-021c)
+// ---------------------------------------------------------------------------
+
+/// Bookmark tracking how far we have scanned into a single JSONL file.
+#[derive(Debug, Clone)]
+pub struct FileBookmark {
+    /// Byte offset one past the last byte we have already parsed.
+    pub last_offset: u64,
+    /// Number of `TokensConsumed` records returned from previous scans.
+    pub last_line_count: usize,
+}
+
+/// In-memory cache of per-file scan bookmarks.  Resets each session.
+///
+/// After the first full scan of a JSONL file, subsequent calls to
+/// [`scan_ledger_files_cached`] only read bytes appended since the
+/// previous scan, reducing `/cost` latency from O(all entries) to
+/// O(new entries).
+#[derive(Debug, Clone, Default)]
+pub struct ScanCache {
+    bookmarks: HashMap<PathBuf, FileBookmark>,
+    /// Accumulated records from all prior scans (the "already-seen" set).
+    records: Vec<TokensConsumedRecord>,
+}
+
+impl ScanCache {
+    /// Create an empty cache.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Return a read-only view of cached bookmarks (useful for tests).
+    pub fn bookmarks(&self) -> &HashMap<PathBuf, FileBookmark> {
+        &self.bookmarks
+    }
+
+    /// Return a read-only view of all accumulated records.
+    pub fn records(&self) -> &[TokensConsumedRecord] {
+        &self.records
+    }
+}
+
+/// Incrementally scan all `.jsonl` files in `logs_dir`, reading only
+/// bytes appended since the last scan recorded in `cache`.
+///
+/// Returns **all** records seen so far (cached + newly scanned).
+pub fn scan_ledger_files_cached(
+    logs_dir: &Path,
+    cache: &mut ScanCache,
+) -> Vec<TokensConsumedRecord> {
+    let entries = match std::fs::read_dir(logs_dir) {
+        Ok(e) => e,
+        Err(_) => return cache.records.clone(),
+    };
+
+    for dir_entry in entries.flatten() {
+        let path = dir_entry.path();
+        if path.extension().is_none_or(|e| e != "jsonl") {
+            continue;
+        }
+        let new_records = scan_single_file_from_offset(&path, cache);
+        cache.records.extend(new_records);
+    }
+
+    cache.records.clone()
+}
+
+/// Open `path`, seek to the bookmarked offset (or 0), parse new lines,
+/// and update the bookmark in `cache`.  Returns only the **new** records.
+fn scan_single_file_from_offset(path: &Path, cache: &mut ScanCache) -> Vec<TokensConsumedRecord> {
+    let file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return Vec::new(),
+    };
+
+    let canonical = match std::fs::canonicalize(path) {
+        Ok(p) => p,
+        Err(_) => path.to_path_buf(),
+    };
+
+    let start_offset = cache
+        .bookmarks
+        .get(&canonical)
+        .map(|b| b.last_offset)
+        .unwrap_or(0);
+
+    let mut reader = BufReader::new(file);
+    if reader.seek(SeekFrom::Start(start_offset)).is_err() {
+        return Vec::new();
+    }
+
+    let mut records = Vec::new();
+    let mut current_offset = start_offset;
+    let mut line_buf = String::new();
+
+    loop {
+        line_buf.clear();
+        let bytes_read = match reader.read_line(&mut line_buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(_) => break,
+        };
+        current_offset += bytes_read as u64;
+
+        let trimmed = line_buf.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(rec) = parse_tokens_consumed_line(trimmed) {
+            records.push(rec);
+        }
+    }
+
+    let prev_count = cache
+        .bookmarks
+        .get(&canonical)
+        .map(|b| b.last_line_count)
+        .unwrap_or(0);
+
+    cache.bookmarks.insert(
+        canonical,
+        FileBookmark {
+            last_offset: current_offset,
+            last_line_count: prev_count + records.len(),
+        },
+    );
+
+    records
+}
+
+/// Parse a single JSON line into a `TokensConsumedRecord`, if it is one.
+fn parse_tokens_consumed_line(line: &str) -> Option<TokensConsumedRecord> {
+    let entry: serde_json::Value = serde_json::from_str(line).ok()?;
+    let event = entry.get("event")?;
+    let tc = event.get("TokensConsumed")?;
+
+    Some(TokensConsumedRecord {
+        session_id: tc.get("session_id")?.as_str()?.to_string(),
+        provider_kind: tc.get("provider_kind")?.as_str()?.to_string(),
+        model: tc.get("model")?.as_str()?.to_string(),
+        project_id: tc
+            .get("project_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        region: tc
+            .get("region")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        input_tokens: tc.get("input_tokens")?.as_u64()?,
+        output_tokens: tc.get("output_tokens")?.as_u64()?,
+        timestamp: tc.get("timestamp")?.as_str()?.to_string(),
+    })
 }
 
 /// Scan a single JSONL file and return `TokensConsumed` records.
@@ -718,5 +874,164 @@ mod tests {
         assert!(report.by_month.is_empty());
         assert_eq!(report.lifetime.session_count, 0);
         assert!((report.lifetime.total_cost_usd).abs() < f64::EPSILON);
+    }
+
+    // -- Incremental scan cache tests (REQ-AUDIT-021c) -------------------------
+
+    fn make_ledger_line(session_id: &str, input: u64, output: u64) -> String {
+        let entry = serde_json::json!({
+            "timestamp": "2026-04-22T00:00:00Z",
+            "os_user": "test",
+            "hostname": "host",
+            "event": {
+                "TokensConsumed": {
+                    "session_id": session_id,
+                    "provider_kind": "vertex",
+                    "model": "gemini-2.5-pro",
+                    "project_id": null,
+                    "region": null,
+                    "input_tokens": input,
+                    "output_tokens": output,
+                    "timestamp": "2026-04-22T00:00:00Z"
+                }
+            }
+        });
+        serde_json::to_string(&entry).unwrap()
+    }
+
+    // rtmx:req REQ-AUDIT-021c
+    #[test]
+    fn test_scan_cache_first_scan_reads_all() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("ledger.jsonl");
+        let content = format!(
+            "{}\n{}\n",
+            make_ledger_line("s1", 100, 50),
+            make_ledger_line("s2", 200, 100)
+        );
+        std::fs::write(&path, &content).unwrap();
+
+        let mut cache = ScanCache::new();
+        let records = scan_ledger_files_cached(dir.path(), &mut cache);
+
+        assert_eq!(records.len(), 2);
+        assert_eq!(cache.bookmarks().len(), 1);
+        let bm = cache.bookmarks().values().next().unwrap();
+        assert_eq!(bm.last_offset, content.len() as u64);
+        assert_eq!(bm.last_line_count, 2);
+    }
+
+    // rtmx:req REQ-AUDIT-021c
+    #[test]
+    fn test_scan_cache_incremental_reads_only_new() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("ledger.jsonl");
+
+        // Write initial content.
+        let line1 = make_ledger_line("s1", 100, 50);
+        std::fs::write(&path, format!("{line1}\n")).unwrap();
+
+        let mut cache = ScanCache::new();
+        let records = scan_ledger_files_cached(dir.path(), &mut cache);
+        assert_eq!(records.len(), 1);
+
+        // Append a second line.
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        writeln!(f, "{}", make_ledger_line("s2", 200, 100)).unwrap();
+        drop(f);
+
+        // Second scan should return all accumulated records (1 old + 1 new).
+        let records = scan_ledger_files_cached(dir.path(), &mut cache);
+        assert_eq!(records.len(), 2);
+
+        let bm = cache.bookmarks().values().next().unwrap();
+        assert_eq!(bm.last_line_count, 2);
+    }
+
+    // rtmx:req REQ-AUDIT-021c
+    #[test]
+    fn test_scan_cache_no_new_data_returns_same() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("ledger.jsonl");
+        std::fs::write(&path, format!("{}\n", make_ledger_line("s1", 100, 50))).unwrap();
+
+        let mut cache = ScanCache::new();
+        let r1 = scan_ledger_files_cached(dir.path(), &mut cache);
+        let r2 = scan_ledger_files_cached(dir.path(), &mut cache);
+
+        assert_eq!(r1.len(), 1);
+        assert_eq!(r2.len(), 1);
+        // Bookmark should not have advanced.
+        let bm = cache.bookmarks().values().next().unwrap();
+        assert_eq!(bm.last_line_count, 1);
+    }
+
+    // rtmx:req REQ-AUDIT-021c
+    #[test]
+    fn test_scan_cache_empty_dir() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut cache = ScanCache::new();
+        let records = scan_ledger_files_cached(dir.path(), &mut cache);
+        assert!(records.is_empty());
+        assert!(cache.bookmarks().is_empty());
+    }
+
+    // rtmx:req REQ-AUDIT-021c
+    #[test]
+    fn test_scan_cache_multiple_files() {
+        let dir = tempfile::TempDir::new().unwrap();
+
+        for i in 0..3 {
+            let path = dir.path().join(format!("log-{i}.jsonl"));
+            std::fs::write(
+                &path,
+                format!("{}\n", make_ledger_line(&format!("s{i}"), 100, 50)),
+            )
+            .unwrap();
+        }
+
+        let mut cache = ScanCache::new();
+        let records = scan_ledger_files_cached(dir.path(), &mut cache);
+        assert_eq!(records.len(), 3);
+        assert_eq!(cache.bookmarks().len(), 3);
+    }
+
+    // rtmx:req REQ-AUDIT-021c
+    #[test]
+    fn test_scan_cache_skips_non_tokens_consumed() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("mixed.jsonl");
+
+        let non_token = serde_json::json!({
+            "timestamp": "2026-04-22T00:00:00Z",
+            "os_user": "test",
+            "hostname": "host",
+            "event": {
+                "SessionStarted": {
+                    "session_id": { "0": "00000000-0000-0000-0000-000000000000" },
+                    "timestamp": "2026-04-22T00:00:00Z"
+                }
+            }
+        });
+        let content = format!(
+            "{}\n{}\n",
+            serde_json::to_string(&non_token).unwrap(),
+            make_ledger_line("s1", 100, 50),
+        );
+        std::fs::write(&path, &content).unwrap();
+
+        let mut cache = ScanCache::new();
+        let records = scan_ledger_files_cached(dir.path(), &mut cache);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].session_id, "s1");
+        // Bookmark offset should cover entire file.
+        let bm = cache.bookmarks().values().next().unwrap();
+        assert_eq!(bm.last_offset, content.len() as u64);
+        // Only 1 TokensConsumed line counted.
+        assert_eq!(bm.last_line_count, 1);
     }
 }
