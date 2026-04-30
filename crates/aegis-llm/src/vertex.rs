@@ -4,6 +4,8 @@
 //! compatible API. Requires a GCP project ID, region, and a valid OAuth2
 //! access token obtained via Application Default Credentials (ADC).
 
+use std::sync::Arc;
+
 use aegis_domain::error::DomainError;
 use aegis_domain::ports::*;
 use async_trait::async_trait;
@@ -12,10 +14,13 @@ use reqwest::Client;
 use crate::config::ProviderConfig;
 use crate::sse::SseTokenStream;
 
+/// Default maximum idle connections per host for connection pooling (REQ-LLM-019).
+const POOL_MAX_IDLE_PER_HOST: usize = 4;
+
 /// Provider that speaks to Vertex AI via the OpenAI-compatible endpoint.
 #[derive(Debug)]
 pub struct VertexProvider {
-    client: Client,
+    client: Arc<Client>,
     endpoint_url: String,
     model: String,
     max_tokens: u32,
@@ -48,13 +53,16 @@ impl VertexProvider {
              /locations/{region}/endpoints/openapi/chat/completions"
         );
 
-        let client = Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(config.connect_timeout_secs))
-            .timeout(std::time::Duration::from_secs(config.read_timeout_secs))
-            .build()
-            .map_err(|e| DomainError::ProviderError {
-                message: format!("Failed to create HTTP client: {e}"),
-            })?;
+        let client = Arc::new(
+            Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(config.connect_timeout_secs))
+                .timeout(std::time::Duration::from_secs(config.read_timeout_secs))
+                .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST)
+                .build()
+                .map_err(|e| DomainError::ProviderError {
+                    message: format!("Failed to create HTTP client: {e}"),
+                })?,
+        );
 
         tracing::info!(
             provider = "vertex",
@@ -73,6 +81,11 @@ impl VertexProvider {
             temperature: config.temperature,
             access_token,
         })
+    }
+
+    /// Return a reference to the Arc-wrapped HTTP client (REQ-LLM-019).
+    pub fn shared_client(&self) -> &Arc<Client> {
+        &self.client
     }
 
     /// Build the OpenAI-compatible request body (same format as LocalProvider).
@@ -615,5 +628,15 @@ mod tests {
             msg.get("cache_control").is_none(),
             "cache_control should be absent when None"
         );
+    }
+
+    // rtmx:req REQ-LLM-019
+    #[test]
+    fn client_is_arc_shared() {
+        let cfg = vertex_config(Some("proj"), Some("us-east4"));
+        let provider = VertexProvider::new(&cfg, "ya29.tok".to_string()).unwrap();
+        let arc1 = provider.shared_client().clone();
+        let arc2 = provider.shared_client().clone();
+        assert!(Arc::ptr_eq(&arc1, &arc2));
     }
 }

@@ -4,6 +4,8 @@
 //! streaming API. Supports commercial and GovCloud regions. Uses lightweight
 //! aws-sigv4 crate instead of the full SDK to minimize transitive deps.
 
+use std::sync::Arc;
+
 use aegis_domain::error::DomainError;
 use aegis_domain::ports::*;
 use async_trait::async_trait;
@@ -13,10 +15,13 @@ use crate::auth::ProviderAuth;
 use crate::bedrock_stream::BedrockTokenStream;
 use crate::config::ProviderConfig;
 
+/// Default maximum idle connections per host for connection pooling (REQ-LLM-019).
+const POOL_MAX_IDLE_PER_HOST: usize = 4;
+
 /// Provider that speaks to AWS Bedrock via the Converse Stream API.
 #[derive(Debug)]
 pub struct BedrockProvider {
-    client: Client,
+    client: Arc<Client>,
     endpoint_url: String,
     model: String,
     max_tokens: u32,
@@ -60,13 +65,16 @@ impl BedrockProvider {
             model = config.model,
         );
 
-        let client = Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(config.connect_timeout_secs))
-            .timeout(std::time::Duration::from_secs(config.read_timeout_secs))
-            .build()
-            .map_err(|e| DomainError::ProviderError {
-                message: format!("Failed to create HTTP client: {e}"),
-            })?;
+        let client = Arc::new(
+            Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(config.connect_timeout_secs))
+                .timeout(std::time::Duration::from_secs(config.read_timeout_secs))
+                .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST)
+                .build()
+                .map_err(|e| DomainError::ProviderError {
+                    message: format!("Failed to create HTTP client: {e}"),
+                })?,
+        );
 
         tracing::info!(
             provider = "bedrock",
@@ -87,6 +95,11 @@ impl BedrockProvider {
             session_token,
             region,
         })
+    }
+
+    /// Return a reference to the Arc-wrapped HTTP client (REQ-LLM-019).
+    pub fn shared_client(&self) -> &Arc<Client> {
+        &self.client
     }
 
     /// Build the Bedrock Converse API request body.
@@ -742,5 +755,16 @@ mod tests {
             system[0].get("cachePoint").is_none(),
             "cachePoint should be absent when cache_control is None"
         );
+    }
+
+    // rtmx:req REQ-LLM-019
+    #[test]
+    fn client_is_arc_shared() {
+        let cfg = bedrock_config();
+        let auth = test_aws_auth("us-east-1");
+        let provider = BedrockProvider::new(&cfg, auth).unwrap();
+        let arc1 = provider.shared_client().clone();
+        let arc2 = provider.shared_client().clone();
+        assert!(Arc::ptr_eq(&arc1, &arc2));
     }
 }

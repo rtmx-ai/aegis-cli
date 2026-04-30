@@ -5,6 +5,8 @@
 //! Azure AD / Entra ID bearer token authentication. Works with both
 //! Azure Commercial (`.azure.com`) and Azure Government (`.azure.us`).
 
+use std::sync::Arc;
+
 use aegis_domain::error::DomainError;
 use aegis_domain::ports::*;
 use async_trait::async_trait;
@@ -17,10 +19,13 @@ use crate::sse::SseTokenStream;
 /// Azure OpenAI API version used for all requests.
 const API_VERSION: &str = "2024-06-01";
 
+/// Default maximum idle connections per host for connection pooling (REQ-LLM-019).
+const POOL_MAX_IDLE_PER_HOST: usize = 4;
+
 /// Provider that speaks to Azure OpenAI via the chat completions endpoint.
 #[derive(Debug)]
 pub struct AzureProvider {
-    client: Client,
+    client: Arc<Client>,
     endpoint_url: String,
     base_url: String,
     model: String,
@@ -64,13 +69,16 @@ impl AzureProvider {
             }
         };
 
-        let client = Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(config.connect_timeout_secs))
-            .timeout(std::time::Duration::from_secs(config.read_timeout_secs))
-            .build()
-            .map_err(|e| DomainError::ProviderError {
-                message: format!("Failed to create HTTP client: {e}"),
-            })?;
+        let client = Arc::new(
+            Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(config.connect_timeout_secs))
+                .timeout(std::time::Duration::from_secs(config.read_timeout_secs))
+                .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST)
+                .build()
+                .map_err(|e| DomainError::ProviderError {
+                    message: format!("Failed to create HTTP client: {e}"),
+                })?,
+        );
 
         tracing::info!(
             provider = "azure",
@@ -89,6 +97,11 @@ impl AzureProvider {
             api_key,
             bearer_token,
         })
+    }
+
+    /// Return a reference to the Arc-wrapped HTTP client (REQ-LLM-019).
+    pub fn shared_client(&self) -> &Arc<Client> {
+        &self.client
     }
 
     /// Build the OpenAI-compatible request body.
@@ -760,5 +773,16 @@ mod tests {
             }
             other => panic!("Expected Healthy, got {:?}", other),
         }
+    }
+
+    // rtmx:req REQ-LLM-019
+    #[test]
+    fn client_is_arc_shared() {
+        let cfg = azure_config("https://myresource.openai.azure.com");
+        let auth = azure_auth_with_key("key");
+        let provider = AzureProvider::new(&cfg, auth).unwrap();
+        let arc1 = provider.shared_client().clone();
+        let arc2 = provider.shared_client().clone();
+        assert!(Arc::ptr_eq(&arc1, &arc2));
     }
 }

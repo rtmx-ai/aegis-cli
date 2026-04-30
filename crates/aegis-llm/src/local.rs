@@ -18,6 +18,7 @@
 //! request; for vLLM and llama.cpp the model is always resident and
 //! the warmup cost is one-time at server start.
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use aegis_domain::error::DomainError;
@@ -33,9 +34,12 @@ use crate::sse::SseTokenStream;
 /// that the model is resident and serving from hot cache.
 const WARM_LATENCY_THRESHOLD: Duration = Duration::from_secs(3);
 
+/// Default maximum idle connections per host for connection pooling (REQ-LLM-019).
+const POOL_MAX_IDLE_PER_HOST: usize = 4;
+
 /// Provider that speaks the OpenAI chat completions API.
 pub struct LocalProvider {
-    client: Client,
+    client: Arc<Client>,
     endpoint: String,
     model: String,
     max_tokens: u32,
@@ -44,13 +48,16 @@ pub struct LocalProvider {
 
 impl LocalProvider {
     pub fn new(config: &ProviderConfig) -> Result<Self, DomainError> {
-        let client = Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(config.connect_timeout_secs))
-            .timeout(std::time::Duration::from_secs(config.read_timeout_secs))
-            .build()
-            .map_err(|e| DomainError::ProviderError {
-                message: format!("Failed to create HTTP client: {e}"),
-            })?;
+        let client = Arc::new(
+            Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(config.connect_timeout_secs))
+                .timeout(std::time::Duration::from_secs(config.read_timeout_secs))
+                .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST)
+                .build()
+                .map_err(|e| DomainError::ProviderError {
+                    message: format!("Failed to create HTTP client: {e}"),
+                })?,
+        );
 
         tracing::info!(
             provider = "local",
@@ -66,6 +73,32 @@ impl LocalProvider {
             max_tokens: config.max_tokens,
             temperature: config.temperature,
         })
+    }
+
+    /// Create a LocalProvider with a pre-built shared client (REQ-LLM-019).
+    pub fn with_client(
+        config: &ProviderConfig,
+        client: Arc<Client>,
+    ) -> Result<Self, DomainError> {
+        tracing::info!(
+            provider = "local",
+            model = %config.model,
+            endpoint = %config.endpoint,
+            "provider initialized with shared client"
+        );
+
+        Ok(Self {
+            client,
+            endpoint: config.endpoint.trim_end_matches('/').to_string(),
+            model: config.model.clone(),
+            max_tokens: config.max_tokens,
+            temperature: config.temperature,
+        })
+    }
+
+    /// Return a reference to the Arc-wrapped HTTP client (REQ-LLM-019).
+    pub fn shared_client(&self) -> &Arc<Client> {
+        &self.client
     }
 
     fn build_request_body(
@@ -853,6 +886,29 @@ mod tests {
         assert!(
             !provider.is_warm().await,
             "unreachable endpoint must not be considered warm"
+        );
+    }
+
+    // rtmx:req REQ-LLM-019
+    #[test]
+    fn client_is_arc_shared() {
+        let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
+        let provider = LocalProvider::new(&cfg).unwrap();
+        let arc1 = provider.shared_client().clone();
+        let arc2 = provider.shared_client().clone();
+        // Both Arcs point to the same underlying Client allocation.
+        assert!(Arc::ptr_eq(&arc1, &arc2));
+    }
+
+    // rtmx:req REQ-LLM-019
+    #[test]
+    fn with_client_shares_arc() {
+        let client = Arc::new(Client::builder().pool_max_idle_per_host(4).build().unwrap());
+        let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
+        let provider = LocalProvider::with_client(&cfg, client.clone()).unwrap();
+        assert!(
+            Arc::ptr_eq(provider.shared_client(), &client),
+            "with_client should share the same Arc<Client>"
         );
     }
 
