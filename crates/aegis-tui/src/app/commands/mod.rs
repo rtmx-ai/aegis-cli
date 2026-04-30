@@ -4,6 +4,7 @@ pub(crate) mod connect;
 pub(crate) mod context;
 pub(crate) mod cost;
 pub(crate) mod doctor;
+pub(crate) mod feedback;
 pub(crate) mod infra;
 pub(crate) mod undo;
 
@@ -32,6 +33,7 @@ impl App {
                      /context              Show current context summary\n\
                      /cost                 Show session cost breakdown\n\
                      /copy                 Copy last code block to clipboard\n\
+                     /feedback             Submit feedback about aegis\n\
                      /undo                 Revert most recent approved write\n\
                      /clear                Clear chat log\n\
                      /help                 Show this help\n\
@@ -98,6 +100,10 @@ impl App {
             }
             SlashCommand::Cost => {
                 self.handle_cost_command();
+                Action::Continue
+            }
+            SlashCommand::Feedback => {
+                self.handle_feedback_command();
                 Action::Continue
             }
         }

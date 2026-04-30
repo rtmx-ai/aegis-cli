@@ -62,6 +62,7 @@ impl CommandPalette {
             ),
             cmd("/doctor", "Run health and connectivity checks"),
             cmd("/cost", "Show session cost breakdown"),
+            cmd("/feedback", "Submit feedback about aegis"),
             cmd("/copy", "Copy last code block to clipboard"),
             cmd("/undo", "Revert most recent approved write"),
             cmd("/clear", "Clear conversation history"),

@@ -37,6 +37,8 @@ pub enum SlashCommand {
     Copy,
     /// Show session cost breakdown: model, tokens, cost, rates.
     Cost,
+    /// Show feedback template and submission options.
+    Feedback,
 }
 
 /// Result of attempting to parse a slash command.
@@ -122,6 +124,7 @@ pub fn parse_slash_command(input: &str) -> ParseResult {
         "/undo" => ParseResult::Command(SlashCommand::Undo(arg)),
         "/copy" => ParseResult::Command(SlashCommand::Copy),
         "/cost" => ParseResult::Command(SlashCommand::Cost),
+        "/feedback" => ParseResult::Command(SlashCommand::Feedback),
         _ => ParseResult::Unknown(cmd),
     }
 }
@@ -430,6 +433,23 @@ mod tests {
         assert_eq!(
             parse_slash_command("/COPY"),
             ParseResult::Command(SlashCommand::Copy)
+        );
+    }
+
+    // rtmx:req REQ-TUI-067
+    #[test]
+    fn test_parse_feedback_command() {
+        assert_eq!(
+            parse_slash_command("/feedback"),
+            ParseResult::Command(SlashCommand::Feedback)
+        );
+        assert_eq!(
+            parse_slash_command("/FEEDBACK"),
+            ParseResult::Command(SlashCommand::Feedback)
+        );
+        assert_eq!(
+            parse_slash_command("  /feedback  "),
+            ParseResult::Command(SlashCommand::Feedback)
         );
     }
 
