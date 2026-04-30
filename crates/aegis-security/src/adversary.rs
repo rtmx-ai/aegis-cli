@@ -227,6 +227,7 @@ impl AdversaryAgent {
         messages.push(Message {
             role: Role::System,
             content: self.system_prompt.clone(),
+            cache_control: None,
         });
         messages.extend(context.iter().cloned());
         messages.push(Message {
@@ -235,6 +236,7 @@ impl AdversaryAgent {
                 "Classify the following tool call. Respond only in the \
                  RISK/REASONING/INDICATORS format.\n\nTOOL_CALL: {tool_call:?}"
             ),
+            cache_control: None,
         });
 
         let mut stream = self

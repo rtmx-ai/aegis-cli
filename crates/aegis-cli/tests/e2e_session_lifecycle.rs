@@ -16,18 +16,22 @@ fn sample_session(session_id: &str) -> SessionSnapshot {
             Message {
                 role: Role::User,
                 content: "Explain the architecture of aegis-cli.".into(),
+                cache_control: None,
             },
             Message {
                 role: Role::Assistant,
                 content: "aegis-cli is a Rust workspace with 11 crates...".into(),
+                cache_control: None,
             },
             Message {
                 role: Role::User,
                 content: "Show me the plugin protocol.".into(),
+                cache_control: None,
             },
             Message {
                 role: Role::Assistant,
                 content: "The aegis-infra/v1 protocol uses NDJSON...".into(),
+                cache_control: None,
             },
         ],
         1500,
@@ -125,6 +129,7 @@ fn test_session_survives_multiple_save_restore_cycles() {
             vec![Message {
                 role: Role::User,
                 content: format!("Turn {i}"),
+                cache_control: None,
             }],
             cumulative_input_tokens,
             cumulative_output_tokens,

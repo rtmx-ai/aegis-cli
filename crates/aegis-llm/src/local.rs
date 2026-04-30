@@ -354,6 +354,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Hi".to_string(),
+            cache_control: None,
         }];
 
         let mut stream = provider.stream(&messages, &[]).await.unwrap();
@@ -389,6 +390,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Read main.rs".to_string(),
+            cache_control: None,
         }];
 
         let mut stream = provider.stream(&messages, &[]).await.unwrap();
@@ -420,6 +422,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Hi".to_string(),
+            cache_control: None,
         }];
 
         let result = provider.stream(&messages, &[]).await;
@@ -454,6 +457,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Hi".to_string(),
+            cache_control: None,
         }];
 
         let mut stream = provider.stream(&messages, &[]).await.unwrap();
@@ -484,10 +488,12 @@ mod tests {
             Message {
                 role: Role::System,
                 content: "You are helpful.".to_string(),
+                cache_control: None,
             },
             Message {
                 role: Role::User,
                 content: "Hello".to_string(),
+                cache_control: None,
             },
         ];
 
@@ -523,6 +529,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Read foo.rs".to_string(),
+            cache_control: None,
         }];
 
         let body = provider.build_request_body(&messages, &tools);
@@ -554,6 +561,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Read foo.rs".to_string(),
+            cache_control: None,
         }];
 
         let body = provider.build_request_body(&messages, &tools);
@@ -845,6 +853,28 @@ mod tests {
         assert!(
             !provider.is_warm().await,
             "unreachable endpoint must not be considered warm"
+        );
+    }
+
+    // rtmx:req REQ-LLM-014
+    #[test]
+    fn request_body_never_includes_cache_control_for_local() {
+        let cfg = ProviderConfig::local("http://localhost:11434/v1", "llama3");
+        let provider = LocalProvider::new(&cfg).unwrap();
+
+        // Even when cache_control is set on the Message, local provider
+        // should never emit it in the request body.
+        let messages = vec![Message {
+            role: Role::System,
+            content: "You are helpful.".to_string(),
+            cache_control: Some("ephemeral".to_string()),
+        }];
+
+        let body = provider.build_request_body(&messages, &[]);
+        let msg = &body["messages"][0];
+        assert!(
+            msg.get("cache_control").is_none(),
+            "local provider must never include cache_control"
         );
     }
 }

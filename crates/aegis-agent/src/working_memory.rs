@@ -69,6 +69,7 @@ impl WorkingMemory {
         Message {
             role: Role::System,
             content,
+            cache_control: None,
         }
     }
 
@@ -235,10 +236,12 @@ mod tests {
             Message {
                 role: Role::System,
                 content: "You are helpful.".to_string(),
+                cache_control: None,
             },
             Message {
                 role: Role::User,
                 content: "Hello".to_string(),
+                cache_control: None,
             },
         ];
         upsert_memory(&mut history, &wm);
@@ -256,11 +259,13 @@ mod tests {
             Message {
                 role: Role::System,
                 content: "You are helpful.".to_string(),
+                cache_control: None,
             },
             wm.render(),
             Message {
                 role: Role::User,
                 content: "Hello".to_string(),
+                cache_control: None,
             },
         ];
         wm.accumulate_tokens(100, 50);
@@ -279,6 +284,7 @@ mod tests {
             Message {
                 role: Role::System,
                 content: "System prompt".to_string(),
+                cache_control: None,
             },
             wm.render(),
         ];
@@ -287,10 +293,12 @@ mod tests {
             history.push(Message {
                 role: Role::User,
                 content: format!("User message {i}"),
+                cache_control: None,
             });
             history.push(Message {
                 role: Role::Assistant,
                 content: format!("Assistant response {i}"),
+                cache_control: None,
             });
         }
 
@@ -317,11 +325,13 @@ mod tests {
             Message {
                 role: Role::System,
                 content: "prompt".to_string(),
+                cache_control: None,
             },
             wm.render(),
             Message {
                 role: Role::User,
                 content: "hello".to_string(),
+                cache_control: None,
             },
         ];
         assert_eq!(find_memory_index(&history), Some(1));
@@ -333,6 +343,7 @@ mod tests {
         let history = vec![Message {
             role: Role::System,
             content: "prompt".to_string(),
+            cache_control: None,
         }];
         assert_eq!(find_memory_index(&history), None);
     }

@@ -28,6 +28,9 @@ pub struct ProviderInfo {
 pub struct AgentConfig {
     pub max_iterations: usize,
     pub system_prompt: String,
+    /// When true, disables prompt caching (local providers do not support it).
+    /// Defaults to false (caching enabled for cloud providers).
+    pub is_local_provider: bool,
 }
 
 impl Default for AgentConfig {
@@ -35,6 +38,7 @@ impl Default for AgentConfig {
         Self {
             max_iterations: 100,
             system_prompt: "You are a helpful coding assistant.".to_string(),
+            is_local_provider: false,
         }
     }
 }
@@ -284,15 +288,27 @@ where
         // REQ-AGENT-027: Initialize working memory from the user prompt.
         let mut working_mem = WorkingMemory::new(prompt);
 
+        // REQ-LLM-014: Set cache_control on system prompts that exceed
+        // 1024 tokens (estimated as content.len() / 4). Disabled for local
+        // providers which do not support prompt caching.
+        let system_cache_control =
+            if !self.config.is_local_provider && self.config.system_prompt.len() > 1024 * 4 {
+                Some("ephemeral".to_string())
+            } else {
+                None
+            };
+
         let mut history = vec![
             Message {
                 role: Role::System,
                 content: self.config.system_prompt.clone(),
+                cache_control: system_cache_control,
             },
             working_mem.render(),
             Message {
                 role: Role::User,
                 content: prompt.to_string(),
+                cache_control: None,
             },
         ];
 
@@ -396,6 +412,7 @@ where
                 history.push(Message {
                     role: Role::Assistant,
                     content: response_text.clone(),
+                    cache_control: None,
                 });
             }
 
@@ -463,6 +480,7 @@ where
                 history.push(Message {
                     role: Role::Tool,
                     content: result_text,
+                    cache_control: None,
                 });
             }
         }

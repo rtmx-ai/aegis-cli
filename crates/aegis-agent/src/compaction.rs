@@ -88,6 +88,7 @@ pub fn compact(messages: &[Message], config: &CompactionConfig) -> CompactionRes
         result.push(Message {
             role: Role::System,
             content: COMPACTION_PLACEHOLDER.to_string(),
+            cache_control: None,
         });
     }
 
@@ -112,6 +113,7 @@ mod tests {
         Message {
             role,
             content: content.to_string(),
+            cache_control: None,
         }
     }
 

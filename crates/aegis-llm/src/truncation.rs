@@ -129,6 +129,7 @@ mod tests {
         Message {
             role: Role::System,
             content: content.to_string(),
+            cache_control: None,
         }
     }
 
@@ -136,6 +137,7 @@ mod tests {
         Message {
             role: Role::User,
             content: content.to_string(),
+            cache_control: None,
         }
     }
 
@@ -143,6 +145,7 @@ mod tests {
         Message {
             role: Role::Assistant,
             content: content.to_string(),
+            cache_control: None,
         }
     }
 

@@ -206,6 +206,7 @@ mod tests {
         vec![Message {
             role: Role::User,
             content: "test".to_string(),
+            cache_control: None,
         }]
     }
 

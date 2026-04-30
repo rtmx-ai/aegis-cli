@@ -34,10 +34,12 @@ fn snapshot_after_turns(session_id: &str, turns: usize) -> SessionSnapshot {
         messages.push(Message {
             role: Role::User,
             content: format!("user turn {i}"),
+            cache_control: None,
         });
         messages.push(Message {
             role: Role::Assistant,
             content: format!("assistant response {i}"),
+            cache_control: None,
         });
     }
     SessionSnapshot::new(

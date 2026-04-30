@@ -84,7 +84,7 @@ impl VertexProvider {
         let msgs: Vec<serde_json::Value> = messages
             .iter()
             .map(|m| {
-                serde_json::json!({
+                let mut msg = serde_json::json!({
                     "role": match m.role {
                         Role::User => "user",
                         Role::Assistant => "assistant",
@@ -92,7 +92,11 @@ impl VertexProvider {
                         Role::System => "system",
                     },
                     "content": m.content,
-                })
+                });
+                if let Some(ref cc) = m.cache_control {
+                    msg["cache_control"] = serde_json::json!({"type": cc});
+                }
+                msg
             })
             .collect();
 
@@ -296,10 +300,12 @@ mod tests {
             Message {
                 role: Role::System,
                 content: "You are helpful.".to_string(),
+                cache_control: None,
             },
             Message {
                 role: Role::User,
                 content: "Hello".to_string(),
+                cache_control: None,
             },
         ];
 
@@ -333,6 +339,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Read foo.rs".to_string(),
+            cache_control: None,
         }];
 
         let body = provider.build_request_body(&messages, &tools);
@@ -383,6 +390,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Hi".to_string(),
+            cache_control: None,
         }];
 
         let mut stream = provider.stream(&messages, &[]).await.unwrap();
@@ -422,6 +430,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Read main.rs".to_string(),
+            cache_control: None,
         }];
 
         let mut stream = provider.stream(&messages, &[]).await.unwrap();
@@ -453,6 +462,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Hi".to_string(),
+            cache_control: None,
         }];
 
         let result = provider.stream(&messages, &[]).await;
@@ -487,6 +497,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Hi".to_string(),
+            cache_control: None,
         }];
 
         let mut stream = provider.stream(&messages, &[]).await.unwrap();
@@ -567,5 +578,42 @@ mod tests {
             }
             other => panic!("Expected Unhealthy, got {:?}", other),
         }
+    }
+
+    // rtmx:req REQ-LLM-014
+    #[test]
+    fn request_body_includes_cache_control_when_set() {
+        let cfg = vertex_config(Some("proj"), Some("us-east4"));
+        let provider = VertexProvider::new(&cfg, "ya29.tok".to_string()).unwrap();
+
+        let messages = vec![Message {
+            role: Role::System,
+            content: "You are helpful.".to_string(),
+            cache_control: Some("ephemeral".to_string()),
+        }];
+
+        let body = provider.build_request_body(&messages, &[]);
+        let msg = &body["messages"][0];
+        assert_eq!(msg["cache_control"]["type"], "ephemeral");
+    }
+
+    // rtmx:req REQ-LLM-014
+    #[test]
+    fn request_body_omits_cache_control_when_none() {
+        let cfg = vertex_config(Some("proj"), Some("us-east4"));
+        let provider = VertexProvider::new(&cfg, "ya29.tok".to_string()).unwrap();
+
+        let messages = vec![Message {
+            role: Role::System,
+            content: "You are helpful.".to_string(),
+            cache_control: None,
+        }];
+
+        let body = provider.build_request_body(&messages, &[]);
+        let msg = &body["messages"][0];
+        assert!(
+            msg.get("cache_control").is_none(),
+            "cache_control should be absent when None"
+        );
     }
 }

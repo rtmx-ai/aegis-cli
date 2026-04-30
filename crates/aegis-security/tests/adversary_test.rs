@@ -49,6 +49,7 @@ fn user_context() -> Vec<Message> {
     vec![Message {
         role: Role::User,
         content: "please review".into(),
+        cache_control: None,
     }]
 }
 

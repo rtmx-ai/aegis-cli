@@ -100,7 +100,7 @@ impl AzureProvider {
         let msgs: Vec<serde_json::Value> = messages
             .iter()
             .map(|m| {
-                serde_json::json!({
+                let mut msg = serde_json::json!({
                     "role": match m.role {
                         Role::User => "user",
                         Role::Assistant => "assistant",
@@ -108,7 +108,11 @@ impl AzureProvider {
                         Role::System => "system",
                     },
                     "content": m.content,
-                })
+                });
+                if let Some(ref cc) = m.cache_control {
+                    msg["cache_control"] = serde_json::json!({"type": cc});
+                }
+                msg
             })
             .collect();
 
@@ -325,10 +329,12 @@ mod tests {
             Message {
                 role: Role::System,
                 content: "You are helpful.".to_string(),
+                cache_control: None,
             },
             Message {
                 role: Role::User,
                 content: "Hello".to_string(),
+                cache_control: None,
             },
         ];
 
@@ -365,6 +371,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Read foo.rs".to_string(),
+            cache_control: None,
         }];
 
         let body = provider.build_request_body(&messages, &tools);
@@ -386,6 +393,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Hello".to_string(),
+            cache_control: None,
         }];
 
         let body = provider.build_request_body(&messages, &[]);
@@ -432,6 +440,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Hi".to_string(),
+            cache_control: None,
         }];
 
         let mut stream = provider.stream(&messages, &[]).await.unwrap();
@@ -466,6 +475,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Hi".to_string(),
+            cache_control: None,
         }];
 
         let result = provider.stream(&messages, &[]).await;
@@ -503,6 +513,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Hi".to_string(),
+            cache_control: None,
         }];
 
         let mut stream = provider.stream(&messages, &[]).await.unwrap();
@@ -536,6 +547,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Hi".to_string(),
+            cache_control: None,
         }];
 
         let mut stream = provider.stream(&messages, &[]).await.unwrap();
@@ -576,6 +588,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Hi".to_string(),
+            cache_control: None,
         }];
 
         let mut stream = provider.stream(&messages, &[]).await.unwrap();
@@ -608,6 +621,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Hi".to_string(),
+            cache_control: None,
         }];
 
         let result = provider.stream(&messages, &[]).await;
@@ -641,6 +655,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Hi".to_string(),
+            cache_control: None,
         }];
 
         let result = provider.stream(&messages, &[]).await;
@@ -674,6 +689,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Hi".to_string(),
+            cache_control: None,
         }];
 
         let result = provider.stream(&messages, &[]).await;

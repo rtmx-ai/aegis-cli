@@ -52,6 +52,7 @@ mod tests {
         Message {
             role,
             content: content.to_string(),
+            cache_control: None,
         }
     }
 

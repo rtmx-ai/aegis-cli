@@ -89,6 +89,32 @@ pub enum ProviderHealth {
 pub struct Message {
     pub role: Role,
     pub content: String,
+    /// Optional cache control marker for prompt caching (REQ-LLM-014).
+    ///
+    /// When set to `Some("ephemeral")`, signals to the LLM provider that
+    /// this message should use prompt caching. Disabled for local providers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_control: Option<String>,
+}
+
+impl Message {
+    /// Create a new message with no cache control.
+    pub fn new(role: Role, content: impl Into<String>) -> Self {
+        Self {
+            role,
+            content: content.into(),
+            cache_control: None,
+        }
+    }
+
+    /// Create a new message with cache control set to "ephemeral".
+    pub fn with_cache_control(role: Role, content: impl Into<String>) -> Self {
+        Self {
+            role,
+            content: content.into(),
+            cache_control: Some("ephemeral".to_string()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -175,4 +201,56 @@ impl<T: SecurityFilter> SecurityFilter for std::sync::Arc<T> {
 pub trait ToolExecutor: Send + Sync {
     /// Execute a tool call and return the result.
     async fn execute(&self, tool_call: &ToolCall) -> Result<ToolResult, DomainError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // rtmx:req REQ-LLM-014
+    #[test]
+    fn message_new_has_no_cache_control() {
+        let msg = Message::new(Role::System, "You are helpful.");
+        assert_eq!(msg.role, Role::System);
+        assert_eq!(msg.content, "You are helpful.");
+        assert!(msg.cache_control.is_none());
+    }
+
+    // rtmx:req REQ-LLM-014
+    #[test]
+    fn message_with_cache_control_sets_ephemeral() {
+        let msg = Message::with_cache_control(Role::System, "You are helpful.");
+        assert_eq!(msg.cache_control, Some("ephemeral".to_string()));
+    }
+
+    // rtmx:req REQ-LLM-014
+    #[test]
+    fn message_cache_control_defaults_to_none_on_deserialize() {
+        let json = r#"{"role":"System","content":"hello"}"#;
+        let msg: Message = serde_json::from_str(json).unwrap();
+        assert!(msg.cache_control.is_none());
+    }
+
+    // rtmx:req REQ-LLM-014
+    #[test]
+    fn message_cache_control_skipped_in_serialization_when_none() {
+        let msg = Message::new(Role::User, "hello");
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(
+            !json.contains("cache_control"),
+            "cache_control should be skipped when None: {json}"
+        );
+    }
+
+    // rtmx:req REQ-LLM-014
+    #[test]
+    fn message_cache_control_included_in_serialization_when_some() {
+        let msg = Message::with_cache_control(Role::System, "prompt");
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(
+            json.contains("cache_control"),
+            "cache_control should be present when Some: {json}"
+        );
+        assert!(json.contains("ephemeral"));
+    }
 }

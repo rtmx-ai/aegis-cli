@@ -146,10 +146,12 @@ mod tests {
                 Message {
                     role: Role::User,
                     content: "hello".into(),
+                    cache_control: None,
                 },
                 Message {
                     role: Role::Assistant,
                     content: "world".into(),
+                    cache_control: None,
                 },
             ],
             42,

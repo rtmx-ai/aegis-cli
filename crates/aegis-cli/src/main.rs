@@ -935,6 +935,7 @@ async fn run_headless_chat(
     let config = aegis_agent::loop_runner::AgentConfig {
         max_iterations: 20,
         system_prompt: build_system_prompt(),
+        is_local_provider: false,
     };
 
     let agent = aegis_agent::loop_runner::AgentLoop::new(
@@ -1070,6 +1071,7 @@ async fn run_plaintext_turn(
     let config = aegis_agent::loop_runner::AgentConfig {
         max_iterations: 20,
         system_prompt: build_system_prompt(),
+        is_local_provider: false,
     };
 
     // Set up stream event channel for tool-use visibility
@@ -1630,6 +1632,7 @@ fn build_snapshot_from_app(
             role.map(|r| Message {
                 role: r,
                 content: m.content.clone(),
+                cache_control: None,
             })
         })
         .collect();
@@ -1696,6 +1699,7 @@ async fn run_agent_for_tui(
     let config = aegis_agent::loop_runner::AgentConfig {
         max_iterations: 20,
         system_prompt: build_system_prompt(),
+        is_local_provider: false,
     };
 
     // Create a stream event sink that translates StreamEvents into TuiEvents

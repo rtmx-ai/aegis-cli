@@ -280,10 +280,12 @@ async fn run_subagent_loop(
              Summarize your findings as text.",
             config.allowed_tools.join(", ")
         ),
+        cache_control: None,
     };
     let user_msg = Message {
         role: Role::User,
         content: prompt,
+        cache_control: None,
     };
 
     let tool_schemas: Vec<ToolSchema> = config

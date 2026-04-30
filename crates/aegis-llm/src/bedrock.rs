@@ -105,9 +105,13 @@ impl BedrockProvider {
         for msg in messages {
             match msg.role {
                 Role::System => {
-                    system_prompts.push(serde_json::json!({
+                    let mut block = serde_json::json!({
                         "text": msg.content,
-                    }));
+                    });
+                    if let Some(ref cc) = msg.cache_control {
+                        block["cachePoint"] = serde_json::json!({"type": cc});
+                    }
+                    system_prompts.push(block);
                 }
                 _ => {
                     let role_str = match msg.role {
@@ -116,9 +120,13 @@ impl BedrockProvider {
                         Role::Tool => "user",
                         Role::System => unreachable!(),
                     };
+                    let mut content_block = serde_json::json!({"text": msg.content});
+                    if let Some(ref cc) = msg.cache_control {
+                        content_block["cachePoint"] = serde_json::json!({"type": cc});
+                    }
                     converse_messages.push(serde_json::json!({
                         "role": role_str,
-                        "content": [{"text": msg.content}],
+                        "content": [content_block],
                     }));
                 }
             }
@@ -464,6 +472,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Hello".to_string(),
+            cache_control: None,
         }];
 
         let body = provider.build_converse_body(&messages, &[]);
@@ -496,10 +505,12 @@ mod tests {
             Message {
                 role: Role::System,
                 content: "You are a helpful assistant.".to_string(),
+                cache_control: None,
             },
             Message {
                 role: Role::User,
                 content: "Hello".to_string(),
+                cache_control: None,
             },
         ];
 
@@ -537,6 +548,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Read foo.rs".to_string(),
+            cache_control: None,
         }];
 
         let body = provider.build_converse_body(&messages, &tools);
@@ -620,6 +632,7 @@ mod tests {
         let messages = vec![Message {
             role: Role::User,
             content: "Hello".to_string(),
+            cache_control: None,
         }];
 
         let body = provider.build_converse_body(&messages, &[]);
@@ -675,6 +688,59 @@ mod tests {
             "Must have x-amz-security-token when session_token provided, \
              got: {:?}",
             header_names
+        );
+    }
+
+    // rtmx:req REQ-LLM-014
+    #[test]
+    fn converse_body_includes_cache_control_on_system() {
+        let cfg = bedrock_config();
+        let auth = test_aws_auth("us-east-1");
+        let provider = BedrockProvider::new(&cfg, auth).unwrap();
+
+        let messages = vec![
+            Message {
+                role: Role::System,
+                content: "You are a helpful assistant.".to_string(),
+                cache_control: Some("ephemeral".to_string()),
+            },
+            Message {
+                role: Role::User,
+                content: "Hello".to_string(),
+                cache_control: None,
+            },
+        ];
+
+        let body = provider.build_converse_body(&messages, &[]);
+        let system = body["system"].as_array().unwrap();
+        assert_eq!(system[0]["cachePoint"]["type"], "ephemeral");
+
+        // User message should not have cachePoint
+        let msgs = body["messages"].as_array().unwrap();
+        assert!(
+            msgs[0]["content"][0].get("cachePoint").is_none(),
+            "user message without cache_control should not have cachePoint"
+        );
+    }
+
+    // rtmx:req REQ-LLM-014
+    #[test]
+    fn converse_body_omits_cache_control_when_none() {
+        let cfg = bedrock_config();
+        let auth = test_aws_auth("us-east-1");
+        let provider = BedrockProvider::new(&cfg, auth).unwrap();
+
+        let messages = vec![Message {
+            role: Role::System,
+            content: "You are a helpful assistant.".to_string(),
+            cache_control: None,
+        }];
+
+        let body = provider.build_converse_body(&messages, &[]);
+        let system = body["system"].as_array().unwrap();
+        assert!(
+            system[0].get("cachePoint").is_none(),
+            "cachePoint should be absent when cache_control is None"
         );
     }
 }
