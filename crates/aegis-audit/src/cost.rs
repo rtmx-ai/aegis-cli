@@ -517,6 +517,123 @@ fn extract_month(ts: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Token ratio analysis and caching recommendations (REQ-AUDIT-022a)
+// ---------------------------------------------------------------------------
+
+/// Severity level for a cost recommendation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecommendationSeverity {
+    /// Informational observation -- no immediate action required.
+    Info,
+    /// Deserves attention but is not urgent.
+    Warning,
+    /// Actionable recommendation that can reduce cost significantly.
+    Action,
+}
+
+/// A single cost-optimization recommendation derived from token usage data.
+#[derive(Debug, Clone)]
+pub struct CostRecommendation {
+    /// How urgent the recommendation is.
+    pub severity: RecommendationSeverity,
+    /// Short human-readable title.
+    pub title: String,
+    /// Detailed explanation with actionable guidance.
+    pub detail: String,
+    /// Traceability link to the requirement that would address this.
+    pub req_ref: String,
+}
+
+/// Minimum lifetime input tokens before ratio analysis fires.
+/// Below this threshold usage is too small to draw conclusions.
+const MIN_INPUT_TOKENS_FOR_RATIO: u64 = 10_000;
+
+/// Ratio above which we recommend prompt caching (Action severity).
+const HIGH_RATIO_THRESHOLD: f64 = 5.0;
+
+/// Ratio above which we note elevated input usage (Info severity).
+const ELEVATED_RATIO_THRESHOLD: f64 = 3.0;
+
+/// Analyze the input/output token ratio in a [`CostReport`] and return
+/// recommendations for reducing cost via prompt caching.
+///
+/// Rules:
+/// - If `total_output` is zero, no ratio can be computed -- return empty.
+/// - If `total_input` < [`MIN_INPUT_TOKENS_FOR_RATIO`], skip to avoid noise.
+/// - If ratio > 5.0: Action-severity recommendation to enable prompt caching.
+/// - If ratio > 3.0: Info-severity observation about elevated input ratio.
+pub fn analyze_token_ratio(report: &CostReport) -> Vec<CostRecommendation> {
+    let mut recs = Vec::new();
+
+    if report.lifetime.total_output == 0 {
+        return recs;
+    }
+    if report.lifetime.total_input < MIN_INPUT_TOKENS_FOR_RATIO {
+        return recs;
+    }
+
+    let ratio = report.lifetime.total_input as f64 / report.lifetime.total_output as f64;
+
+    if ratio > HIGH_RATIO_THRESHOLD {
+        recs.push(CostRecommendation {
+            severity: RecommendationSeverity::Action,
+            title: "Enable prompt caching to reduce input token costs".to_string(),
+            detail: format!(
+                "Lifetime input/output token ratio is {ratio:.1}x (threshold: \
+                 {HIGH_RATIO_THRESHOLD:.1}x). This indicates large system prompts \
+                 or context blocks are re-sent on every request. Enabling prompt \
+                 caching (REQ-LLM-014) can significantly reduce input token \
+                 charges. Total input: {}, total output: {}.",
+                report.lifetime.total_input, report.lifetime.total_output,
+            ),
+            req_ref: "REQ-LLM-014".to_string(),
+        });
+    } else if ratio > ELEVATED_RATIO_THRESHOLD {
+        recs.push(CostRecommendation {
+            severity: RecommendationSeverity::Info,
+            title: "Elevated input/output token ratio".to_string(),
+            detail: format!(
+                "Lifetime input/output token ratio is {ratio:.1}x (observation \
+                 threshold: {ELEVATED_RATIO_THRESHOLD:.1}x). Consider monitoring \
+                 this trend; if it continues to rise, prompt caching (REQ-LLM-014) \
+                 may become beneficial. Total input: {}, total output: {}.",
+                report.lifetime.total_input, report.lifetime.total_output,
+            ),
+            req_ref: "REQ-LLM-014".to_string(),
+        });
+    }
+
+    recs
+}
+
+/// Format a slice of [`CostRecommendation`] into a human-readable string
+/// suitable for terminal display.
+///
+/// Returns an empty string when there are no recommendations.
+pub fn format_recommendations(recs: &[CostRecommendation]) -> String {
+    if recs.is_empty() {
+        return String::new();
+    }
+
+    let mut out = String::from("Cost Recommendations\n");
+    for (i, rec) in recs.iter().enumerate() {
+        let severity_tag = match rec.severity {
+            RecommendationSeverity::Info => "[INFO]",
+            RecommendationSeverity::Warning => "[WARNING]",
+            RecommendationSeverity::Action => "[ACTION]",
+        };
+        if i > 0 {
+            out.push('\n');
+        }
+        out.push_str(&format!(
+            "  {} {} ({})\n    {}\n",
+            severity_tag, rec.title, rec.req_ref, rec.detail,
+        ));
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -998,6 +1115,168 @@ mod tests {
         let records = scan_ledger_files_cached(dir.path(), &mut cache);
         assert_eq!(records.len(), 3);
         assert_eq!(cache.bookmarks().len(), 3);
+    }
+
+    // -- Token ratio analysis tests (REQ-AUDIT-022a) ---------------------------
+
+    /// Helper: build a CostReport with specified lifetime input/output totals.
+    fn report_with_lifetime(input: u64, output: u64) -> CostReport {
+        CostReport {
+            sessions: Vec::new(),
+            by_provider: HashMap::new(),
+            by_project: HashMap::new(),
+            by_month: HashMap::new(),
+            lifetime: PeriodCost {
+                total_cost_usd: 0.0,
+                total_input: input,
+                total_output: output,
+                session_count: 1,
+            },
+        }
+    }
+
+    // rtmx:req REQ-AUDIT-022a
+    #[test]
+    fn test_ratio_above_5_emits_action() {
+        // ratio = 60_000 / 10_000 = 6.0 > 5.0
+        let report = report_with_lifetime(60_000, 10_000);
+        let recs = analyze_token_ratio(&report);
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].severity, RecommendationSeverity::Action);
+        assert_eq!(recs[0].req_ref, "REQ-LLM-014");
+        assert!(recs[0].detail.contains("6.0x"));
+    }
+
+    // rtmx:req REQ-AUDIT-022a
+    #[test]
+    fn test_ratio_between_3_and_5_emits_info() {
+        // ratio = 40_000 / 10_000 = 4.0 -- between 3.0 and 5.0
+        let report = report_with_lifetime(40_000, 10_000);
+        let recs = analyze_token_ratio(&report);
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].severity, RecommendationSeverity::Info);
+        assert_eq!(recs[0].req_ref, "REQ-LLM-014");
+        assert!(recs[0].detail.contains("4.0x"));
+    }
+
+    // rtmx:req REQ-AUDIT-022a
+    #[test]
+    fn test_ratio_below_3_emits_nothing() {
+        // ratio = 20_000 / 10_000 = 2.0 -- normal
+        let report = report_with_lifetime(20_000, 10_000);
+        let recs = analyze_token_ratio(&report);
+        assert!(recs.is_empty());
+    }
+
+    // rtmx:req REQ-AUDIT-022a
+    #[test]
+    fn test_ratio_skipped_when_input_below_minimum() {
+        // ratio = 6_000 / 1_000 = 6.0, but input < 10_000
+        let report = report_with_lifetime(6_000, 1_000);
+        let recs = analyze_token_ratio(&report);
+        assert!(recs.is_empty());
+    }
+
+    // rtmx:req REQ-AUDIT-022a
+    #[test]
+    fn test_ratio_skipped_when_output_is_zero() {
+        let report = report_with_lifetime(100_000, 0);
+        let recs = analyze_token_ratio(&report);
+        assert!(recs.is_empty());
+    }
+
+    // rtmx:req REQ-AUDIT-022a
+    #[test]
+    fn test_ratio_exactly_at_thresholds() {
+        // ratio = 5.0 exactly -- should NOT trigger Action (> 5.0 required)
+        let report = report_with_lifetime(50_000, 10_000);
+        let recs = analyze_token_ratio(&report);
+        // 5.0 is not > 5.0 so falls to the elif: 5.0 > 3.0 => Info
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].severity, RecommendationSeverity::Info);
+
+        // ratio = 3.0 exactly -- should NOT trigger Info (> 3.0 required)
+        let report2 = report_with_lifetime(30_000, 10_000);
+        let recs2 = analyze_token_ratio(&report2);
+        assert!(recs2.is_empty());
+    }
+
+    // rtmx:req REQ-AUDIT-022a
+    #[test]
+    fn test_format_recommendations_empty() {
+        let output = format_recommendations(&[]);
+        assert!(output.is_empty());
+    }
+
+    // rtmx:req REQ-AUDIT-022a
+    #[test]
+    fn test_format_recommendations_action() {
+        let recs = vec![CostRecommendation {
+            severity: RecommendationSeverity::Action,
+            title: "Enable caching".to_string(),
+            detail: "Ratio is high".to_string(),
+            req_ref: "REQ-LLM-014".to_string(),
+        }];
+        let output = format_recommendations(&recs);
+        assert!(output.contains("[ACTION]"));
+        assert!(output.contains("Enable caching"));
+        assert!(output.contains("REQ-LLM-014"));
+        assert!(output.contains("Ratio is high"));
+    }
+
+    // rtmx:req REQ-AUDIT-022a
+    #[test]
+    fn test_format_recommendations_multiple() {
+        let recs = vec![
+            CostRecommendation {
+                severity: RecommendationSeverity::Action,
+                title: "First".to_string(),
+                detail: "Detail 1".to_string(),
+                req_ref: "REQ-A".to_string(),
+            },
+            CostRecommendation {
+                severity: RecommendationSeverity::Info,
+                title: "Second".to_string(),
+                detail: "Detail 2".to_string(),
+                req_ref: "REQ-B".to_string(),
+            },
+        ];
+        let output = format_recommendations(&recs);
+        assert!(output.contains("[ACTION]"));
+        assert!(output.contains("[INFO]"));
+        assert!(output.contains("First"));
+        assert!(output.contains("Second"));
+    }
+
+    // rtmx:req REQ-AUDIT-022a
+    #[test]
+    fn test_analyze_with_real_records() {
+        // Integration-style: build records, generate report, analyze ratio.
+        let records = vec![
+            make_record(
+                "s1",
+                "vertex",
+                "gemini-2.5-pro",
+                Some("proj-a"),
+                100_000,
+                10_000,
+                "2026-04-01T00:00:00Z",
+            ),
+            make_record(
+                "s2",
+                "vertex",
+                "gemini-2.5-pro",
+                Some("proj-a"),
+                200_000,
+                20_000,
+                "2026-04-02T00:00:00Z",
+            ),
+        ];
+        let report = build_cost_report(&records);
+        // ratio = 300_000 / 30_000 = 10.0
+        let recs = analyze_token_ratio(&report);
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].severity, RecommendationSeverity::Action);
     }
 
     // rtmx:req REQ-AUDIT-021c
