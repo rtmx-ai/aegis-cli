@@ -3,6 +3,7 @@
 //! Provides mock implementations of domain ports, recording/replay helpers
 //! for deterministic LLM testing, and common test fixtures.
 
+pub mod conditional_gate;
 pub mod fixtures;
 pub mod isolation;
 pub mod mock_executor;
