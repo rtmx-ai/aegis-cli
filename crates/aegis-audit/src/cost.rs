@@ -634,6 +634,156 @@ pub fn format_recommendations(recs: &[CostRecommendation]) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Model sizing recommendation (REQ-AUDIT-022b)
+// ---------------------------------------------------------------------------
+
+/// Average session cost threshold above which we consider the model expensive.
+const MODEL_SIZING_AVG_COST_THRESHOLD: f64 = 1.00;
+
+/// Flagship model name fragments (matched case-insensitively).
+const FLAGSHIP_FRAGMENTS: &[&str] = &["pro", "opus", "gpt-4o", "sonnet"];
+
+/// For each flagship fragment, a suggested smaller alternative and its
+/// approximate blended rate (input+output per million tokens, averaged).
+fn alternative_for_flagship(fragment: &str) -> (&'static str, f64) {
+    match fragment {
+        "pro" => ("gemini-2.5-flash", 0.375), // (0.15+0.60)/2
+        "opus" => ("claude-sonnet", 9.0),     // (3+15)/2
+        "sonnet" => ("claude-haiku", 2.4),    // (0.80+4.0)/2
+        "gpt-4o" => ("gpt-4.1-mini", 1.0),    // (0.40+1.60)/2
+        _ => ("a smaller model", 1.0),
+    }
+}
+
+/// Compute a blended rate for a model (average of input and output per-million
+/// rates). Returns `None` if the model is not in the rate table.
+fn blended_rate(provider_kind: &str, model: &str) -> Option<f64> {
+    let rates = lookup_rates(provider_kind, model)?;
+    Some((rates.input_per_million + rates.output_per_million) / 2.0)
+}
+
+/// Check per-model average session cost and recommend smaller models for
+/// routine tasks when a flagship model exceeds $1.00/session on average.
+pub fn analyze_model_sizing(report: &CostReport) -> Vec<CostRecommendation> {
+    let mut recs = Vec::new();
+
+    // Group sessions by (provider_kind, model).
+    let mut model_groups: HashMap<(String, String), (f64, usize)> = HashMap::new();
+    for s in &report.sessions {
+        let cost = s.cost_usd.unwrap_or(0.0);
+        let entry = model_groups
+            .entry((s.provider_kind.clone(), s.model.clone()))
+            .or_insert((0.0, 0));
+        entry.0 += cost;
+        entry.1 += 1;
+    }
+
+    for ((provider, model), (total_cost, session_count)) in &model_groups {
+        if *session_count == 0 {
+            continue;
+        }
+        let avg_cost = total_cost / *session_count as f64;
+        if avg_cost <= MODEL_SIZING_AVG_COST_THRESHOLD {
+            continue;
+        }
+
+        let model_lower = model.to_lowercase();
+        let matched_fragment = FLAGSHIP_FRAGMENTS
+            .iter()
+            .find(|frag| model_lower.contains(**frag));
+
+        let Some(fragment) = matched_fragment else {
+            continue;
+        };
+
+        let current_rate = blended_rate(provider, model).unwrap_or(0.0);
+        let (alt_name, alt_rate) = alternative_for_flagship(fragment);
+        let savings_pct = if current_rate > 0.0 {
+            ((current_rate - alt_rate) / current_rate) * 100.0
+        } else {
+            0.0
+        };
+
+        recs.push(CostRecommendation {
+            severity: RecommendationSeverity::Warning,
+            title: format!("Consider a smaller model for routine tasks ({})", model),
+            detail: format!(
+                "Average session cost for {} is ${:.2} (threshold: $1.00). \
+                 Current blended rate: ${:.2}/M tokens. Alternative {}: \
+                 ${:.2}/M tokens (~{:.0}% savings). Route simple prompts \
+                 to the smaller model to reduce costs.",
+                model, avg_cost, current_rate, alt_name, alt_rate, savings_pct,
+            ),
+            req_ref: "REQ-AUDIT-022b".to_string(),
+        });
+    }
+
+    recs
+}
+
+// ---------------------------------------------------------------------------
+// Local model fallback recommendation (REQ-AUDIT-022c)
+// ---------------------------------------------------------------------------
+
+/// Fraction of sessions from cloud providers above which we suggest local
+/// fallback.
+const CLOUD_DOMINANCE_THRESHOLD: f64 = 0.80;
+
+/// Minimum total sessions before the local-fallback analysis fires (exclusive).
+const MIN_SESSIONS_FOR_LOCAL_FALLBACK: usize = 5;
+
+/// Check whether cloud providers dominate session count and recommend
+/// routing simple prompts to a local model for cost savings.
+pub fn analyze_local_fallback(report: &CostReport) -> Vec<CostRecommendation> {
+    let mut recs = Vec::new();
+
+    let total_sessions = report.lifetime.session_count;
+    if total_sessions <= MIN_SESSIONS_FOR_LOCAL_FALLBACK {
+        return recs;
+    }
+
+    let local_sessions = report
+        .by_provider
+        .get("local")
+        .map(|p| p.session_count)
+        .unwrap_or(0);
+
+    let cloud_sessions = total_sessions - local_sessions;
+    let cloud_fraction = cloud_sessions as f64 / total_sessions as f64;
+
+    if cloud_fraction <= CLOUD_DOMINANCE_THRESHOLD {
+        return recs;
+    }
+
+    // Estimate monthly savings: assume 20% of cloud sessions could use local.
+    // Monthly projection: if we have N months of data, extrapolate; otherwise
+    // use the total as a single-month estimate.
+    let month_count = report.by_month.len().max(1) as f64;
+    let monthly_cost = report.lifetime.total_cost_usd / month_count;
+    let estimated_monthly_savings = monthly_cost * 0.20;
+
+    recs.push(CostRecommendation {
+        severity: RecommendationSeverity::Action,
+        title: "Route simple prompts to a local model".to_string(),
+        detail: format!(
+            "Cloud providers account for {:.0}% of sessions ({} of {}), \
+             exceeding the {:.0}% threshold. If ~20% of cloud sessions \
+             used a local model instead, estimated monthly savings would \
+             be ~${:.2}. Configure a local provider (Ollama/vLLM) for \
+             routine tasks to reduce cloud spend.",
+            cloud_fraction * 100.0,
+            cloud_sessions,
+            total_sessions,
+            CLOUD_DOMINANCE_THRESHOLD * 100.0,
+            estimated_monthly_savings,
+        ),
+        req_ref: "REQ-AUDIT-022c".to_string(),
+    });
+
+    recs
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1277,6 +1427,311 @@ mod tests {
         let recs = analyze_token_ratio(&report);
         assert_eq!(recs.len(), 1);
         assert_eq!(recs[0].severity, RecommendationSeverity::Action);
+    }
+
+    // -- Model sizing recommendation tests (REQ-AUDIT-022b) --------------------
+
+    /// Helper: build a CostReport with given sessions and computed aggregates.
+    fn report_with_sessions(sessions: Vec<SessionCost>) -> CostReport {
+        let mut by_provider: HashMap<String, PeriodCost> = HashMap::new();
+        let mut lifetime = PeriodCost::default();
+
+        for s in &sessions {
+            let cost = s.cost_usd.unwrap_or(0.0);
+            accumulate(
+                &mut by_provider,
+                &s.provider_kind,
+                s.input_tokens,
+                s.output_tokens,
+                cost,
+            );
+            lifetime.total_cost_usd += cost;
+            lifetime.total_input += s.input_tokens;
+            lifetime.total_output += s.output_tokens;
+            lifetime.session_count += 1;
+        }
+
+        CostReport {
+            sessions,
+            by_provider,
+            by_project: HashMap::new(),
+            by_month: HashMap::new(),
+            lifetime,
+        }
+    }
+
+    fn session(id: &str, provider: &str, model: &str, input: u64, output: u64) -> SessionCost {
+        let cost = compute_cost(provider, model, input, output);
+        SessionCost {
+            session_id: id.to_string(),
+            provider_kind: provider.to_string(),
+            model: model.to_string(),
+            project_id: None,
+            input_tokens: input,
+            output_tokens: output,
+            cost_usd: cost,
+        }
+    }
+
+    // rtmx:req REQ-AUDIT-022b
+    #[test]
+    fn test_model_sizing_no_sessions() {
+        let report = report_with_sessions(vec![]);
+        let recs = analyze_model_sizing(&report);
+        assert!(recs.is_empty());
+    }
+
+    // rtmx:req REQ-AUDIT-022b
+    #[test]
+    fn test_model_sizing_flagship_above_threshold() {
+        // vertex/gemini-2.5-pro: $1.25/M input, $10.00/M output
+        // 1M input + 500K output = $1.25 + $5.00 = $6.25 per session
+        let sessions = vec![
+            session("s1", "vertex", "gemini-2.5-pro", 1_000_000, 500_000),
+            session("s2", "vertex", "gemini-2.5-pro", 1_000_000, 500_000),
+        ];
+        let report = report_with_sessions(sessions);
+        let recs = analyze_model_sizing(&report);
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].severity, RecommendationSeverity::Warning);
+        assert_eq!(recs[0].req_ref, "REQ-AUDIT-022b");
+        assert!(recs[0].detail.contains("gemini-2.5-flash"));
+        assert!(recs[0].detail.contains("savings"));
+    }
+
+    // rtmx:req REQ-AUDIT-022b
+    #[test]
+    fn test_model_sizing_flagship_below_threshold() {
+        // Small token counts -> cost well below $1.00
+        let sessions = vec![
+            session("s1", "vertex", "gemini-2.5-pro", 10_000, 5_000),
+            session("s2", "vertex", "gemini-2.5-pro", 10_000, 5_000),
+        ];
+        let report = report_with_sessions(sessions);
+        let recs = analyze_model_sizing(&report);
+        assert!(recs.is_empty());
+    }
+
+    // rtmx:req REQ-AUDIT-022b
+    #[test]
+    fn test_model_sizing_non_flagship_above_threshold() {
+        // haiku is not a flagship model even if cost is high
+        // But haiku rate is $0.80/M input + $4.0/M output
+        // 10M input + 5M output = $8.00 + $20.00 = $28.00 per session
+        let sessions = vec![session(
+            "s1",
+            "bedrock",
+            "claude-haiku-3.5",
+            10_000_000,
+            5_000_000,
+        )];
+        let report = report_with_sessions(sessions);
+        let recs = analyze_model_sizing(&report);
+        // haiku does not match any flagship fragment
+        assert!(recs.is_empty());
+    }
+
+    // rtmx:req REQ-AUDIT-022b
+    #[test]
+    fn test_model_sizing_opus_model() {
+        // opus: $15/M input, $75/M output
+        // 1M input + 200K output = $15 + $15 = $30 per session
+        let sessions = vec![session("s1", "vertex", "claude-opus-4", 1_000_000, 200_000)];
+        let report = report_with_sessions(sessions);
+        let recs = analyze_model_sizing(&report);
+        assert_eq!(recs.len(), 1);
+        assert!(recs[0].detail.contains("claude-sonnet"));
+    }
+
+    // rtmx:req REQ-AUDIT-022b
+    #[test]
+    fn test_model_sizing_sonnet_model() {
+        // sonnet: $3/M input, $15/M output
+        // 1M input + 500K output = $3 + $7.5 = $10.50 per session
+        let sessions = vec![session(
+            "s1",
+            "bedrock",
+            "claude-sonnet-4.5",
+            1_000_000,
+            500_000,
+        )];
+        let report = report_with_sessions(sessions);
+        let recs = analyze_model_sizing(&report);
+        assert_eq!(recs.len(), 1);
+        assert!(recs[0].detail.contains("claude-haiku"));
+    }
+
+    // rtmx:req REQ-AUDIT-022b
+    #[test]
+    fn test_model_sizing_at_exact_threshold() {
+        // avg cost must be > $1.00, not >=
+        // We need exactly $1.00 avg. With gemini-2.5-pro ($1.25/M in, $10/M out):
+        // We need to find tokens such that cost = $1.00
+        // Let's use a known cost model and set cost_usd directly
+        let s = SessionCost {
+            session_id: "s1".to_string(),
+            provider_kind: "vertex".to_string(),
+            model: "gemini-2.5-pro".to_string(),
+            project_id: None,
+            input_tokens: 100_000,
+            output_tokens: 50_000,
+            cost_usd: Some(1.00), // exactly at threshold
+        };
+        let report = report_with_sessions(vec![s]);
+        let recs = analyze_model_sizing(&report);
+        // $1.00 is not > $1.00, so no recommendation
+        assert!(recs.is_empty());
+    }
+
+    // rtmx:req REQ-AUDIT-022b
+    #[test]
+    fn test_model_sizing_case_insensitive() {
+        // Model name with mixed case should still match
+        let s = SessionCost {
+            session_id: "s1".to_string(),
+            provider_kind: "vertex".to_string(),
+            model: "Gemini-2.5-PRO".to_string(),
+            project_id: None,
+            input_tokens: 1_000_000,
+            output_tokens: 500_000,
+            cost_usd: Some(6.25),
+        };
+        let report = report_with_sessions(vec![s]);
+        let recs = analyze_model_sizing(&report);
+        assert_eq!(recs.len(), 1);
+    }
+
+    // -- Local model fallback tests (REQ-AUDIT-022c) ---------------------------
+
+    // rtmx:req REQ-AUDIT-022c
+    #[test]
+    fn test_local_fallback_no_sessions() {
+        let report = report_with_sessions(vec![]);
+        let recs = analyze_local_fallback(&report);
+        assert!(recs.is_empty());
+    }
+
+    // rtmx:req REQ-AUDIT-022c
+    #[test]
+    fn test_local_fallback_below_session_minimum() {
+        // Only 5 sessions -- threshold is > 5
+        let sessions: Vec<SessionCost> = (0..5)
+            .map(|i| {
+                session(
+                    &format!("s{i}"),
+                    "vertex",
+                    "gemini-2.5-pro",
+                    100_000,
+                    50_000,
+                )
+            })
+            .collect();
+        let report = report_with_sessions(sessions);
+        let recs = analyze_local_fallback(&report);
+        assert!(recs.is_empty());
+    }
+
+    // rtmx:req REQ-AUDIT-022c
+    #[test]
+    fn test_local_fallback_cloud_dominant() {
+        // 6 cloud sessions, 0 local -> 100% cloud
+        let sessions: Vec<SessionCost> = (0..6)
+            .map(|i| {
+                session(
+                    &format!("s{i}"),
+                    "vertex",
+                    "gemini-2.5-pro",
+                    100_000,
+                    50_000,
+                )
+            })
+            .collect();
+        let report = report_with_sessions(sessions);
+        let recs = analyze_local_fallback(&report);
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].severity, RecommendationSeverity::Action);
+        assert_eq!(recs[0].req_ref, "REQ-AUDIT-022c");
+        assert!(recs[0].detail.contains("100%"));
+        assert!(recs[0].detail.contains("local"));
+    }
+
+    // rtmx:req REQ-AUDIT-022c
+    #[test]
+    fn test_local_fallback_all_local_sessions() {
+        // All sessions are local -> 0% cloud -> no recommendation
+        let sessions: Vec<SessionCost> = (0..6)
+            .map(|i| session(&format!("s{i}"), "local", "llama3", 100_000, 50_000))
+            .collect();
+        let report = report_with_sessions(sessions);
+        let recs = analyze_local_fallback(&report);
+        assert!(recs.is_empty());
+    }
+
+    // rtmx:req REQ-AUDIT-022c
+    #[test]
+    fn test_local_fallback_at_80_percent_boundary() {
+        // 8 cloud + 2 local = 10 sessions, cloud = 80% exactly
+        // 80% is NOT > 80%, so no recommendation
+        let mut sessions: Vec<SessionCost> = (0..8)
+            .map(|i| {
+                session(
+                    &format!("cloud-{i}"),
+                    "vertex",
+                    "gemini-2.5-pro",
+                    100_000,
+                    50_000,
+                )
+            })
+            .collect();
+        sessions.extend(
+            (0..2).map(|i| session(&format!("local-{i}"), "local", "llama3", 100_000, 50_000)),
+        );
+        let report = report_with_sessions(sessions);
+        let recs = analyze_local_fallback(&report);
+        assert!(recs.is_empty());
+    }
+
+    // rtmx:req REQ-AUDIT-022c
+    #[test]
+    fn test_local_fallback_above_80_percent() {
+        // 9 cloud + 1 local = 10 sessions, cloud = 90% > 80%
+        let mut sessions: Vec<SessionCost> = (0..9)
+            .map(|i| {
+                session(
+                    &format!("cloud-{i}"),
+                    "vertex",
+                    "gemini-2.5-pro",
+                    100_000,
+                    50_000,
+                )
+            })
+            .collect();
+        sessions.push(session("local-0", "local", "llama3", 100_000, 50_000));
+        let report = report_with_sessions(sessions);
+        let recs = analyze_local_fallback(&report);
+        assert_eq!(recs.len(), 1);
+        assert!(recs[0].detail.contains("90%"));
+    }
+
+    // rtmx:req REQ-AUDIT-022c
+    #[test]
+    fn test_local_fallback_shows_monthly_savings() {
+        let sessions: Vec<SessionCost> = (0..6)
+            .map(|i| {
+                session(
+                    &format!("s{i}"),
+                    "vertex",
+                    "gemini-2.5-pro",
+                    1_000_000,
+                    500_000,
+                )
+            })
+            .collect();
+        let report = report_with_sessions(sessions);
+        let recs = analyze_local_fallback(&report);
+        assert_eq!(recs.len(), 1);
+        // Should mention estimated savings
+        assert!(recs[0].detail.contains('$'));
     }
 
     // rtmx:req REQ-AUDIT-021c
