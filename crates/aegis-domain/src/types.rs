@@ -88,6 +88,33 @@ impl fmt::Display for FilePath {
     }
 }
 
+/// A content part within a message, supporting multimodal content (REQ-AGENT-033).
+///
+/// Messages can contain text, images, or file references. This enum enables
+/// multimodal conversations while remaining backwards-compatible with the
+/// existing `Message.content: String` field.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ContentPart {
+    /// Plain text content.
+    Text(String),
+    /// Inline image with MIME type and raw bytes.
+    Image { mime: String, data: Vec<u8> },
+    /// Reference to a file on disk.
+    FileRef(PathBuf),
+}
+
+impl From<&str> for ContentPart {
+    fn from(s: &str) -> Self {
+        ContentPart::Text(s.to_string())
+    }
+}
+
+impl From<String> for ContentPart {
+    fn from(s: String) -> Self {
+        ContentPart::Text(s)
+    }
+}
+
 /// A tool call the agent wants to execute.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ToolCall {

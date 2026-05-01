@@ -115,6 +115,103 @@ impl Message {
             cache_control: Some("ephemeral".to_string()),
         }
     }
+
+    /// Returns the text content of this message (REQ-AGENT-033).
+    ///
+    /// Always returns the `content` field. Backwards-compatible alias.
+    pub fn text_content(&self) -> &str {
+        &self.content
+    }
+}
+
+/// A message with optional multimodal content parts (REQ-AGENT-033).
+///
+/// Wraps a standard `Message` and adds structured content parts (text, images,
+/// file references). Converts to/from `Message` for use with existing APIs.
+///
+/// Existing code continues using `Message` with its `content: String` field.
+/// Multimodal-aware code constructs `MultimodalMessage` and converts to
+/// `Message` (populating the text-only `content` field for backwards compat)
+/// or interprets a `Message` as multimodal via `from_message()`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MultimodalMessage {
+    /// The underlying message (role, text content, cache control).
+    #[serde(flatten)]
+    pub message: Message,
+    /// Structured content parts. When present, these are the authoritative
+    /// content; `message.content` is a text-only fallback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_parts: Option<Vec<ContentPart>>,
+}
+
+impl MultimodalMessage {
+    /// Create a multimodal message from content parts.
+    ///
+    /// The `content` field on the inner `Message` is set to the concatenation
+    /// of all text parts for backwards compatibility.
+    pub fn with_content_parts(role: Role, parts: Vec<ContentPart>) -> Self {
+        let text_content: String = parts
+            .iter()
+            .filter_map(|p| match p {
+                ContentPart::Text(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("");
+        Self {
+            message: Message::new(role, text_content),
+            content_parts: Some(parts),
+        }
+    }
+
+    /// Wrap an existing `Message` as a `MultimodalMessage` with no extra parts.
+    pub fn from_message(msg: Message) -> Self {
+        Self {
+            message: msg,
+            content_parts: None,
+        }
+    }
+
+    /// Convert to a plain `Message`, discarding content_parts metadata.
+    pub fn into_message(self) -> Message {
+        self.message
+    }
+
+    /// Returns the text content (delegates to inner message).
+    pub fn text_content(&self) -> &str {
+        self.message.text_content()
+    }
+
+    /// Returns true if this message contains at least one image part.
+    pub fn has_image(&self) -> bool {
+        self.content_parts
+            .as_ref()
+            .is_some_and(|parts| parts.iter().any(|p| matches!(p, ContentPart::Image { .. })))
+    }
+
+    /// Returns the content parts if set, otherwise wraps `content` as a
+    /// single `ContentPart::Text`.
+    ///
+    /// Multimodal-aware code should call this to get a uniform view of
+    /// message content regardless of whether parts were explicitly set.
+    pub fn content_parts_or_text(&self) -> Vec<ContentPart> {
+        match &self.content_parts {
+            Some(parts) => parts.clone(),
+            None => vec![ContentPart::Text(self.message.content.clone())],
+        }
+    }
+}
+
+impl From<Message> for MultimodalMessage {
+    fn from(msg: Message) -> Self {
+        Self::from_message(msg)
+    }
+}
+
+impl From<MultimodalMessage> for Message {
+    fn from(mm: MultimodalMessage) -> Self {
+        mm.into_message()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -252,5 +349,154 @@ mod tests {
             "cache_control should be present when Some: {json}"
         );
         assert!(json.contains("ephemeral"));
+    }
+
+    // rtmx:req REQ-AGENT-033
+    #[test]
+    fn content_part_text_from_str() {
+        let part: ContentPart = "hello".into();
+        assert_eq!(part, ContentPart::Text("hello".to_string()));
+    }
+
+    // rtmx:req REQ-AGENT-033
+    #[test]
+    fn content_part_text_from_string() {
+        let part: ContentPart = String::from("world").into();
+        assert_eq!(part, ContentPart::Text("world".to_string()));
+    }
+
+    // rtmx:req REQ-AGENT-033
+    #[test]
+    fn content_part_image_construction() {
+        let part = ContentPart::Image {
+            mime: "image/png".to_string(),
+            data: vec![0x89, 0x50, 0x4E, 0x47],
+        };
+        match &part {
+            ContentPart::Image { mime, data } => {
+                assert_eq!(mime, "image/png");
+                assert_eq!(data, &[0x89, 0x50, 0x4E, 0x47]);
+            }
+            _ => panic!("expected Image variant"),
+        }
+    }
+
+    // rtmx:req REQ-AGENT-033
+    #[test]
+    fn content_part_file_ref_construction() {
+        let part = ContentPart::FileRef(std::path::PathBuf::from("/tmp/diagram.svg"));
+        match &part {
+            ContentPart::FileRef(p) => {
+                assert_eq!(p, &std::path::PathBuf::from("/tmp/diagram.svg"));
+            }
+            _ => panic!("expected FileRef variant"),
+        }
+    }
+
+    // rtmx:req REQ-AGENT-033
+    #[test]
+    fn multimodal_message_with_content_parts_returns_parts() {
+        let parts = vec![
+            ContentPart::Text("Look at this:".to_string()),
+            ContentPart::Image {
+                mime: "image/png".to_string(),
+                data: vec![1, 2, 3],
+            },
+        ];
+        let mm = MultimodalMessage::with_content_parts(Role::User, parts.clone());
+        assert_eq!(mm.content_parts_or_text(), parts);
+        // inner message content has text portion for backwards compat
+        assert_eq!(mm.message.content, "Look at this:");
+    }
+
+    // rtmx:req REQ-AGENT-033
+    #[test]
+    fn multimodal_message_without_content_parts_wraps_content_as_text() {
+        let msg = Message::new(Role::User, "plain text");
+        let mm = MultimodalMessage::from_message(msg);
+        let parts = mm.content_parts_or_text();
+        assert_eq!(parts, vec![ContentPart::Text("plain text".to_string())]);
+    }
+
+    // rtmx:req REQ-AGENT-033
+    #[test]
+    fn has_image_returns_true_when_image_present() {
+        let mm = MultimodalMessage::with_content_parts(
+            Role::User,
+            vec![
+                ContentPart::Text("see image".to_string()),
+                ContentPart::Image {
+                    mime: "image/jpeg".to_string(),
+                    data: vec![0xFF, 0xD8],
+                },
+            ],
+        );
+        assert!(mm.has_image());
+    }
+
+    // rtmx:req REQ-AGENT-033
+    #[test]
+    fn has_image_returns_false_for_text_only() {
+        let msg = Message::new(Role::User, "no images here");
+        let mm = MultimodalMessage::from(msg);
+        assert!(!mm.has_image());
+
+        let mm2 = MultimodalMessage::with_content_parts(
+            Role::User,
+            vec![ContentPart::Text("still no images".to_string())],
+        );
+        assert!(!mm2.has_image());
+    }
+
+    // rtmx:req REQ-AGENT-033
+    #[test]
+    fn content_part_serde_roundtrip() {
+        let parts = vec![
+            ContentPart::Text("hello".to_string()),
+            ContentPart::Image {
+                mime: "image/png".to_string(),
+                data: vec![1, 2, 3, 4],
+            },
+            ContentPart::FileRef(std::path::PathBuf::from("/tmp/file.txt")),
+        ];
+        let json = serde_json::to_string(&parts).unwrap();
+        let deserialized: Vec<ContentPart> = serde_json::from_str(&json).unwrap();
+        assert_eq!(parts, deserialized);
+    }
+
+    // rtmx:req REQ-AGENT-033
+    #[test]
+    fn multimodal_message_content_parts_defaults_to_none_on_deserialize() {
+        let json = r#"{"role":"User","content":"hello"}"#;
+        let mm: MultimodalMessage = serde_json::from_str(json).unwrap();
+        assert!(mm.content_parts.is_none());
+        assert_eq!(mm.message.content, "hello");
+    }
+
+    // rtmx:req REQ-AGENT-033
+    #[test]
+    fn multimodal_message_content_parts_skipped_in_serialization_when_none() {
+        let mm = MultimodalMessage::from_message(Message::new(Role::User, "hello"));
+        let json = serde_json::to_string(&mm).unwrap();
+        assert!(
+            !json.contains("content_parts"),
+            "content_parts should be skipped when None: {json}"
+        );
+    }
+
+    // rtmx:req REQ-AGENT-033
+    #[test]
+    fn multimodal_message_converts_to_and_from_message() {
+        let original = Message::new(Role::Assistant, "response text");
+        let mm = MultimodalMessage::from(original.clone());
+        let back: Message = mm.into();
+        assert_eq!(back, original);
+    }
+
+    // rtmx:req REQ-AGENT-033
+    #[test]
+    fn message_text_content_returns_content_field() {
+        let msg = Message::new(Role::User, "hello world");
+        assert_eq!(msg.text_content(), "hello world");
     }
 }
