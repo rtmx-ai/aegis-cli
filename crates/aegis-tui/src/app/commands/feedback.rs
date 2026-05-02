@@ -347,4 +347,58 @@ mod tests {
             "URL should contain encoded title with satisfaction rating"
         );
     }
+
+    // rtmx:req REQ-TUI-066
+    #[test]
+    fn test_feedback_report_has_all_submission_fields() {
+        let report = sample_report();
+        // A FeedbackReport must carry all four fields needed for submission
+        // via gh CLI (REQ-TUI-068) or clipboard URL (REQ-TUI-069).
+        assert!(
+            (1..=5).contains(&report.satisfaction),
+            "satisfaction must be 1-5"
+        );
+        assert!(
+            !report.what_worked.is_empty(),
+            "what_worked must be present"
+        );
+        assert!(!report.what_didnt.is_empty(), "what_didnt must be present");
+        assert!(
+            !report.feature_request.is_empty(),
+            "feature_request must be present"
+        );
+    }
+
+    // rtmx:req REQ-TUI-066
+    #[test]
+    fn test_feedback_end_to_end_template_to_url() {
+        // Verify the full feedback flow: template renders, report constructs,
+        // body formats with all fields, and URL generates successfully.
+        let template = format_feedback_template();
+        assert!(
+            template.contains("/feedback"),
+            "template must mention the slash command"
+        );
+
+        let report = sample_report();
+        let body = format_feedback_body(&report);
+        assert!(
+            body.contains("4/5"),
+            "body must include satisfaction rating"
+        );
+        assert!(
+            body.contains("## Feedback"),
+            "body must have markdown structure"
+        );
+
+        let url = feedback_issue_url(&report);
+        assert!(
+            url.starts_with("https://github.com/rtmx-ai/aegis-cli/issues/new?"),
+            "URL must point to GitHub new issue endpoint"
+        );
+        assert!(
+            url.contains("labels=user-feedback"),
+            "URL must include user-feedback label"
+        );
+    }
 }

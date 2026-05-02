@@ -891,6 +891,7 @@ fn save_provider_to_config(config: &aegis_llm::config::ProviderConfig) -> Result
         },
         infra: Default::default(),
         mcp_servers: Vec::new(),
+        feedback: Default::default(),
     };
 
     // Try to load existing config and merge, otherwise use new
@@ -1939,6 +1940,7 @@ mod tests {
             },
             infra: Default::default(),
             mcp_servers: Vec::new(),
+            feedback: Default::default(),
         };
         aegis_config.save(&config_path).unwrap();
 

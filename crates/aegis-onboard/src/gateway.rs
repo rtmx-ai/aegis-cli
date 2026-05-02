@@ -59,6 +59,7 @@ pub fn create_byoc_config(
         },
         infra: Default::default(),
         mcp_servers: Vec::new(),
+        feedback: Default::default(),
     }
 }
 

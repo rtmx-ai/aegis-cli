@@ -38,6 +38,34 @@ impl FromStr for Mode {
     }
 }
 
+/// Feedback prompt configuration (REQ-TUI-070).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeedbackConfig {
+    /// Number of sessions before showing the one-time feedback prompt.
+    #[serde(default = "default_prompt_after_sessions")]
+    pub prompt_after_sessions: u64,
+    /// Current session count.
+    #[serde(default)]
+    pub session_count: u64,
+    /// Whether the feedback prompt has been shown and dismissed.
+    #[serde(default)]
+    pub feedback_prompted: bool,
+}
+
+fn default_prompt_after_sessions() -> u64 {
+    10
+}
+
+impl Default for FeedbackConfig {
+    fn default() -> Self {
+        Self {
+            prompt_after_sessions: default_prompt_after_sessions(),
+            session_count: 0,
+            feedback_prompted: false,
+        }
+    }
+}
+
 /// The aegis configuration file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AegisConfig {
@@ -49,6 +77,9 @@ pub struct AegisConfig {
     /// MCP servers for third-party tool integration (REQ-AGENT-022).
     #[serde(default)]
     pub mcp_servers: Vec<aegis_domain::types::McpServerConfig>,
+    /// Feedback prompt configuration (REQ-TUI-070).
+    #[serde(default)]
+    pub feedback: FeedbackConfig,
 }
 
 /// Backend (LLM endpoint) configuration.
@@ -100,7 +131,25 @@ impl AegisConfig {
             },
             infra: Default::default(),
             mcp_servers: Vec::new(),
+            feedback: FeedbackConfig::default(),
         }
+    }
+
+    /// Increment the session counter by one.
+    pub fn increment_session_count(&mut self) {
+        self.feedback.session_count += 1;
+    }
+
+    /// Returns `true` when the session count has reached the threshold
+    /// and the feedback prompt has not yet been shown.
+    pub fn should_prompt_feedback(&self) -> bool {
+        self.feedback.session_count >= self.feedback.prompt_after_sessions
+            && !self.feedback.feedback_prompted
+    }
+
+    /// Mark the feedback prompt as shown so it is never displayed again.
+    pub fn mark_feedback_prompted(&mut self) {
+        self.feedback.feedback_prompted = true;
     }
 
     /// Default config file path: ~/.aegis/config.yaml
@@ -250,6 +299,8 @@ pub fn merge_config(existing: &AegisConfig, new_values: &AegisConfig) -> AegisCo
         } else {
             new_values.mcp_servers.clone()
         },
+        // Preserve feedback state -- session count and prompt status survive re-init
+        feedback: existing.feedback.clone(),
     }
 }
 
@@ -648,5 +699,102 @@ mod tests {
             serde_json::to_string(&Mode::EnterpriseByoc).unwrap(),
             "\"enterprise-byoc\""
         );
+    }
+
+    // rtmx:req REQ-TUI-070
+    #[test]
+    fn feedback_prompt_after_threshold() {
+        let mut config = AegisConfig::local("http://localhost:11434/v1", "llama3");
+        for _ in 0..10 {
+            config.increment_session_count();
+        }
+        assert!(
+            config.should_prompt_feedback(),
+            "should prompt after reaching threshold"
+        );
+    }
+
+    // rtmx:req REQ-TUI-070
+    #[test]
+    fn feedback_prompt_not_before_threshold() {
+        let mut config = AegisConfig::local("http://localhost:11434/v1", "llama3");
+        for _ in 0..9 {
+            config.increment_session_count();
+        }
+        assert!(
+            !config.should_prompt_feedback(),
+            "should not prompt before reaching threshold"
+        );
+    }
+
+    // rtmx:req REQ-TUI-070
+    #[test]
+    fn feedback_prompt_dismissed_after_display() {
+        let mut config = AegisConfig::local("http://localhost:11434/v1", "llama3");
+        for _ in 0..10 {
+            config.increment_session_count();
+        }
+        assert!(config.should_prompt_feedback());
+        config.mark_feedback_prompted();
+        assert!(
+            !config.should_prompt_feedback(),
+            "should not prompt after being dismissed"
+        );
+    }
+
+    // rtmx:req REQ-TUI-070
+    #[test]
+    fn session_count_increments() {
+        let mut config = AegisConfig::local("http://localhost:11434/v1", "llama3");
+        assert_eq!(config.feedback.session_count, 0);
+        config.increment_session_count();
+        assert_eq!(config.feedback.session_count, 1);
+        config.increment_session_count();
+        assert_eq!(config.feedback.session_count, 2);
+    }
+
+    // rtmx:req REQ-TUI-070
+    #[test]
+    fn config_deserializes_without_feedback_fields() {
+        // Simulate a config YAML from before the feedback feature was added.
+        let yaml = r#"
+version: "1.0"
+mode: local
+backend:
+  provider: local
+  model: llama3
+  endpoint: http://localhost:11434/v1
+  max_tokens: 4096
+"#;
+        let config: AegisConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            config.feedback.prompt_after_sessions, 10,
+            "default prompt_after_sessions should be 10"
+        );
+        assert_eq!(
+            config.feedback.session_count, 0,
+            "default session_count should be 0"
+        );
+        assert!(
+            !config.feedback.feedback_prompted,
+            "default feedback_prompted should be false"
+        );
+    }
+
+    // rtmx:req REQ-TUI-070
+    #[test]
+    fn feedback_config_roundtrips_through_yaml() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.yaml");
+
+        let mut config = AegisConfig::local("http://localhost:11434/v1", "llama3");
+        config.feedback.session_count = 7;
+        config.feedback.feedback_prompted = true;
+        config.save(&path).unwrap();
+
+        let loaded = AegisConfig::load(&path).unwrap();
+        assert_eq!(loaded.feedback.session_count, 7);
+        assert!(loaded.feedback.feedback_prompted);
+        assert_eq!(loaded.feedback.prompt_after_sessions, 10);
     }
 }
