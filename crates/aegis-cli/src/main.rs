@@ -880,6 +880,7 @@ fn save_provider_to_config(config: &aegis_llm::config::ProviderConfig) -> Result
     };
 
     let new_aegis_config = aegis_onboard::config::AegisConfig {
+        schema_version: aegis_onboard::migration::CURRENT_SCHEMA_VERSION,
         version: "1.0".to_string(),
         mode,
         backend: aegis_onboard::config::BackendConfig {
@@ -892,6 +893,9 @@ fn save_provider_to_config(config: &aegis_llm::config::ProviderConfig) -> Result
         infra: Default::default(),
         mcp_servers: Vec::new(),
         feedback: Default::default(),
+        profiles: std::collections::HashMap::new(),
+        active_profile: "default".to_string(),
+        ca_bundle_path: None,
     };
 
     // Try to load existing config and merge, otherwise use new
@@ -1929,6 +1933,7 @@ mod tests {
         );
         let kind_str = format!("{:?}", provider_config.kind).to_lowercase();
         let aegis_config = aegis_onboard::config::AegisConfig {
+            schema_version: aegis_onboard::migration::CURRENT_SCHEMA_VERSION,
             version: "1.0".to_string(),
             mode: aegis_onboard::config::Mode::Local,
             backend: aegis_onboard::config::BackendConfig {
@@ -1941,6 +1946,9 @@ mod tests {
             infra: Default::default(),
             mcp_servers: Vec::new(),
             feedback: Default::default(),
+            profiles: std::collections::HashMap::new(),
+            active_profile: "default".to_string(),
+            ca_bundle_path: None,
         };
         aegis_config.save(&config_path).unwrap();
 

@@ -48,6 +48,7 @@ pub fn create_byoc_config(
     };
 
     AegisConfig {
+        schema_version: crate::migration::CURRENT_SCHEMA_VERSION,
         version: "1.0".to_string(),
         mode: Mode::EnterpriseByoc,
         backend: BackendConfig {
@@ -60,6 +61,9 @@ pub fn create_byoc_config(
         infra: Default::default(),
         mcp_servers: Vec::new(),
         feedback: Default::default(),
+        profiles: std::collections::HashMap::new(),
+        active_profile: "default".to_string(),
+        ca_bundle_path: None,
     }
 }
 

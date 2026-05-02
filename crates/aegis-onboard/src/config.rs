@@ -5,6 +5,7 @@
 
 use aegis_domain::error::DomainError;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -66,9 +67,38 @@ impl Default for FeedbackConfig {
     }
 }
 
+/// A named provider profile (REQ-ONBOARD-015).
+///
+/// Each profile can override mode, endpoint, region, model, and provider.
+/// Profiles are stored under `profiles.<name>` in config.yaml.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Profile {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+}
+
+fn default_active_profile() -> String {
+    "default".to_string()
+}
+
+fn default_schema_version() -> u32 {
+    crate::migration::CURRENT_SCHEMA_VERSION
+}
+
 /// The aegis configuration file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AegisConfig {
+    /// Config schema version for migration (REQ-ONBOARD-010).
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
     pub version: String,
     pub mode: Mode,
     pub backend: BackendConfig,
@@ -80,6 +110,15 @@ pub struct AegisConfig {
     /// Feedback prompt configuration (REQ-TUI-070).
     #[serde(default)]
     pub feedback: FeedbackConfig,
+    /// Named provider profiles (REQ-ONBOARD-015).
+    #[serde(default)]
+    pub profiles: HashMap<String, Profile>,
+    /// Active profile name (REQ-ONBOARD-015).
+    #[serde(default = "default_active_profile")]
+    pub active_profile: String,
+    /// Path to CA bundle for mTLS (stripped on export, REQ-ONBOARD-016).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ca_bundle_path: Option<String>,
 }
 
 /// Backend (LLM endpoint) configuration.
@@ -120,6 +159,7 @@ impl AegisConfig {
     /// Create a local (air-gapped) configuration.
     pub fn local(endpoint: &str, model: &str) -> Self {
         Self {
+            schema_version: default_schema_version(),
             version: "1.0".to_string(),
             mode: Mode::Local,
             backend: BackendConfig {
@@ -132,7 +172,36 @@ impl AegisConfig {
             infra: Default::default(),
             mcp_servers: Vec::new(),
             feedback: FeedbackConfig::default(),
+            profiles: HashMap::new(),
+            active_profile: default_active_profile(),
+            ca_bundle_path: None,
         }
+    }
+
+    /// Get a profile by name (REQ-ONBOARD-015).
+    pub fn get_profile(&self, name: &str) -> Option<&Profile> {
+        self.profiles.get(name)
+    }
+
+    /// Get the currently active profile config (REQ-ONBOARD-015).
+    pub fn active_profile_config(&self) -> Option<&Profile> {
+        self.profiles.get(&self.active_profile)
+    }
+
+    /// Set the active profile, returning an error if the profile does
+    /// not exist (REQ-ONBOARD-015).
+    pub fn set_active_profile(&mut self, name: &str) -> Result<(), String> {
+        if !self.profiles.contains_key(name) {
+            return Err(format!("Profile '{}' does not exist", name));
+        }
+        tracing::info!(profile = name, "Switching active profile");
+        self.active_profile = name.to_string();
+        Ok(())
+    }
+
+    /// Add a profile (REQ-ONBOARD-015).
+    pub fn add_profile(&mut self, name: String, profile: Profile) {
+        self.profiles.insert(name, profile);
     }
 
     /// Increment the session counter by one.
@@ -272,6 +341,8 @@ pub fn audit_ledger_dir() -> Result<PathBuf, DomainError> {
 /// - `version` is taken from `existing` (never downgraded).
 pub fn merge_config(existing: &AegisConfig, new_values: &AegisConfig) -> AegisConfig {
     AegisConfig {
+        // Keep the higher schema version
+        schema_version: std::cmp::max(existing.schema_version, new_values.schema_version),
         // Keep the existing version -- never downgrade
         version: existing.version.clone(),
         // Mode, provider, endpoint, model are the user-updated fields
@@ -301,6 +372,19 @@ pub fn merge_config(existing: &AegisConfig, new_values: &AegisConfig) -> AegisCo
         },
         // Preserve feedback state -- session count and prompt status survive re-init
         feedback: existing.feedback.clone(),
+        // Merge profiles: new values override, existing fill gaps
+        profiles: if new_values.profiles.is_empty() {
+            existing.profiles.clone()
+        } else {
+            new_values.profiles.clone()
+        },
+        active_profile: if new_values.active_profile == default_active_profile() {
+            existing.active_profile.clone()
+        } else {
+            new_values.active_profile.clone()
+        },
+        // Preserve ca_bundle_path from existing (secret)
+        ca_bundle_path: existing.ca_bundle_path.clone(),
     }
 }
 
@@ -779,6 +863,98 @@ backend:
             !config.feedback.feedback_prompted,
             "default feedback_prompted should be false"
         );
+    }
+
+    // rtmx:req REQ-ONBOARD-015
+    #[test]
+    fn test_multi_profile_switching() {
+        let mut config = AegisConfig::local("http://localhost:11434/v1", "llama3");
+        config.add_profile(
+            "default".to_string(),
+            Profile {
+                mode: Some("local".to_string()),
+                endpoint: Some("http://localhost:11434/v1".to_string()),
+                region: None,
+                model: Some("llama3".to_string()),
+                provider: Some("local".to_string()),
+            },
+        );
+        config.add_profile(
+            "work".to_string(),
+            Profile {
+                mode: Some("enterprise-byoc".to_string()),
+                endpoint: Some("https://vertex:443/v1".to_string()),
+                region: Some("us-central1".to_string()),
+                model: Some("gemini-pro".to_string()),
+                provider: Some("vertex-ai".to_string()),
+            },
+        );
+        config.set_active_profile("work").unwrap();
+        assert_eq!(config.active_profile, "work");
+        let profile = config.active_profile_config().unwrap();
+        assert_eq!(profile.provider.as_deref(), Some("vertex-ai"));
+
+        config.set_active_profile("default").unwrap();
+        assert_eq!(config.active_profile, "default");
+    }
+
+    // rtmx:req REQ-ONBOARD-015
+    #[test]
+    fn test_default_profile_exists_implicitly() {
+        let config = AegisConfig::local("http://localhost:11434/v1", "llama3");
+        assert_eq!(config.active_profile, "default");
+    }
+
+    // rtmx:req REQ-ONBOARD-015
+    #[test]
+    fn test_set_active_profile_rejects_unknown() {
+        let mut config = AegisConfig::local("http://localhost:11434/v1", "llama3");
+        let result = config.set_active_profile("nonexistent");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("does not exist"));
+    }
+
+    // rtmx:req REQ-ONBOARD-015
+    #[test]
+    fn test_profile_yaml_roundtrip() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("config.yaml");
+
+        let mut config = AegisConfig::local("http://localhost:11434/v1", "llama3");
+        config.add_profile(
+            "staging".to_string(),
+            Profile {
+                mode: Some("managed-saas".to_string()),
+                endpoint: Some("https://staging:443".to_string()),
+                region: Some("us-east-1".to_string()),
+                model: Some("claude-3".to_string()),
+                provider: Some("bedrock".to_string()),
+            },
+        );
+        config.save(&path).unwrap();
+
+        let loaded = AegisConfig::load(&path).unwrap();
+        let profile = loaded.get_profile("staging").unwrap();
+        assert_eq!(profile.model.as_deref(), Some("claude-3"));
+        assert_eq!(profile.region.as_deref(), Some("us-east-1"));
+    }
+
+    // rtmx:req REQ-ONBOARD-015
+    #[test]
+    fn test_add_profile() {
+        let mut config = AegisConfig::local("http://localhost:11434/v1", "llama3");
+        assert!(config.get_profile("dev").is_none());
+        config.add_profile(
+            "dev".to_string(),
+            Profile {
+                mode: Some("local".to_string()),
+                endpoint: None,
+                region: None,
+                model: None,
+                provider: None,
+            },
+        );
+        assert!(config.get_profile("dev").is_some());
     }
 
     // rtmx:req REQ-TUI-070
