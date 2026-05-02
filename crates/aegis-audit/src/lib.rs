@@ -12,6 +12,7 @@ pub mod ledger; // rtmx:req REQ-AUDIT-001
 pub mod reconstruct; // rtmx:req REQ-AUDIT-017
 pub mod redaction; // rtmx:req REQ-AUDIT-015
 pub mod retention; // rtmx:req REQ-AUDIT-010
+pub mod roi; // rtmx:req REQ-AUDIT-023a
 pub mod rotation; // rtmx:req REQ-AUDIT-009
 pub mod search; // rtmx:req REQ-AUDIT-013
 pub mod siem; // rtmx:req REQ-AUDIT-011
