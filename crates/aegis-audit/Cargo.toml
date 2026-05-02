@@ -19,6 +19,7 @@ sha2 = { workspace = true }
 fs2 = { workspace = true }
 zstd = { workspace = true }
 reqwest = { workspace = true }
+zip = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
