@@ -17,6 +17,7 @@ pub mod layout;
 pub mod markdown;
 pub mod messages;
 pub mod platform;
+pub mod session_store;
 pub mod slash_commands;
 pub mod splash;
 pub mod terminal;
