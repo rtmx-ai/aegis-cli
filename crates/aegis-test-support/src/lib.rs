@@ -12,4 +12,5 @@ pub mod mock_gate;
 pub mod mock_ledger;
 pub mod mock_provider;
 pub mod recorder;
+pub mod wiremock_cloud;
 pub mod wiremock_llm;
