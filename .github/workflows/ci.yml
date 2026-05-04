@@ -46,6 +46,9 @@ env:
   # REQ-BUILD-005: Reproducible builds -- fixed timestamp eliminates
   # date-based variation in binaries. Set to project epoch (2026-03-25).
   SOURCE_DATE_EPOCH: "1774656000"
+  # rtmx:req REQ-BUILD-013 -- sccache compilation caching for sub-5-min incremental CI
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
 
 jobs:
   format:
@@ -68,6 +71,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      # rtmx:req REQ-BUILD-013 -- sccache compilation caching
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets
 
@@ -81,6 +86,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      # rtmx:req REQ-BUILD-013 -- sccache compilation caching
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
       - run: cargo nextest run --lib --workspace
@@ -92,6 +99,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      # rtmx:req REQ-BUILD-013 -- sccache compilation caching
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
       - name: Run integration tests (skip if none exist)
@@ -110,6 +119,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      # rtmx:req REQ-BUILD-013 -- sccache compilation caching
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
       - name: Run integration tests (exclude Unix-only MCP tests)
@@ -130,6 +141,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      # rtmx:req REQ-BUILD-013 -- sccache compilation caching
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --doc --workspace
 
@@ -138,6 +151,10 @@ jobs:
     # rtmx:req REQ-TEST-034 -- Coverage threshold: fail < 60%, warn < 70%, target 80%
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # REQ-BUILD-013: Disable sccache for coverage -- instrumented builds
+    # must not share cache with non-instrumented builds.
+    env:
+      RUSTC_WRAPPER: ""
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -203,6 +220,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      # rtmx:req REQ-BUILD-013 -- sccache compilation caching
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-cyclonedx
         run: cargo install cargo-cyclonedx --locked
@@ -237,6 +256,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      # rtmx:req REQ-BUILD-013 -- sccache compilation caching
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-deb
         run: cargo install cargo-deb --locked
@@ -277,6 +298,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-musl
+      # rtmx:req REQ-BUILD-013 -- sccache compilation caching
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: Swatinem/rust-cache@v2
       - name: Install musl tools
         run: sudo apt-get install -y musl-tools
@@ -327,6 +350,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-musl
+      # rtmx:req REQ-BUILD-013 -- sccache compilation caching
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: Swatinem/rust-cache@v2
       - name: Install musl tools
         run: sudo apt-get install -y musl-tools
@@ -486,6 +511,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      # rtmx:req REQ-BUILD-013 -- sccache compilation caching
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: Swatinem/rust-cache@v2
       - name: Install musl tools
         if: contains(matrix.target, 'musl')
@@ -513,6 +540,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin
+      # rtmx:req REQ-BUILD-013 -- sccache compilation caching
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --profile ci --target aarch64-apple-darwin --package aegis-cli
       - name: Upload binary
