@@ -453,6 +453,29 @@ jobs:
       - run: pip install rtmx
       - run: rtmx status
 
+  # rtmx:req REQ-TEST-033 -- Coverage delta in PR comments
+  coverage-delta:
+    name: RTMX Coverage Delta
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [rtmx-health]
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Post coverage delta comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          export PR_NUMBER
+          bash scripts/coverage-delta.sh --post-comment \
+            "origin/${{ github.event.pull_request.base.ref }}" \
+            "${{ github.event.pull_request.head.sha }}"
+
   # REQ-TEST-039: Scan // rtmx:req markers and verify requirements traceability.
   # Uses native rtmx CLI (v0.2.5+) which scans Rust // rtmx:req markers.
   rtmx-update:
