@@ -491,6 +491,43 @@ fn test_msi_upgrade_code_is_not_placeholder() {
     );
 }
 
+// rtmx:req REQ-BUILD-059
+#[test]
+fn test_changelog_exists_with_version_sections() {
+    let changelog = workspace_root().join("CHANGELOG.md");
+    assert!(
+        changelog.exists(),
+        "CHANGELOG.md must exist at workspace root"
+    );
+    let content = std::fs::read_to_string(&changelog).unwrap();
+    assert!(
+        content.contains("## [Unreleased]"),
+        "CHANGELOG must have Unreleased section"
+    );
+    assert!(
+        content.contains("## [0.1.0]"),
+        "CHANGELOG must have 0.1.0 section"
+    );
+}
+
+// rtmx:req REQ-BUILD-060
+#[test]
+fn test_deny_toml_covers_all_release_targets() {
+    let deny = workspace_root().join("deny.toml");
+    let content = std::fs::read_to_string(&deny).unwrap();
+    for target in &[
+        "x86_64-unknown-linux-musl",
+        "x86_64-pc-windows-msvc",
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
+    ] {
+        assert!(
+            content.contains(target),
+            "deny.toml must include target {target}"
+        );
+    }
+}
+
 fn read_ci_yml() -> String {
     let path = workspace_root().join(".github/workflows/ci.yml");
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
