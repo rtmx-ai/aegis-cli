@@ -4,13 +4,13 @@
 //! links, sessions) and estimates what the equivalent human labor would cost,
 //! producing a formatted ROI report.
 //!
-//! Implements REQ-AUDIT-023a through REQ-AUDIT-023d.
+//! Implements REQ-AUDIT-029 through REQ-AUDIT-032.
 
 use std::collections::HashMap;
 use std::path::Path;
 
 // ---------------------------------------------------------------------------
-// REQ-AUDIT-023a: Work output metrics extraction
+// REQ-AUDIT-029: Work output metrics extraction
 // ---------------------------------------------------------------------------
 
 /// Aggregate counts of work performed, extracted from audit ledger events.
@@ -192,7 +192,7 @@ fn timestamp_diff_seconds(first: &str, last: &str) -> f64 {
 }
 
 // ---------------------------------------------------------------------------
-// REQ-AUDIT-023b: Defense labor rate table and role mapping
+// REQ-AUDIT-030: Defense labor rate table and role mapping
 // ---------------------------------------------------------------------------
 
 /// Role identifiers for defense labor categories.
@@ -316,7 +316,7 @@ impl LaborRateTable {
 }
 
 // ---------------------------------------------------------------------------
-// REQ-AUDIT-023c: Work-to-hours heuristic engine
+// REQ-AUDIT-031: Work-to-hours heuristic engine
 // ---------------------------------------------------------------------------
 
 /// Estimated human-equivalent hours for a single work category.
@@ -488,7 +488,7 @@ pub fn estimate_human_equivalent(
 }
 
 // ---------------------------------------------------------------------------
-// REQ-AUDIT-023d: ROI report display format
+// REQ-AUDIT-032: ROI report display format
 // ---------------------------------------------------------------------------
 
 /// Format a full ROI report showing human-equivalent cost vs. aegis cost.
@@ -611,7 +611,7 @@ mod tests {
         serde_json::to_string(&entry).unwrap()
     }
 
-    // rtmx:req REQ-AUDIT-023a
+    // rtmx:req REQ-AUDIT-029
     #[test]
     fn test_work_output_metrics_from_ledger() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -674,7 +674,7 @@ mod tests {
         assert!((metrics.wall_clock_seconds - 300.0).abs() < 1.0);
     }
 
-    // rtmx:req REQ-AUDIT-023a
+    // rtmx:req REQ-AUDIT-029
     #[test]
     fn test_work_output_metrics_empty_dir() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -682,7 +682,7 @@ mod tests {
         assert_eq!(metrics, WorkOutputMetrics::default());
     }
 
-    // rtmx:req REQ-AUDIT-023b
+    // rtmx:req REQ-AUDIT-030
     #[test]
     fn test_labor_rate_table_default_rates() {
         let table = LaborRateTable::default();
@@ -700,7 +700,7 @@ mod tests {
         assert!((isse.loaded_hourly - 168.0).abs() < f64::EPSILON);
     }
 
-    // rtmx:req REQ-AUDIT-023b
+    // rtmx:req REQ-AUDIT-030
     #[test]
     fn test_labor_rate_table_contractor_multiplier() {
         let table = LaborRateTable::default();
@@ -720,7 +720,7 @@ mod tests {
         assert!((isse_contractor - 302.4).abs() < 1e-10);
     }
 
-    // rtmx:req REQ-AUDIT-023c
+    // rtmx:req REQ-AUDIT-031
     #[test]
     fn test_work_to_hours_for_known_outputs() {
         let metrics = WorkOutputMetrics {
@@ -773,7 +773,7 @@ mod tests {
         assert!(estimate.confidence_level <= 1.0);
     }
 
-    // rtmx:req REQ-AUDIT-023c
+    // rtmx:req REQ-AUDIT-031
     #[test]
     fn test_work_to_hours_zero_metrics() {
         let metrics = WorkOutputMetrics::default();
@@ -787,7 +787,7 @@ mod tests {
         assert!((estimate.confidence_level).abs() < f64::EPSILON);
     }
 
-    // rtmx:req REQ-AUDIT-023d
+    // rtmx:req REQ-AUDIT-032
     #[test]
     fn test_roi_report_display_format() {
         let metrics = WorkOutputMetrics {
@@ -819,7 +819,7 @@ mod tests {
         assert!(report.contains("Estimates are based on GS pay scale heuristics"));
     }
 
-    // rtmx:req REQ-AUDIT-023d
+    // rtmx:req REQ-AUDIT-032
     #[test]
     fn test_roi_report_shows_savings_percentage() {
         let mut by_role = HashMap::new();

@@ -344,7 +344,7 @@ mod tests {
         assert_eq!(req.project.as_deref(), Some("test"));
     }
 
-    // rtmx:req REQ-TUI-063d
+    // rtmx:req REQ-TUI-074
     #[test]
     fn test_connect_guided_flow_vertex() {
         let req = parse_connect_args(
@@ -357,7 +357,7 @@ mod tests {
         assert_eq!(req.project.as_deref(), Some("my-proj"));
     }
 
-    // rtmx:req REQ-TUI-063d
+    // rtmx:req REQ-TUI-074
     #[test]
     fn test_connect_guided_flow_bedrock() {
         let req =
@@ -368,7 +368,7 @@ mod tests {
         assert_eq!(req.region.as_deref(), Some("us-gov-west-1"));
     }
 
-    // rtmx:req REQ-TUI-063d
+    // rtmx:req REQ-TUI-074
     #[test]
     fn test_connect_guided_flow_local() {
         let req = parse_connect_args("local --model=llama3").unwrap();
@@ -376,7 +376,7 @@ mod tests {
         assert_eq!(req.model.as_deref(), Some("llama3"));
     }
 
-    // rtmx:req REQ-TUI-063d
+    // rtmx:req REQ-TUI-074
     #[test]
     fn test_connect_guided_flow_azure() {
         let req = parse_connect_args(
@@ -393,7 +393,7 @@ mod tests {
         );
     }
 
-    // rtmx:req REQ-TUI-063d
+    // rtmx:req REQ-TUI-074
     #[test]
     fn test_connect_grammar_builds_parseable_string() {
         use crate::command_palette::{connect_grammar, options_for_provider};
@@ -423,7 +423,7 @@ mod tests {
         assert_eq!(req.region.as_deref(), Some(region_opts[0].value.as_str()));
     }
 
-    // rtmx:req REQ-TUI-063d
+    // rtmx:req REQ-TUI-074
     #[test]
     fn test_connect_with_project_id() {
         let req = parse_connect_args(

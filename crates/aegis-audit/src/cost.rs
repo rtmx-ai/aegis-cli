@@ -45,7 +45,7 @@ pub fn scan_ledger_files(logs_dir: &Path) -> Vec<TokensConsumedRecord> {
 }
 
 // ---------------------------------------------------------------------------
-// Incremental scan cache (REQ-AUDIT-021c)
+// Incremental scan cache (REQ-AUDIT-035)
 // ---------------------------------------------------------------------------
 
 /// Bookmark tracking how far we have scanned into a single JSONL file.
@@ -517,7 +517,7 @@ fn extract_month(ts: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Token ratio analysis and caching recommendations (REQ-AUDIT-022a)
+// Token ratio analysis and caching recommendations (REQ-AUDIT-026)
 // ---------------------------------------------------------------------------
 
 /// Severity level for a cost recommendation.
@@ -634,7 +634,7 @@ pub fn format_recommendations(recs: &[CostRecommendation]) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Model sizing recommendation (REQ-AUDIT-022b)
+// Model sizing recommendation (REQ-AUDIT-027)
 // ---------------------------------------------------------------------------
 
 /// Average session cost threshold above which we consider the model expensive.
@@ -714,7 +714,7 @@ pub fn analyze_model_sizing(report: &CostReport) -> Vec<CostRecommendation> {
                  to the smaller model to reduce costs.",
                 model, avg_cost, current_rate, alt_name, alt_rate, savings_pct,
             ),
-            req_ref: "REQ-AUDIT-022b".to_string(),
+            req_ref: "REQ-AUDIT-027".to_string(),
         });
     }
 
@@ -722,7 +722,7 @@ pub fn analyze_model_sizing(report: &CostReport) -> Vec<CostRecommendation> {
 }
 
 // ---------------------------------------------------------------------------
-// Local model fallback recommendation (REQ-AUDIT-022c)
+// Local model fallback recommendation (REQ-AUDIT-028)
 // ---------------------------------------------------------------------------
 
 /// Fraction of sessions from cloud providers above which we suggest local
@@ -777,7 +777,7 @@ pub fn analyze_local_fallback(report: &CostReport) -> Vec<CostRecommendation> {
             CLOUD_DOMINANCE_THRESHOLD * 100.0,
             estimated_monthly_savings,
         ),
-        req_ref: "REQ-AUDIT-022c".to_string(),
+        req_ref: "REQ-AUDIT-028".to_string(),
     });
 
     recs
@@ -812,7 +812,7 @@ mod tests {
         }
     }
 
-    // rtmx:req REQ-AUDIT-021b
+    // rtmx:req REQ-AUDIT-034
     #[test]
     fn test_cost_report_groups_by_provider_and_project() {
         let records = vec![
@@ -861,7 +861,7 @@ mod tests {
         assert_eq!(bedrock.session_count, 1);
     }
 
-    // rtmx:req REQ-AUDIT-021b
+    // rtmx:req REQ-AUDIT-034
     #[test]
     fn test_cost_report_groups_by_month() {
         let records = vec![
@@ -900,7 +900,7 @@ mod tests {
         assert_eq!(apr.session_count, 1);
     }
 
-    // rtmx:req REQ-AUDIT-021b
+    // rtmx:req REQ-AUDIT-034
     #[test]
     fn test_cost_report_lifetime_sums_all() {
         let records = vec![
@@ -941,7 +941,7 @@ mod tests {
         );
     }
 
-    // rtmx:req REQ-AUDIT-021b
+    // rtmx:req REQ-AUDIT-034
     #[test]
     fn test_compute_cost_known_model() {
         // vertex / gemini-2.5-pro: $1.25/M input, $10.00/M output
@@ -951,14 +951,14 @@ mod tests {
         assert!((cost.unwrap() - 6.25).abs() < 1e-10);
     }
 
-    // rtmx:req REQ-AUDIT-021b
+    // rtmx:req REQ-AUDIT-034
     #[test]
     fn test_compute_cost_unknown_model() {
         let cost = compute_cost("vertex", "nonexistent-xyz-model", 1_000, 1_000);
         assert!(cost.is_none());
     }
 
-    // rtmx:req REQ-AUDIT-021b
+    // rtmx:req REQ-AUDIT-034
     #[test]
     fn test_compute_cost_local_is_zero() {
         let cost = compute_cost("local", "llama3", 5_000_000, 5_000_000);
@@ -966,7 +966,7 @@ mod tests {
         assert!((cost.unwrap()).abs() < f64::EPSILON);
     }
 
-    // rtmx:req REQ-AUDIT-021b
+    // rtmx:req REQ-AUDIT-034
     #[test]
     fn test_session_aggregation_combines_multiple_records() {
         let records = vec![
@@ -1003,8 +1003,8 @@ mod tests {
         assert_eq!(session.cost_usd, expected);
     }
 
-    // rtmx:req REQ-AUDIT-021a
-    // rtmx:req REQ-AUDIT-021b
+    // rtmx:req REQ-AUDIT-033
+    // rtmx:req REQ-AUDIT-034
     #[test]
     fn test_scan_single_file_extracts_tokens_consumed() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1042,8 +1042,8 @@ mod tests {
         assert_eq!(records[0].output_tokens, 567);
     }
 
-    // rtmx:req REQ-AUDIT-021a
-    // rtmx:req REQ-AUDIT-021b
+    // rtmx:req REQ-AUDIT-033
+    // rtmx:req REQ-AUDIT-034
     #[test]
     fn test_scan_single_file_skips_non_tokens_consumed() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1090,8 +1090,8 @@ mod tests {
         assert_eq!(records[0].session_id, "s-1");
     }
 
-    // rtmx:req REQ-AUDIT-021a
-    // rtmx:req REQ-AUDIT-021b
+    // rtmx:req REQ-AUDIT-033
+    // rtmx:req REQ-AUDIT-034
     #[test]
     fn test_scan_ledger_files_across_multiple_files() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1123,7 +1123,7 @@ mod tests {
         assert_eq!(records.len(), 2);
     }
 
-    // rtmx:req REQ-AUDIT-021b
+    // rtmx:req REQ-AUDIT-034
     #[test]
     fn test_extract_month_from_timestamp() {
         assert_eq!(extract_month("2026-04-19T00:00:00Z"), "2026-04");
@@ -1131,7 +1131,7 @@ mod tests {
         assert_eq!(extract_month("bad"), "unknown");
     }
 
-    // rtmx:req REQ-AUDIT-021b
+    // rtmx:req REQ-AUDIT-034
     #[test]
     fn test_empty_records_produce_empty_report() {
         let report = build_cost_report(&[]);
@@ -1143,7 +1143,7 @@ mod tests {
         assert!((report.lifetime.total_cost_usd).abs() < f64::EPSILON);
     }
 
-    // -- Incremental scan cache tests (REQ-AUDIT-021c) -------------------------
+    // -- Incremental scan cache tests (REQ-AUDIT-035) -------------------------
 
     fn make_ledger_line(session_id: &str, input: u64, output: u64) -> String {
         let entry = serde_json::json!({
@@ -1166,7 +1166,7 @@ mod tests {
         serde_json::to_string(&entry).unwrap()
     }
 
-    // rtmx:req REQ-AUDIT-021c
+    // rtmx:req REQ-AUDIT-035
     #[test]
     fn test_scan_cache_first_scan_reads_all() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1188,7 +1188,7 @@ mod tests {
         assert_eq!(bm.last_line_count, 2);
     }
 
-    // rtmx:req REQ-AUDIT-021c
+    // rtmx:req REQ-AUDIT-035
     #[test]
     fn test_scan_cache_incremental_reads_only_new() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1219,7 +1219,7 @@ mod tests {
         assert_eq!(bm.last_line_count, 2);
     }
 
-    // rtmx:req REQ-AUDIT-021c
+    // rtmx:req REQ-AUDIT-035
     #[test]
     fn test_scan_cache_no_new_data_returns_same() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1237,7 +1237,7 @@ mod tests {
         assert_eq!(bm.last_line_count, 1);
     }
 
-    // rtmx:req REQ-AUDIT-021c
+    // rtmx:req REQ-AUDIT-035
     #[test]
     fn test_scan_cache_empty_dir() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1247,7 +1247,7 @@ mod tests {
         assert!(cache.bookmarks().is_empty());
     }
 
-    // rtmx:req REQ-AUDIT-021c
+    // rtmx:req REQ-AUDIT-035
     #[test]
     fn test_scan_cache_multiple_files() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1267,7 +1267,7 @@ mod tests {
         assert_eq!(cache.bookmarks().len(), 3);
     }
 
-    // -- Token ratio analysis tests (REQ-AUDIT-022a) ---------------------------
+    // -- Token ratio analysis tests (REQ-AUDIT-026) ---------------------------
 
     /// Helper: build a CostReport with specified lifetime input/output totals.
     fn report_with_lifetime(input: u64, output: u64) -> CostReport {
@@ -1285,7 +1285,7 @@ mod tests {
         }
     }
 
-    // rtmx:req REQ-AUDIT-022a
+    // rtmx:req REQ-AUDIT-026
     #[test]
     fn test_ratio_above_5_emits_action() {
         // ratio = 60_000 / 10_000 = 6.0 > 5.0
@@ -1297,7 +1297,7 @@ mod tests {
         assert!(recs[0].detail.contains("6.0x"));
     }
 
-    // rtmx:req REQ-AUDIT-022a
+    // rtmx:req REQ-AUDIT-026
     #[test]
     fn test_ratio_between_3_and_5_emits_info() {
         // ratio = 40_000 / 10_000 = 4.0 -- between 3.0 and 5.0
@@ -1309,7 +1309,7 @@ mod tests {
         assert!(recs[0].detail.contains("4.0x"));
     }
 
-    // rtmx:req REQ-AUDIT-022a
+    // rtmx:req REQ-AUDIT-026
     #[test]
     fn test_ratio_below_3_emits_nothing() {
         // ratio = 20_000 / 10_000 = 2.0 -- normal
@@ -1318,7 +1318,7 @@ mod tests {
         assert!(recs.is_empty());
     }
 
-    // rtmx:req REQ-AUDIT-022a
+    // rtmx:req REQ-AUDIT-026
     #[test]
     fn test_ratio_skipped_when_input_below_minimum() {
         // ratio = 6_000 / 1_000 = 6.0, but input < 10_000
@@ -1327,7 +1327,7 @@ mod tests {
         assert!(recs.is_empty());
     }
 
-    // rtmx:req REQ-AUDIT-022a
+    // rtmx:req REQ-AUDIT-026
     #[test]
     fn test_ratio_skipped_when_output_is_zero() {
         let report = report_with_lifetime(100_000, 0);
@@ -1335,7 +1335,7 @@ mod tests {
         assert!(recs.is_empty());
     }
 
-    // rtmx:req REQ-AUDIT-022a
+    // rtmx:req REQ-AUDIT-026
     #[test]
     fn test_ratio_exactly_at_thresholds() {
         // ratio = 5.0 exactly -- should NOT trigger Action (> 5.0 required)
@@ -1351,14 +1351,14 @@ mod tests {
         assert!(recs2.is_empty());
     }
 
-    // rtmx:req REQ-AUDIT-022a
+    // rtmx:req REQ-AUDIT-026
     #[test]
     fn test_format_recommendations_empty() {
         let output = format_recommendations(&[]);
         assert!(output.is_empty());
     }
 
-    // rtmx:req REQ-AUDIT-022a
+    // rtmx:req REQ-AUDIT-026
     #[test]
     fn test_format_recommendations_action() {
         let recs = vec![CostRecommendation {
@@ -1374,7 +1374,7 @@ mod tests {
         assert!(output.contains("Ratio is high"));
     }
 
-    // rtmx:req REQ-AUDIT-022a
+    // rtmx:req REQ-AUDIT-026
     #[test]
     fn test_format_recommendations_multiple() {
         let recs = vec![
@@ -1398,7 +1398,7 @@ mod tests {
         assert!(output.contains("Second"));
     }
 
-    // rtmx:req REQ-AUDIT-022a
+    // rtmx:req REQ-AUDIT-026
     #[test]
     fn test_analyze_with_real_records() {
         // Integration-style: build records, generate report, analyze ratio.
@@ -1429,7 +1429,7 @@ mod tests {
         assert_eq!(recs[0].severity, RecommendationSeverity::Action);
     }
 
-    // -- Model sizing recommendation tests (REQ-AUDIT-022b) --------------------
+    // -- Model sizing recommendation tests (REQ-AUDIT-027) --------------------
 
     /// Helper: build a CostReport with given sessions and computed aggregates.
     fn report_with_sessions(sessions: Vec<SessionCost>) -> CostReport {
@@ -1473,7 +1473,7 @@ mod tests {
         }
     }
 
-    // rtmx:req REQ-AUDIT-022b
+    // rtmx:req REQ-AUDIT-027
     #[test]
     fn test_model_sizing_no_sessions() {
         let report = report_with_sessions(vec![]);
@@ -1481,7 +1481,7 @@ mod tests {
         assert!(recs.is_empty());
     }
 
-    // rtmx:req REQ-AUDIT-022b
+    // rtmx:req REQ-AUDIT-027
     #[test]
     fn test_model_sizing_flagship_above_threshold() {
         // vertex/gemini-2.5-pro: $1.25/M input, $10.00/M output
@@ -1494,12 +1494,12 @@ mod tests {
         let recs = analyze_model_sizing(&report);
         assert_eq!(recs.len(), 1);
         assert_eq!(recs[0].severity, RecommendationSeverity::Warning);
-        assert_eq!(recs[0].req_ref, "REQ-AUDIT-022b");
+        assert_eq!(recs[0].req_ref, "REQ-AUDIT-027");
         assert!(recs[0].detail.contains("gemini-2.5-flash"));
         assert!(recs[0].detail.contains("savings"));
     }
 
-    // rtmx:req REQ-AUDIT-022b
+    // rtmx:req REQ-AUDIT-027
     #[test]
     fn test_model_sizing_flagship_below_threshold() {
         // Small token counts -> cost well below $1.00
@@ -1512,7 +1512,7 @@ mod tests {
         assert!(recs.is_empty());
     }
 
-    // rtmx:req REQ-AUDIT-022b
+    // rtmx:req REQ-AUDIT-027
     #[test]
     fn test_model_sizing_non_flagship_above_threshold() {
         // haiku is not a flagship model even if cost is high
@@ -1531,7 +1531,7 @@ mod tests {
         assert!(recs.is_empty());
     }
 
-    // rtmx:req REQ-AUDIT-022b
+    // rtmx:req REQ-AUDIT-027
     #[test]
     fn test_model_sizing_opus_model() {
         // opus: $15/M input, $75/M output
@@ -1543,7 +1543,7 @@ mod tests {
         assert!(recs[0].detail.contains("claude-sonnet"));
     }
 
-    // rtmx:req REQ-AUDIT-022b
+    // rtmx:req REQ-AUDIT-027
     #[test]
     fn test_model_sizing_sonnet_model() {
         // sonnet: $3/M input, $15/M output
@@ -1561,7 +1561,7 @@ mod tests {
         assert!(recs[0].detail.contains("claude-haiku"));
     }
 
-    // rtmx:req REQ-AUDIT-022b
+    // rtmx:req REQ-AUDIT-027
     #[test]
     fn test_model_sizing_at_exact_threshold() {
         // avg cost must be > $1.00, not >=
@@ -1583,7 +1583,7 @@ mod tests {
         assert!(recs.is_empty());
     }
 
-    // rtmx:req REQ-AUDIT-022b
+    // rtmx:req REQ-AUDIT-027
     #[test]
     fn test_model_sizing_case_insensitive() {
         // Model name with mixed case should still match
@@ -1601,9 +1601,9 @@ mod tests {
         assert_eq!(recs.len(), 1);
     }
 
-    // -- Local model fallback tests (REQ-AUDIT-022c) ---------------------------
+    // -- Local model fallback tests (REQ-AUDIT-028) ---------------------------
 
-    // rtmx:req REQ-AUDIT-022c
+    // rtmx:req REQ-AUDIT-028
     #[test]
     fn test_local_fallback_no_sessions() {
         let report = report_with_sessions(vec![]);
@@ -1611,7 +1611,7 @@ mod tests {
         assert!(recs.is_empty());
     }
 
-    // rtmx:req REQ-AUDIT-022c
+    // rtmx:req REQ-AUDIT-028
     #[test]
     fn test_local_fallback_below_session_minimum() {
         // Only 5 sessions -- threshold is > 5
@@ -1631,7 +1631,7 @@ mod tests {
         assert!(recs.is_empty());
     }
 
-    // rtmx:req REQ-AUDIT-022c
+    // rtmx:req REQ-AUDIT-028
     #[test]
     fn test_local_fallback_cloud_dominant() {
         // 6 cloud sessions, 0 local -> 100% cloud
@@ -1650,12 +1650,12 @@ mod tests {
         let recs = analyze_local_fallback(&report);
         assert_eq!(recs.len(), 1);
         assert_eq!(recs[0].severity, RecommendationSeverity::Action);
-        assert_eq!(recs[0].req_ref, "REQ-AUDIT-022c");
+        assert_eq!(recs[0].req_ref, "REQ-AUDIT-028");
         assert!(recs[0].detail.contains("100%"));
         assert!(recs[0].detail.contains("local"));
     }
 
-    // rtmx:req REQ-AUDIT-022c
+    // rtmx:req REQ-AUDIT-028
     #[test]
     fn test_local_fallback_all_local_sessions() {
         // All sessions are local -> 0% cloud -> no recommendation
@@ -1667,7 +1667,7 @@ mod tests {
         assert!(recs.is_empty());
     }
 
-    // rtmx:req REQ-AUDIT-022c
+    // rtmx:req REQ-AUDIT-028
     #[test]
     fn test_local_fallback_at_80_percent_boundary() {
         // 8 cloud + 2 local = 10 sessions, cloud = 80% exactly
@@ -1691,7 +1691,7 @@ mod tests {
         assert!(recs.is_empty());
     }
 
-    // rtmx:req REQ-AUDIT-022c
+    // rtmx:req REQ-AUDIT-028
     #[test]
     fn test_local_fallback_above_80_percent() {
         // 9 cloud + 1 local = 10 sessions, cloud = 90% > 80%
@@ -1713,7 +1713,7 @@ mod tests {
         assert!(recs[0].detail.contains("90%"));
     }
 
-    // rtmx:req REQ-AUDIT-022c
+    // rtmx:req REQ-AUDIT-028
     #[test]
     fn test_local_fallback_shows_monthly_savings() {
         let sessions: Vec<SessionCost> = (0..6)
@@ -1734,7 +1734,7 @@ mod tests {
         assert!(recs[0].detail.contains('$'));
     }
 
-    // rtmx:req REQ-AUDIT-021c
+    // rtmx:req REQ-AUDIT-035
     #[test]
     fn test_scan_cache_skips_non_tokens_consumed() {
         let dir = tempfile::TempDir::new().unwrap();

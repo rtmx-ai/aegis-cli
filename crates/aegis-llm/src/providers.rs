@@ -1,4 +1,4 @@
-//! Provider probe and model discovery (REQ-LLM-030a, REQ-LLM-030b).
+//! Provider probe and model discovery (REQ-LLM-038, REQ-LLM-039).
 //!
 //! Provides two capabilities:
 //! - `list_models`: enumerate available models from a provider endpoint
@@ -288,7 +288,7 @@ mod tests {
         serde_json::json!({"object": "list", "data": data}).to_string()
     }
 
-    // rtmx:req REQ-LLM-030a
+    // rtmx:req REQ-LLM-038
     #[tokio::test]
     async fn list_models_local_returns_available_models() {
         let server = MockServer::start().await;
@@ -313,7 +313,7 @@ mod tests {
         assert_eq!(models[1].status, "available");
     }
 
-    // rtmx:req REQ-LLM-030a
+    // rtmx:req REQ-LLM-038
     #[tokio::test]
     async fn list_models_local_enriches_rates() {
         let server = MockServer::start().await;
@@ -338,7 +338,7 @@ mod tests {
         assert!((models[0].output_rate).abs() < f64::EPSILON);
     }
 
-    // rtmx:req REQ-LLM-030a
+    // rtmx:req REQ-LLM-038
     #[tokio::test]
     async fn list_models_returns_unauthorized_on_401() {
         let server = MockServer::start().await;
@@ -358,7 +358,7 @@ mod tests {
         assert_eq!(models[0].status, "unauthorized");
     }
 
-    // rtmx:req REQ-LLM-030a
+    // rtmx:req REQ-LLM-038
     #[tokio::test]
     async fn list_models_returns_error_on_server_error() {
         let server = MockServer::start().await;
@@ -376,14 +376,14 @@ mod tests {
         assert!(result.unwrap_err().contains("HTTP 500"));
     }
 
-    // rtmx:req REQ-LLM-030a
+    // rtmx:req REQ-LLM-038
     #[tokio::test]
     async fn list_models_returns_error_on_unreachable() {
         let result = list_models(ProviderKind::Local, "http://127.0.0.1:1/v1").await;
         assert!(result.is_err());
     }
 
-    // rtmx:req REQ-LLM-030a
+    // rtmx:req REQ-LLM-038
     #[tokio::test]
     async fn list_models_cloud_returns_stub() {
         let result = list_models(ProviderKind::Vertex, "unused").await;
@@ -392,7 +392,7 @@ mod tests {
         assert_eq!(models[0].status, "not_found");
     }
 
-    // rtmx:req REQ-LLM-030a
+    // rtmx:req REQ-LLM-038
     #[test]
     fn format_model_table_produces_aligned_output() {
         let models = vec![
@@ -418,7 +418,7 @@ mod tests {
         assert!(table.contains("--")); // free rate marker
     }
 
-    // rtmx:req REQ-LLM-030b
+    // rtmx:req REQ-LLM-039
     #[tokio::test]
     async fn test_endpoint_local_returns_probe_result() {
         let server = MockServer::start().await;
@@ -444,7 +444,7 @@ mod tests {
         assert!(result.latency_ms < 10_000, "latency too high");
     }
 
-    // rtmx:req REQ-LLM-030b
+    // rtmx:req REQ-LLM-039
     #[tokio::test]
     async fn test_endpoint_local_reports_failure_status() {
         let server = MockServer::start().await;
@@ -464,14 +464,14 @@ mod tests {
         assert_eq!(result.model_id, "nonexistent");
     }
 
-    // rtmx:req REQ-LLM-030b
+    // rtmx:req REQ-LLM-039
     #[tokio::test]
     async fn test_endpoint_unreachable_returns_error() {
         let result = test_endpoint(ProviderKind::Local, "http://127.0.0.1:1/v1", "llama3").await;
         assert!(result.is_err());
     }
 
-    // rtmx:req REQ-LLM-030b
+    // rtmx:req REQ-LLM-039
     #[tokio::test]
     async fn test_endpoint_cloud_returns_not_implemented() {
         let result = test_endpoint(ProviderKind::Vertex, "unused", "gemini-2.5-pro-001").await;
@@ -479,7 +479,7 @@ mod tests {
         assert!(result.unwrap_err().contains("not yet implemented"));
     }
 
-    // rtmx:req REQ-LLM-030b
+    // rtmx:req REQ-LLM-039
     #[test]
     fn format_probe_result_success() {
         let result = ProbeResult {
@@ -495,7 +495,7 @@ mod tests {
         assert!(output.contains("llama3"));
     }
 
-    // rtmx:req REQ-LLM-030b
+    // rtmx:req REQ-LLM-039
     #[test]
     fn format_probe_result_failure() {
         let result = ProbeResult {
@@ -509,7 +509,7 @@ mod tests {
         assert!(output.contains("401"));
     }
 
-    // rtmx:req REQ-LLM-030a
+    // rtmx:req REQ-LLM-038
     #[test]
     fn model_info_struct_fields() {
         let info = ModelInfo {
@@ -524,7 +524,7 @@ mod tests {
         assert!((info.output_rate - 2.0).abs() < f64::EPSILON);
     }
 
-    // rtmx:req REQ-LLM-030b
+    // rtmx:req REQ-LLM-039
     #[test]
     fn probe_result_struct_fields() {
         let result = ProbeResult {

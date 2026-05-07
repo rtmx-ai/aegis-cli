@@ -169,7 +169,7 @@ impl CommandPalette {
 }
 
 // ---------------------------------------------------------------------------
-// REQ-TUI-063a: Structured token-level command grammar
+// REQ-TUI-071: Structured token-level command grammar
 // ---------------------------------------------------------------------------
 
 /// Kind of value a token slot accepts.
@@ -653,7 +653,7 @@ mod tests {
         assert!(p.view().is_none());
     }
 
-    // rtmx:req REQ-TUI-063a
+    // rtmx:req REQ-TUI-071
     #[test]
     fn test_connect_grammar_has_provider_then_model_then_region() {
         let g = connect_grammar();
@@ -666,7 +666,7 @@ mod tests {
         assert_eq!(g.slots[3].name, "project");
     }
 
-    // rtmx:req REQ-TUI-063a
+    // rtmx:req REQ-TUI-071
     #[test]
     fn test_options_for_vertex_model_returns_gemini_variants() {
         let opts = options_for_provider("vertex", "model");
@@ -676,7 +676,7 @@ mod tests {
         assert!(values.contains(&"claude-opus-4.7"));
     }
 
-    // rtmx:req REQ-TUI-063a
+    // rtmx:req REQ-TUI-071
     #[test]
     fn test_options_for_bedrock_model_returns_claude() {
         let opts = options_for_provider("bedrock", "model");
@@ -685,7 +685,7 @@ mod tests {
         assert!(values.contains(&"claude-haiku-3"));
     }
 
-    // rtmx:req REQ-TUI-063a
+    // rtmx:req REQ-TUI-071
     #[test]
     fn test_options_for_azure_model_returns_gpt() {
         let opts = options_for_provider("azure", "model");
@@ -695,7 +695,7 @@ mod tests {
         assert!(values.contains(&"o3-mini"));
     }
 
-    // rtmx:req REQ-TUI-063a
+    // rtmx:req REQ-TUI-071
     #[test]
     fn test_palette_stage_advances_on_selection() {
         let mut p = CommandPalette::new();
@@ -719,7 +719,7 @@ mod tests {
         );
     }
 
-    // rtmx:req REQ-TUI-063a
+    // rtmx:req REQ-TUI-071
     #[test]
     fn test_palette_retreat_returns_to_previous_slot() {
         let mut p = CommandPalette::new();
@@ -735,7 +735,7 @@ mod tests {
         );
     }
 
-    // rtmx:req REQ-TUI-063a
+    // rtmx:req REQ-TUI-071
     #[test]
     fn test_palette_stage_hint_shows_slot_name() {
         let mut p = CommandPalette::new();
@@ -746,7 +746,7 @@ mod tests {
         assert_eq!(p.stage_hint(), Some("Select model:".to_string()));
     }
 
-    // rtmx:req REQ-TUI-063a
+    // rtmx:req REQ-TUI-071
     #[test]
     fn test_filter_token_narrows_options() {
         let mut p = CommandPalette::new();
@@ -903,7 +903,7 @@ mod tests {
         assert_eq!(g.slots[3].name, "project");
     }
 
-    // rtmx:req REQ-TUI-063b
+    // rtmx:req REQ-TUI-072
     #[test]
     fn test_palette_renders_options_for_active_token() {
         let mut p = CommandPalette::new();
@@ -925,7 +925,7 @@ mod tests {
         );
     }
 
-    // rtmx:req REQ-TUI-063b
+    // rtmx:req REQ-TUI-072
     #[test]
     fn test_palette_title_changes_per_slot() {
         let mut p = CommandPalette::new();
@@ -940,7 +940,7 @@ mod tests {
         assert_eq!(p.stage_hint(), Some("Select project:".to_string()));
     }
 
-    // rtmx:req REQ-TUI-063b
+    // rtmx:req REQ-TUI-072
     #[test]
     fn test_tab_selects_and_advances_to_next_slot() {
         let mut p = CommandPalette::new();
@@ -969,7 +969,7 @@ mod tests {
         }
     }
 
-    // rtmx:req REQ-TUI-063b
+    // rtmx:req REQ-TUI-072
     #[test]
     fn test_backspace_past_boundary_retreats_slot() {
         let mut p = CommandPalette::new();
@@ -992,7 +992,7 @@ mod tests {
         );
     }
 
-    // rtmx:req REQ-TUI-063b
+    // rtmx:req REQ-TUI-072
     #[test]
     fn test_esc_dismisses_palette_in_token_stage() {
         let mut p = CommandPalette::new();
@@ -1006,7 +1006,7 @@ mod tests {
         assert!(!p.in_token_stage());
     }
 
-    // rtmx:req REQ-TUI-063b
+    // rtmx:req REQ-TUI-072
     #[test]
     fn test_char_input_filters_current_slot_options() {
         let mut p = CommandPalette::new();
@@ -1027,7 +1027,7 @@ mod tests {
         assert!(p.filtered.is_empty());
     }
 
-    // rtmx:req REQ-TUI-063b
+    // rtmx:req REQ-TUI-072
     #[test]
     fn test_remaining_pattern_shows_upcoming_slots() {
         let mut p = CommandPalette::new();

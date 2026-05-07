@@ -100,7 +100,7 @@ pub fn enrich_auth_guidance(
 mod tests {
     use super::*;
 
-    // rtmx:req REQ-TUI-063c
+    // rtmx:req REQ-TUI-073
     #[test]
     fn test_osc8_hyperlink_wraps_url() {
         let spans =
@@ -139,7 +139,7 @@ mod tests {
         );
     }
 
-    // rtmx:req REQ-TUI-063c
+    // rtmx:req REQ-TUI-073
     #[test]
     fn test_plain_text_has_no_hyperlinks() {
         let spans = render_with_hyperlinks("No URLs here, just plain text.");
@@ -152,7 +152,7 @@ mod tests {
         );
     }
 
-    // rtmx:req REQ-TUI-063c
+    // rtmx:req REQ-TUI-073
     #[test]
     fn test_multiple_urls_all_wrapped() {
         let text = "See https://example.com/a and https://example.com/b for info";
@@ -182,7 +182,7 @@ mod tests {
         assert!(url2.content.contains("\x1b]8;;"));
     }
 
-    // rtmx:req REQ-TUI-063c
+    // rtmx:req REQ-TUI-073
     #[test]
     fn test_auth_guidance_contains_hyperlink() {
         use crate::app::{ConnectProvider, auth_guidance};
@@ -220,7 +220,7 @@ mod tests {
         );
     }
 
-    // rtmx:req REQ-TUI-063c
+    // rtmx:req REQ-TUI-073
     #[test]
     fn test_osc8_wrap_format() {
         let url = "https://example.com";
@@ -231,7 +231,7 @@ mod tests {
         );
     }
 
-    // rtmx:req REQ-TUI-063c
+    // rtmx:req REQ-TUI-073
     #[test]
     fn test_url_at_end_of_string() {
         let spans = render_with_hyperlinks("Go to https://example.com");
@@ -240,7 +240,7 @@ mod tests {
         assert!(spans[1].content.contains("https://example.com"));
     }
 
-    // rtmx:req REQ-TUI-063c
+    // rtmx:req REQ-TUI-073
     #[test]
     fn test_url_at_start_of_string() {
         let spans = render_with_hyperlinks("https://example.com is the site");
@@ -249,7 +249,7 @@ mod tests {
         assert_eq!(spans[1].content.as_ref(), " is the site");
     }
 
-    // rtmx:req REQ-TUI-063c
+    // rtmx:req REQ-TUI-073
     #[test]
     fn test_empty_string() {
         let spans = render_with_hyperlinks("");

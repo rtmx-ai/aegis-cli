@@ -5,7 +5,7 @@
 //! Supports RTMX requirement linking via req_id in ledger entries.
 
 pub mod cloud; // rtmx:req REQ-AUDIT-002
-pub mod cost; // rtmx:req REQ-AUDIT-021a, REQ-AUDIT-021b
+pub mod cost; // rtmx:req REQ-AUDIT-033, REQ-AUDIT-034
 pub mod forwarding; // rtmx:req REQ-AUDIT-018, REQ-AUDIT-019, REQ-AUDIT-020
 pub mod hash_chain; // rtmx:req REQ-AUDIT-005
 pub mod ledger; // rtmx:req REQ-AUDIT-001
@@ -13,7 +13,7 @@ pub mod reconstruct; // rtmx:req REQ-AUDIT-017
 pub mod redaction; // rtmx:req REQ-AUDIT-015
 pub mod report; // rtmx:req REQ-AUDIT-014
 pub mod retention; // rtmx:req REQ-AUDIT-010
-pub mod roi; // rtmx:req REQ-AUDIT-023a
+pub mod roi; // rtmx:req REQ-AUDIT-029
 pub mod rotation; // rtmx:req REQ-AUDIT-009
 pub mod search; // rtmx:req REQ-AUDIT-013
 pub mod siem; // rtmx:req REQ-AUDIT-011
