@@ -525,3 +525,46 @@ fn test_homebrew_formula_has_both_arch_urls() {
         "formula must use on_macos block"
     );
 }
+
+// rtmx:req REQ-BUILD-013
+#[test]
+fn test_ci_has_sccache_configuration() {
+    let ci = workspace_root().join(".github/workflows/ci.yml");
+    let content = std::fs::read_to_string(&ci).unwrap();
+    assert!(
+        content.contains("SCCACHE_GHA_ENABLED"),
+        "CI must configure sccache for compilation caching"
+    );
+    assert!(
+        content.contains("RUSTC_WRAPPER"),
+        "CI must set RUSTC_WRAPPER for sccache"
+    );
+    assert!(
+        content.contains("sccache-action"),
+        "CI must use mozilla-actions/sccache-action"
+    );
+}
+
+// rtmx:req REQ-TEST-033
+#[test]
+fn test_coverage_delta_script_exists() {
+    let script = workspace_root().join("scripts/coverage-delta.sh");
+    assert!(script.exists(), "scripts/coverage-delta.sh must exist");
+    let content = std::fs::read_to_string(&script).unwrap();
+    assert!(
+        content.contains("gh pr comment"),
+        "coverage delta script must post PR comments via gh"
+    );
+}
+
+// rtmx:req REQ-TEST-036
+#[test]
+fn test_bdd_lint_script_exists() {
+    let script = workspace_root().join("scripts/bdd-lint.sh");
+    assert!(script.exists(), "scripts/bdd-lint.sh must exist");
+    let content = std::fs::read_to_string(&script).unwrap();
+    assert!(
+        content.contains("MISSING_GIVEN_WHEN_THEN"),
+        "BDD linter must check for Given-When-Then structure"
+    );
+}
