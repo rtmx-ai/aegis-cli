@@ -9,6 +9,7 @@ pub mod cost; // rtmx:req REQ-AUDIT-033, REQ-AUDIT-034
 pub mod forwarding; // rtmx:req REQ-AUDIT-018, REQ-AUDIT-019, REQ-AUDIT-020
 pub mod hash_chain; // rtmx:req REQ-AUDIT-005
 pub mod ledger; // rtmx:req REQ-AUDIT-001
+pub mod ntp; // rtmx:req REQ-AUDIT-016
 pub mod reconstruct; // rtmx:req REQ-AUDIT-017
 pub mod redaction; // rtmx:req REQ-AUDIT-015
 pub mod report; // rtmx:req REQ-AUDIT-014
