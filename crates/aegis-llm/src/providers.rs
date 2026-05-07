@@ -1,8 +1,9 @@
-//! Provider probe and model discovery (REQ-LLM-038, REQ-LLM-039).
+//! Provider probe and model discovery (REQ-LLM-038, REQ-LLM-039, REQ-LLM-040).
 //!
-//! Provides two capabilities:
+//! Provides three capabilities:
 //! - `list_models`: enumerate available models from a provider endpoint
 //! - `test_endpoint`: send a minimal completion request and measure latency
+//! - `list_providers`: query provider registry returning model metadata
 //!
 //! These functions operate on ad-hoc parameters (endpoint, auth) without
 //! modifying any saved configuration.
@@ -13,6 +14,118 @@ use serde::Deserialize;
 
 use crate::config::ProviderKind;
 use crate::rates;
+
+// ---------------------------------------------------------------------------
+// Provider registry types (REQ-LLM-040)
+// ---------------------------------------------------------------------------
+
+/// Summary of a configured provider for the `aegis providers list` command.
+#[derive(Debug, Clone)]
+pub struct ProviderInfo {
+    pub name: String,
+    pub endpoint: String,
+    pub models: Vec<RegistryModelInfo>,
+    pub status: ProviderStatus,
+}
+
+/// Model metadata returned by the provider registry query.
+///
+/// Named `RegistryModelInfo` to avoid collision with the existing
+/// discovery-oriented [`ModelInfo`] struct in this module.
+#[derive(Debug, Clone)]
+pub struct RegistryModelInfo {
+    pub model_id: String,
+    pub context_window: Option<u32>,
+}
+
+/// Whether a provider is configured in the current config.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ProviderStatus {
+    Configured,
+    NotConfigured,
+}
+
+/// Minimal config input for [`list_providers`].
+///
+/// This avoids a crate dependency on `aegis-onboard` (which owns
+/// `AegisConfig`). Callers construct this from `AegisConfig` fields
+/// at the composition root.
+#[derive(Debug, Clone)]
+pub struct ProviderRegistryInput {
+    /// The configured provider string (e.g. "local", "vertex", "bedrock", "azure").
+    pub provider: String,
+    /// The configured model identifier.
+    pub model: String,
+    /// The configured endpoint URL.
+    pub endpoint: String,
+    /// Optional cloud region (e.g. "us-central1").
+    pub region: Option<String>,
+}
+
+/// Query the provider registry and return metadata for all known providers.
+///
+/// For each known provider kind (local, vertex, bedrock, azure), checks
+/// whether it matches the currently configured provider and populates
+/// a [`ProviderInfo`] accordingly. The configured provider gets its
+/// endpoint and model from the input; unconfigured providers get
+/// placeholder values.
+pub fn list_providers(input: &ProviderRegistryInput) -> Vec<ProviderInfo> {
+    let configured_kind = input.provider.to_lowercase();
+
+    let known_providers: Vec<(&str, &str)> = vec![
+        ("local", "http://localhost:11434/v1"),
+        ("vertex", "https://{region}-aiplatform.googleapis.com/v1"),
+        ("bedrock", "https://bedrock-runtime.{region}.amazonaws.com"),
+        ("azure", "https://{deployment}.openai.azure.com"),
+    ];
+
+    known_providers
+        .into_iter()
+        .map(|(name, default_endpoint)| {
+            if configured_kind == name {
+                ProviderInfo {
+                    name: name.to_string(),
+                    endpoint: input.endpoint.clone(),
+                    models: vec![RegistryModelInfo {
+                        model_id: input.model.clone(),
+                        context_window: default_context_window(&input.model),
+                    }],
+                    status: ProviderStatus::Configured,
+                }
+            } else {
+                let endpoint = if let Some(ref region) = input.region {
+                    default_endpoint.replace("{region}", region)
+                } else {
+                    default_endpoint.replace("{region}", "us-central1")
+                };
+                ProviderInfo {
+                    name: name.to_string(),
+                    endpoint,
+                    models: vec![],
+                    status: ProviderStatus::NotConfigured,
+                }
+            }
+        })
+        .collect()
+}
+
+/// Return a default context window for well-known model families.
+fn default_context_window(model_id: &str) -> Option<u32> {
+    let id = model_id.to_lowercase();
+    if id.contains("gemini") {
+        Some(1_000_000)
+    } else if id.contains("claude") {
+        Some(200_000)
+    } else if id.contains("gpt-4") {
+        Some(128_000)
+    } else if id.contains("llama") {
+        Some(8_192)
+    } else if id.contains("mixtral") {
+        Some(32_768)
+    } else {
+        None
+    }
+}
 
 /// Information about a single model available from a provider.
 #[derive(Debug, Clone, PartialEq)]
@@ -537,5 +650,85 @@ mod tests {
         assert_eq!(result.latency_ms, 100);
         assert_eq!(result.model_id, "test-model");
         assert_eq!(result.endpoint_url, "http://localhost/v1");
+    }
+
+    // rtmx:req REQ-LLM-040
+    #[test]
+    fn test_list_providers_returns_metadata() {
+        let input = ProviderRegistryInput {
+            provider: "local".to_string(),
+            model: "llama3:latest".to_string(),
+            endpoint: "http://localhost:11434/v1".to_string(),
+            region: None,
+        };
+
+        let providers = list_providers(&input);
+
+        // Should return all four known provider kinds
+        assert_eq!(providers.len(), 4);
+
+        // The configured provider (local) should be Configured with model info
+        let local = providers.iter().find(|p| p.name == "local").unwrap();
+        assert_eq!(local.status, ProviderStatus::Configured);
+        assert_eq!(local.endpoint, "http://localhost:11434/v1");
+        assert_eq!(local.models.len(), 1);
+        assert_eq!(local.models[0].model_id, "llama3:latest");
+        assert_eq!(local.models[0].context_window, Some(8_192));
+
+        // Unconfigured providers should be NotConfigured with no models
+        let vertex = providers.iter().find(|p| p.name == "vertex").unwrap();
+        assert_eq!(vertex.status, ProviderStatus::NotConfigured);
+        assert!(vertex.models.is_empty());
+
+        let bedrock = providers.iter().find(|p| p.name == "bedrock").unwrap();
+        assert_eq!(bedrock.status, ProviderStatus::NotConfigured);
+        assert!(bedrock.models.is_empty());
+
+        let azure = providers.iter().find(|p| p.name == "azure").unwrap();
+        assert_eq!(azure.status, ProviderStatus::NotConfigured);
+        assert!(azure.models.is_empty());
+    }
+
+    // rtmx:req REQ-LLM-040
+    #[test]
+    fn test_list_providers_vertex_configured() {
+        let input = ProviderRegistryInput {
+            provider: "vertex".to_string(),
+            model: "gemini-2.5-pro-001".to_string(),
+            endpoint: "https://us-central1-aiplatform.googleapis.com/v1".to_string(),
+            region: Some("us-central1".to_string()),
+        };
+
+        let providers = list_providers(&input);
+
+        let vertex = providers.iter().find(|p| p.name == "vertex").unwrap();
+        assert_eq!(vertex.status, ProviderStatus::Configured);
+        assert_eq!(
+            vertex.endpoint,
+            "https://us-central1-aiplatform.googleapis.com/v1"
+        );
+        assert_eq!(vertex.models.len(), 1);
+        assert_eq!(vertex.models[0].model_id, "gemini-2.5-pro-001");
+        assert_eq!(vertex.models[0].context_window, Some(1_000_000));
+
+        // local should be NotConfigured
+        let local = providers.iter().find(|p| p.name == "local").unwrap();
+        assert_eq!(local.status, ProviderStatus::NotConfigured);
+    }
+
+    // rtmx:req REQ-LLM-040
+    #[test]
+    fn test_list_providers_unknown_model_has_no_context_window() {
+        let input = ProviderRegistryInput {
+            provider: "local".to_string(),
+            model: "my-custom-model".to_string(),
+            endpoint: "http://localhost:8080/v1".to_string(),
+            region: None,
+        };
+
+        let providers = list_providers(&input);
+        let local = providers.iter().find(|p| p.name == "local").unwrap();
+        assert_eq!(local.models[0].model_id, "my-custom-model");
+        assert_eq!(local.models[0].context_window, None);
     }
 }
