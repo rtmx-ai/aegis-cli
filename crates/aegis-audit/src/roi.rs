@@ -488,6 +488,55 @@ pub fn estimate_human_equivalent(
 }
 
 // ---------------------------------------------------------------------------
+// REQ-AUDIT-038: Heuristic scoring -- tool calls, file changes, test
+// additions to estimated labor hours
+// ---------------------------------------------------------------------------
+
+/// Configurable weights for work-to-hours conversion.
+#[derive(Debug, Clone)]
+pub struct HeuristicWeights {
+    pub hours_per_file_write: f64,
+    pub hours_per_test: f64,
+    pub hours_per_tool_call: f64,
+    pub hours_per_line: f64,
+}
+
+impl Default for HeuristicWeights {
+    fn default() -> Self {
+        Self {
+            hours_per_file_write: 0.5,
+            hours_per_test: 0.25,
+            hours_per_tool_call: 0.1,
+            hours_per_line: 0.01,
+        }
+    }
+}
+
+/// Convert work output metrics to estimated equivalent manual labor hours.
+///
+/// Heuristic weights (configurable):
+/// - file_writes: 0.5h each (creating a file from scratch)
+/// - test_additions: 0.25h each (writing a test)
+/// - tool_calls: 0.1h each (research, command execution)
+/// - lines_changed: 0.01h per line
+pub fn score_work_output(metrics: &WorkOutputMetrics) -> f64 {
+    score_work_output_with_weights(metrics, &HeuristicWeights::default())
+}
+
+/// Convert work output metrics to estimated equivalent manual labor hours
+/// using the provided weight configuration.
+pub fn score_work_output_with_weights(
+    metrics: &WorkOutputMetrics,
+    weights: &HeuristicWeights,
+) -> f64 {
+    let total_tool_calls: u64 = metrics.tool_calls_by_type.values().sum();
+    (metrics.files_written as f64 * weights.hours_per_file_write)
+        + (metrics.tests_created as f64 * weights.hours_per_test)
+        + (total_tool_calls as f64 * weights.hours_per_tool_call)
+        + (metrics.lines_changed as f64 * weights.hours_per_line)
+}
+
+// ---------------------------------------------------------------------------
 // REQ-AUDIT-032: ROI report display format
 // ---------------------------------------------------------------------------
 
@@ -817,6 +866,41 @@ mod tests {
         assert!(report.contains("Estimated savings"));
         assert!(report.contains("Confidence"));
         assert!(report.contains("Estimates are based on GS pay scale heuristics"));
+    }
+
+    // rtmx:req REQ-AUDIT-038
+    #[test]
+    fn test_heuristic_scores_tool_calls_to_hours() {
+        let mut tool_calls = HashMap::new();
+        tool_calls.insert("WriteFile".to_string(), 10);
+        tool_calls.insert("ReadFile".to_string(), 20);
+        let metrics = WorkOutputMetrics {
+            files_written: 5,
+            lines_changed: 200,
+            tests_created: 3,
+            requirements_completed: 2,
+            tool_calls_by_type: tool_calls,
+            sessions: 1,
+            wall_clock_seconds: 3600.0,
+        };
+        let hours = score_work_output(&metrics);
+        // 5*0.5 + 3*0.25 + 30*0.1 + 200*0.01 = 2.5 + 0.75 + 3.0 + 2.0 = 8.25
+        assert!((hours - 8.25).abs() < 0.001);
+    }
+
+    // rtmx:req REQ-AUDIT-038
+    #[test]
+    fn test_custom_weights_override_defaults() {
+        let metrics = WorkOutputMetrics {
+            files_written: 1,
+            ..Default::default()
+        };
+        let weights = HeuristicWeights {
+            hours_per_file_write: 2.0,
+            ..Default::default()
+        };
+        let hours = score_work_output_with_weights(&metrics, &weights);
+        assert!((hours - 2.0).abs() < 0.001);
     }
 
     // rtmx:req REQ-AUDIT-032
