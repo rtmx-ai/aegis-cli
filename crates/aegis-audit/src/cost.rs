@@ -5,6 +5,7 @@
 //! Rate tables are duplicated here to avoid a circular dependency on
 //! `aegis-llm`.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -348,7 +349,7 @@ fn lookup_rates(provider_kind: &str, model: &str) -> Option<RateEntry> {
 // ---------------------------------------------------------------------------
 
 /// Cost for a single session.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionCost {
     pub session_id: String,
     pub provider_kind: String,
@@ -360,7 +361,7 @@ pub struct SessionCost {
 }
 
 /// Aggregated cost for a time period or grouping.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PeriodCost {
     pub total_cost_usd: f64,
     pub total_input: u64,
@@ -368,8 +369,18 @@ pub struct PeriodCost {
     pub session_count: usize,
 }
 
+/// Dimension by which cost data can be grouped.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AggregationKey {
+    Session,
+    Provider,
+    Project,
+    Month,
+    Repo,
+}
+
 /// Full cost report with breakdowns by multiple dimensions.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CostReport {
     pub sessions: Vec<SessionCost>,
     pub by_provider: HashMap<String, PeriodCost>,
@@ -481,6 +492,39 @@ pub fn build_cost_report(records: &[TokensConsumedRecord]) -> CostReport {
         by_month,
         lifetime,
     }
+}
+
+/// Aggregate token records by a specified dimension.
+///
+/// Groups the given records by the dimension indicated by `key` and
+/// computes a [`PeriodCost`] for each group.  The returned vector
+/// contains `(group_label, PeriodCost)` pairs in arbitrary order.
+pub fn aggregate_by_key(
+    records: &[TokensConsumedRecord],
+    key: AggregationKey,
+) -> Vec<(String, PeriodCost)> {
+    let mut groups: HashMap<String, PeriodCost> = HashMap::new();
+
+    for r in records {
+        let group_label = match key {
+            AggregationKey::Session => r.session_id.clone(),
+            AggregationKey::Provider => r.provider_kind.clone(),
+            AggregationKey::Project => r.project_id.as_deref().unwrap_or("unknown").to_string(),
+            AggregationKey::Month => extract_month(&r.timestamp),
+            AggregationKey::Repo => "default".to_string(),
+        };
+
+        let cost = compute_cost(&r.provider_kind, &r.model, r.input_tokens, r.output_tokens)
+            .unwrap_or(0.0);
+
+        let entry = groups.entry(group_label).or_default();
+        entry.total_cost_usd += cost;
+        entry.total_input += r.input_tokens;
+        entry.total_output += r.output_tokens;
+        entry.session_count += 1;
+    }
+
+    groups.into_iter().collect()
 }
 
 struct SessionAccum {
@@ -1767,5 +1811,219 @@ mod tests {
         assert_eq!(bm.last_offset, content.len() as u64);
         // Only 1 TokensConsumed line counted.
         assert_eq!(bm.last_line_count, 1);
+    }
+
+    // -- CostReport serialization tests (REQ-AUDIT-036) -----------------------
+
+    // rtmx:req REQ-AUDIT-036
+    #[test]
+    fn test_cost_report_struct_serialization() {
+        let report = CostReport {
+            sessions: vec![SessionCost {
+                session_id: "s1".to_string(),
+                provider_kind: "vertex".to_string(),
+                model: "gemini-2.5-pro".to_string(),
+                project_id: Some("proj-a".to_string()),
+                input_tokens: 1_000,
+                output_tokens: 500,
+                cost_usd: Some(0.05),
+            }],
+            by_provider: {
+                let mut m = HashMap::new();
+                m.insert(
+                    "vertex".to_string(),
+                    PeriodCost {
+                        total_cost_usd: 0.05,
+                        total_input: 1_000,
+                        total_output: 500,
+                        session_count: 1,
+                    },
+                );
+                m
+            },
+            by_project: HashMap::new(),
+            by_month: HashMap::new(),
+            lifetime: PeriodCost {
+                total_cost_usd: 0.05,
+                total_input: 1_000,
+                total_output: 500,
+                session_count: 1,
+            },
+        };
+
+        let json = serde_json::to_string(&report).unwrap();
+        let roundtrip: CostReport = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(roundtrip.sessions.len(), 1);
+        assert_eq!(roundtrip.sessions[0].session_id, "s1");
+        assert_eq!(roundtrip.sessions[0].input_tokens, 1_000);
+        assert_eq!(roundtrip.sessions[0].cost_usd, Some(0.05));
+        assert_eq!(roundtrip.lifetime.total_input, 1_000);
+        assert_eq!(roundtrip.lifetime.session_count, 1);
+        assert_eq!(roundtrip.by_provider.len(), 1);
+        assert!(roundtrip.by_provider.contains_key("vertex"));
+    }
+
+    // -- Aggregation engine tests (REQ-AUDIT-037) -----------------------------
+
+    // rtmx:req REQ-AUDIT-037
+    #[test]
+    fn test_aggregate_by_provider_groups_correctly() {
+        let records = vec![
+            make_record(
+                "s1",
+                "vertex",
+                "gemini-2.5-pro",
+                Some("proj-a"),
+                1_000,
+                500,
+                "2026-04-01T00:00:00Z",
+            ),
+            make_record(
+                "s2",
+                "vertex",
+                "gemini-2.5-pro",
+                Some("proj-a"),
+                2_000,
+                1_000,
+                "2026-04-01T01:00:00Z",
+            ),
+            make_record(
+                "s3",
+                "bedrock",
+                "claude-sonnet-4.5",
+                Some("proj-b"),
+                3_000,
+                1_500,
+                "2026-04-02T00:00:00Z",
+            ),
+        ];
+
+        let result = aggregate_by_key(&records, AggregationKey::Provider);
+        assert_eq!(result.len(), 2);
+
+        let vertex = result.iter().find(|(k, _)| k == "vertex").unwrap();
+        assert_eq!(vertex.1.total_input, 3_000);
+        assert_eq!(vertex.1.total_output, 1_500);
+        assert_eq!(vertex.1.session_count, 2);
+
+        let bedrock = result.iter().find(|(k, _)| k == "bedrock").unwrap();
+        assert_eq!(bedrock.1.total_input, 3_000);
+        assert_eq!(bedrock.1.total_output, 1_500);
+        assert_eq!(bedrock.1.session_count, 1);
+    }
+
+    // rtmx:req REQ-AUDIT-037
+    #[test]
+    fn test_aggregate_by_session_groups_correctly() {
+        let records = vec![
+            make_record(
+                "s1",
+                "vertex",
+                "gemini-2.5-pro",
+                None,
+                100,
+                50,
+                "2026-04-01T00:00:00Z",
+            ),
+            make_record(
+                "s1",
+                "vertex",
+                "gemini-2.5-pro",
+                None,
+                200,
+                100,
+                "2026-04-01T01:00:00Z",
+            ),
+            make_record(
+                "s2",
+                "vertex",
+                "gemini-2.5-pro",
+                None,
+                300,
+                150,
+                "2026-04-01T02:00:00Z",
+            ),
+        ];
+        let result = aggregate_by_key(&records, AggregationKey::Session);
+        assert_eq!(result.len(), 2);
+        let s1 = result.iter().find(|(k, _)| k == "s1").unwrap();
+        assert_eq!(s1.1.total_input, 300);
+        assert_eq!(s1.1.session_count, 2);
+    }
+
+    // rtmx:req REQ-AUDIT-037
+    #[test]
+    fn test_aggregate_by_project_uses_unknown_for_none() {
+        let records = vec![
+            make_record(
+                "s1",
+                "vertex",
+                "gemini-2.5-pro",
+                None,
+                100,
+                50,
+                "2026-04-01T00:00:00Z",
+            ),
+            make_record(
+                "s2",
+                "vertex",
+                "gemini-2.5-pro",
+                Some("proj-a"),
+                200,
+                100,
+                "2026-04-01T00:00:00Z",
+            ),
+        ];
+        let result = aggregate_by_key(&records, AggregationKey::Project);
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().any(|(k, _)| k == "unknown"));
+        assert!(result.iter().any(|(k, _)| k == "proj-a"));
+    }
+
+    // rtmx:req REQ-AUDIT-037
+    #[test]
+    fn test_aggregate_by_month_groups_correctly() {
+        let records = vec![
+            make_record(
+                "s1",
+                "vertex",
+                "gemini-2.5-pro",
+                None,
+                100,
+                50,
+                "2026-03-15T00:00:00Z",
+            ),
+            make_record(
+                "s2",
+                "vertex",
+                "gemini-2.5-pro",
+                None,
+                200,
+                100,
+                "2026-04-01T00:00:00Z",
+            ),
+        ];
+        let result = aggregate_by_key(&records, AggregationKey::Month);
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().any(|(k, _)| k == "2026-03"));
+        assert!(result.iter().any(|(k, _)| k == "2026-04"));
+    }
+
+    // rtmx:req REQ-AUDIT-037
+    #[test]
+    fn test_aggregate_by_repo_returns_default() {
+        let records = vec![make_record(
+            "s1",
+            "vertex",
+            "gemini-2.5-pro",
+            None,
+            100,
+            50,
+            "2026-04-01T00:00:00Z",
+        )];
+        let result = aggregate_by_key(&records, AggregationKey::Repo);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, "default");
     }
 }
