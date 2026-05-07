@@ -207,6 +207,8 @@ jobs:
     name: License & Advisory Audit
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      RUSTC_WRAPPER: ""
     steps:
       - uses: actions/checkout@v6
       - uses: EmbarkStudios/cargo-deny-action@v2

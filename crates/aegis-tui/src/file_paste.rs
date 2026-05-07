@@ -86,13 +86,12 @@ mod tests {
     // rtmx:req REQ-TUI-036
     #[test]
     fn test_file_paste_rejects_nonexistent() {
-        let paths = vec![
-            PathBuf::from("/tmp/__aegis_test_nonexistent_12345__"),
-            PathBuf::from("/tmp"),
-        ];
+        let tmp = std::env::temp_dir();
+        let nonexistent = tmp.join("__aegis_test_nonexistent_12345__");
+        let paths = vec![nonexistent.clone(), tmp.clone()];
         let (existing, missing) = validate_paths(&paths);
         assert_eq!(existing.len(), 1);
-        assert_eq!(existing[0], PathBuf::from("/tmp"));
+        assert_eq!(existing[0], tmp);
         assert_eq!(missing.len(), 1);
         assert!(missing[0].to_str().unwrap().contains("nonexistent"));
     }
