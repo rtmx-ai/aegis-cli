@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 # INCIDENT MITIGATION (2026-03-28):
 # GitHub's automated abuse detection flagged the rhino11 account after this
