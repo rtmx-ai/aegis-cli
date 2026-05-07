@@ -568,3 +568,18 @@ fn test_bdd_lint_script_exists() {
         "BDD linter must check for Given-When-Then structure"
     );
 }
+
+// rtmx:req REQ-BUILD-061
+#[test]
+fn test_cargo_config_toml_exists() {
+    let config = workspace_root().join(".cargo/config.toml");
+    assert!(
+        config.exists(),
+        ".cargo/config.toml must exist for build acceleration"
+    );
+    let content = std::fs::read_to_string(&config).unwrap();
+    assert!(
+        content.contains("split-debuginfo"),
+        ".cargo/config.toml must configure split-debuginfo for macOS"
+    );
+}
