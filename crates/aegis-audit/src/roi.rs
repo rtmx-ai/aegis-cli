@@ -597,6 +597,37 @@ pub fn format_roi_report(estimate: &HumanEquivalentEstimate, aegis_cost_usd: f64
     out
 }
 
+/// Format the output for `/cost roi` subcommand.
+///
+/// Given work metrics and LLM cost, produces a table showing:
+/// session, hours_saved, cost_usd, roi_ratio.
+pub fn format_roi_subcommand_output(metrics: &WorkOutputMetrics, aegis_cost_usd: f64) -> String {
+    let rate_table = LaborRateTable::default();
+    let estimate = estimate_human_equivalent(metrics, &rate_table);
+    let hours_saved = score_work_output(metrics);
+    let roi_ratio = if aegis_cost_usd > 0.0 {
+        estimate.total_cost / aegis_cost_usd
+    } else {
+        0.0
+    };
+
+    let mut out = String::new();
+    out.push_str("Session ROI Summary\n");
+    out.push_str(&format!("{}\n", "=".repeat(50)));
+    out.push_str(&format!("  Sessions:        {}\n", metrics.sessions));
+    out.push_str(&format!("  Hours saved:     {:.1}h\n", hours_saved));
+    out.push_str(&format!("  LLM cost:        ${:.2}\n", aegis_cost_usd));
+    out.push_str(&format!("  Human equiv:     ${:.2}\n", estimate.total_cost));
+    out.push_str(&format!("  ROI ratio:       {:.1}x\n", roi_ratio));
+    out.push_str(&format!("{}\n", "=".repeat(50)));
+
+    // Append full breakdown
+    out.push('\n');
+    out.push_str(&format_roi_report(&estimate, aegis_cost_usd));
+
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -922,5 +953,68 @@ mod tests {
         assert!(report.contains("96%"));
         assert!(report.contains("$1300.00"));
         assert!(report.contains("$50.00"));
+    }
+
+    // rtmx:req REQ-AUDIT-039
+    #[test]
+    fn test_roi_subcommand_output_format() {
+        let metrics = WorkOutputMetrics {
+            files_written: 3,
+            lines_changed: 100,
+            tests_created: 1,
+            requirements_completed: 1,
+            tool_calls_by_type: {
+                let mut m = HashMap::new();
+                m.insert("WriteFile".to_string(), 3);
+                m.insert("RunCommand".to_string(), 2);
+                m
+            },
+            sessions: 2,
+            wall_clock_seconds: 3600.0,
+        };
+        let output = format_roi_subcommand_output(&metrics, 10.0);
+
+        assert!(
+            output.contains("Session ROI Summary"),
+            "output must contain header"
+        );
+        assert!(
+            output.contains("Hours saved"),
+            "output must contain hours saved"
+        );
+        assert!(
+            output.contains("ROI ratio"),
+            "output must contain ROI ratio"
+        );
+        assert!(
+            output.contains("Sessions:        2"),
+            "output must show session count"
+        );
+        assert!(
+            output.contains("LLM cost:        $10.00"),
+            "output must show LLM cost"
+        );
+        // Should also contain the full ROI report breakdown.
+        assert!(
+            output.contains("ROI Estimate"),
+            "output must contain full breakdown"
+        );
+    }
+
+    // rtmx:req REQ-AUDIT-039
+    #[test]
+    fn test_roi_subcommand_zero_cost() {
+        let metrics = WorkOutputMetrics {
+            files_written: 1,
+            lines_changed: 10,
+            tests_created: 0,
+            requirements_completed: 0,
+            tool_calls_by_type: HashMap::new(),
+            sessions: 1,
+            wall_clock_seconds: 600.0,
+        };
+        let output = format_roi_subcommand_output(&metrics, 0.0);
+
+        assert!(output.contains("ROI ratio:       0.0x"));
     }
 }

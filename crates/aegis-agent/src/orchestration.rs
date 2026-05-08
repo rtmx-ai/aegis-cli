@@ -421,6 +421,20 @@ pub fn export_mermaid(dag: &DependencyDag, db: &RequirementsDb) -> String {
     out
 }
 
+/// Format a dependency graph from the RTM database in the given format.
+/// This is the entry point for the CLI `graph` subcommand.
+pub fn format_dependency_graph(db: &RequirementsDb, format: &str) -> Result<String, String> {
+    let dag = build_dag(db);
+    match format {
+        "dot" => Ok(export_dot(&dag, db)),
+        "mermaid" => Ok(export_mermaid(&dag, db)),
+        _ => Err(format!(
+            "Unknown format '{}'. Use 'dot' or 'mermaid'.",
+            format
+        )),
+    }
+}
+
 /// Decompose actionable requirements into independent workstreams.
 ///
 /// 1. Build a dependency DAG from the RequirementsDb.
@@ -1135,6 +1149,43 @@ mod tests {
             mermaid.contains("REQ-C[REQ-C]:::missing"),
             "MISSING node REQ-C should have class 'missing'"
         );
+    }
+
+    // rtmx:req REQ-RTMX-021
+    #[test]
+    fn test_graph_subcommand_outputs_dot() {
+        let db = RequirementsDb::from_csv(test_csv()).unwrap();
+        let result = format_dependency_graph(&db, "dot");
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(
+            output.contains("digraph"),
+            "DOT output must contain 'digraph'"
+        );
+    }
+
+    // rtmx:req REQ-RTMX-021
+    #[test]
+    fn test_graph_subcommand_outputs_mermaid() {
+        let db = RequirementsDb::from_csv(test_csv()).unwrap();
+        let result = format_dependency_graph(&db, "mermaid");
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(
+            output.contains("graph TD"),
+            "Mermaid output must contain 'graph TD'"
+        );
+    }
+
+    // rtmx:req REQ-RTMX-021
+    #[test]
+    fn test_graph_subcommand_unknown_format() {
+        let db = RequirementsDb::from_csv(test_csv()).unwrap();
+        let result = format_dependency_graph(&db, "svg");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("Unknown format"));
+        assert!(err.contains("svg"));
     }
 
     // rtmx:req REQ-AGENT-034
