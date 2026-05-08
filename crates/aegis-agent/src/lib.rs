@@ -20,6 +20,7 @@ pub mod orchestration;
 pub mod oscal_import;
 pub mod rate_limiter;
 pub mod repo_context;
+pub mod reqif_import;
 pub mod retry;
 pub mod session;
 pub mod subagent;
