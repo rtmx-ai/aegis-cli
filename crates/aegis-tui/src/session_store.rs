@@ -212,11 +212,13 @@ mod tests {
             .save_message("aaa", &ChatMessage::user("first"))
             .unwrap();
 
-        // Ensure different modified times by writing a second session after.
+        // Windows filesystem timestamp resolution can be ~100ms, so sleep
+        // to ensure "bbb" has a strictly newer modified time than "aaa".
+        std::thread::sleep(std::time::Duration::from_millis(150));
+
         store
             .save_message("bbb", &ChatMessage::user("second"))
             .unwrap();
-        // Add another message to bbb so it's definitely newer.
         store
             .save_message("bbb", &ChatMessage::user("second-2"))
             .unwrap();
