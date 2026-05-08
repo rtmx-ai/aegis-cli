@@ -166,4 +166,45 @@ mod tests {
         let count = flush_pending_approvals(&mut rx).await;
         assert_eq!(count, 0);
     }
+
+    // rtmx:req REQ-HITL-014
+    #[tokio::test]
+    async fn test_kill_switch_flushes_pending_approvals() {
+        let ks = KillSwitch::new();
+        let (tx, mut rx) = mpsc::channel(16);
+
+        // Add pending approval
+        let resp = make_pending_request(&tx);
+
+        // Activate kill switch
+        ks.activate();
+        assert!(ks.is_activated());
+
+        // Flush should deny all pending
+        let count = flush_pending_approvals(&mut rx).await;
+        assert_eq!(count, 1);
+        assert_eq!(resp.await.unwrap(), ApprovalDecision::Denied);
+    }
+
+    // rtmx:req REQ-HITL-014
+    #[tokio::test]
+    async fn test_kill_switch_activate_and_flush_multiple() {
+        let ks = KillSwitch::new();
+        let (tx, mut rx) = mpsc::channel(16);
+
+        // Add multiple pending approvals
+        let resp1 = make_pending_request(&tx);
+        let resp2 = make_pending_request(&tx);
+        let resp3 = make_pending_request(&tx);
+
+        // Activate kill switch then flush
+        ks.activate();
+        assert!(ks.is_activated());
+
+        let count = flush_pending_approvals(&mut rx).await;
+        assert_eq!(count, 3, "all three pending approvals should be flushed");
+        assert_eq!(resp1.await.unwrap(), ApprovalDecision::Denied);
+        assert_eq!(resp2.await.unwrap(), ApprovalDecision::Denied);
+        assert_eq!(resp3.await.unwrap(), ApprovalDecision::Denied);
+    }
 }

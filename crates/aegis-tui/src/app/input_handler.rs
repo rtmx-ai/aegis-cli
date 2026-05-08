@@ -701,6 +701,48 @@ mod tests {
         );
     }
 
+    // rtmx:req REQ-HITL-013
+    #[test]
+    fn ctrl_k_signal_returns_kill_switch_action() {
+        let mut app = App::new("test-model");
+        app.phase = AppPhase::Idle;
+        let (tx, _rx) = agent_tx();
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        let action = app.handle_key(key, &tx);
+        assert_eq!(action, Action::KillSwitch, "Ctrl+K must return KillSwitch");
+        assert_eq!(
+            app.phase,
+            AppPhase::Idle,
+            "phase must be Idle after kill switch"
+        );
+        assert!(
+            app.messages
+                .iter()
+                .any(|m| m.content.contains("Kill switch activated")),
+            "should contain kill switch system message"
+        );
+    }
+
+    // rtmx:req REQ-HITL-013
+    #[test]
+    fn ctrl_k_signal_interrupts_streaming_phase() {
+        let mut app = App::new("test-model");
+        app.phase = AppPhase::Streaming;
+        let (tx, _rx) = agent_tx();
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        let action = app.handle_key(key, &tx);
+        assert_eq!(
+            action,
+            Action::KillSwitch,
+            "Ctrl+K during streaming must return KillSwitch"
+        );
+        assert_eq!(
+            app.phase,
+            AppPhase::Idle,
+            "phase must reset to Idle from Streaming"
+        );
+    }
+
     // rtmx:req REQ-LLM-031
     #[test]
     fn test_selecting_vertex_triggers_csp_discovery() {
