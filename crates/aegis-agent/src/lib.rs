@@ -12,6 +12,7 @@ pub mod compaction;
 pub mod dedup;
 pub mod dispatch;
 pub mod export;
+pub mod jira_import;
 pub mod loop_runner;
 pub mod mcp;
 pub mod mcp_types;
