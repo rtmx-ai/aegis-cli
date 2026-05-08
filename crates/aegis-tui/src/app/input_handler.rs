@@ -703,7 +703,7 @@ mod tests {
 
     // rtmx:req REQ-HITL-013
     #[test]
-    fn ctrl_k_signal_returns_kill_switch_action() {
+    fn test_ctrl_k_emits_kill_signal() {
         let mut app = App::new("test-model");
         app.phase = AppPhase::Idle;
         let (tx, _rx) = agent_tx();

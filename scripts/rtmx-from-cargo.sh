@@ -78,11 +78,20 @@ with open(markers_path) as f:
             file_stem = file_path.rsplit("/", 1)[-1].rsplit(".", 1)[0]  # loop_runner
             test_path_inner = "::".join(parts[1:])  # tests::test_agent_config_defaults
 
-            # cargo test typically prints "<file_stem>::tests::<test_name>"
+            # Derive the Rust module path from the file path.
+            # e.g. crates/aegis-tui/src/app/input_handler.rs -> app::input_handler
+            mod_path = file_stem
+            if "/src/" in file_path:
+                after_src = file_path.split("/src/", 1)[1]  # app/input_handler.rs
+                after_src = after_src.rsplit(".", 1)[0]      # app/input_handler
+                mod_path = after_src.replace("/", "::")      # app::input_handler
+
+            # cargo test prints "<mod_path>::tests::<test_name>"
             candidates = [
-                f"{file_stem}::{test_path_inner}",  # loop_runner::tests::test_agent_config_defaults
-                test_path_inner,                    # tests::test_agent_config_defaults
-                parts[-1],                          # test_agent_config_defaults
+                f"{mod_path}::{test_path_inner}",   # app::input_handler::tests::test_...
+                f"{file_stem}::{test_path_inner}",   # input_handler::tests::test_...
+                test_path_inner,                      # tests::test_...
+                parts[-1],                            # test_...
             ]
             for cand in candidates:
                 if cand in test_results:
