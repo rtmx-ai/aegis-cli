@@ -743,6 +743,45 @@ mod tests {
         );
     }
 
+    // rtmx:req REQ-TUI-076
+    #[test]
+    fn test_ctrl_v_pastes_from_clipboard() {
+        let mut app = App::new("test-model");
+        app.phase = AppPhase::Idle;
+        let (tx, _rx) = agent_tx();
+
+        let key = KeyEvent::new(KeyCode::Char('v'), KeyModifiers::CONTROL);
+        let action = app.handle_key(key, &tx);
+
+        // Ctrl+V should always return Continue (paste attempt is best-effort).
+        assert_eq!(
+            action,
+            Action::Continue,
+            "Ctrl+V must return Action::Continue regardless of clipboard state"
+        );
+    }
+
+    // rtmx:req REQ-TUI-076
+    #[test]
+    fn test_ctrl_c_copies_selection_or_quits() {
+        // No text selection system exists yet, so Ctrl+C in idle mode
+        // currently maps to Quit. When a selection API is added to
+        // InputState, this should be updated to copy selected text
+        // and only quit when no selection is active.
+        let mut app = App::new("test-model");
+        app.phase = AppPhase::Idle;
+        let (tx, _rx) = agent_tx();
+
+        let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let action = app.handle_key(key, &tx);
+
+        assert_eq!(
+            action,
+            Action::Quit,
+            "Ctrl+C with no selection must return Action::Quit"
+        );
+    }
+
     // rtmx:req REQ-LLM-031
     #[test]
     fn test_selecting_vertex_triggers_csp_discovery() {

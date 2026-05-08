@@ -5,6 +5,7 @@
 //! Also manages ~/.aegis/config.yaml lifecycle.
 
 pub mod adc;
+pub mod auth;
 pub mod backend_select;
 pub mod byoc;
 pub mod config;
