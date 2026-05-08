@@ -362,6 +362,65 @@ pub fn detect_cycles(dag: &DependencyDag) -> Vec<Cycle> {
     cycles
 }
 
+/// Export a dependency DAG as DOT format for Graphviz rendering (REQ-RTMX-019).
+///
+/// Completed nodes are colored green (`#90EE90`), missing/incomplete nodes
+/// are colored red (`#FFB6C1`). Produces a valid `digraph { ... }` block.
+pub fn export_dot(dag: &DependencyDag, db: &RequirementsDb) -> String {
+    let mut out = String::from("digraph {\n  node [shape=box];\n");
+    for node in &dag.nodes {
+        let color = if db
+            .get(node)
+            .map(|r| r.status == "COMPLETE")
+            .unwrap_or(false)
+        {
+            "#90EE90"
+        } else {
+            "#FFB6C1"
+        };
+        out.push_str(&format!(
+            "  \"{}\" [style=filled, fillcolor=\"{}\"];\n",
+            node, color
+        ));
+    }
+    for (from, deps) in &dag.edges {
+        for to in deps {
+            out.push_str(&format!("  \"{}\" -> \"{}\";\n", from, to));
+        }
+    }
+    out.push('}');
+    out
+}
+
+/// Export a dependency DAG as Mermaid flowchart for markdown embedding
+/// (REQ-RTMX-020).
+///
+/// Completed nodes are styled green, missing/incomplete nodes are styled red
+/// using Mermaid `classDef` syntax. Produces a `graph TD` block.
+pub fn export_mermaid(dag: &DependencyDag, db: &RequirementsDb) -> String {
+    let mut out = String::from("graph TD\n");
+    out.push_str("  classDef complete fill:#90EE90,stroke:#333\n");
+    out.push_str("  classDef missing fill:#FFB6C1,stroke:#333\n");
+    for node in &dag.nodes {
+        let class = if db
+            .get(node)
+            .map(|r| r.status == "COMPLETE")
+            .unwrap_or(false)
+        {
+            "complete"
+        } else {
+            "missing"
+        };
+        out.push_str(&format!("  {}[{}]:::{}\n", node, node, class));
+    }
+    for (from, deps) in &dag.edges {
+        for to in deps {
+            out.push_str(&format!("  {} --> {}\n", from, to));
+        }
+    }
+    out
+}
+
 /// Decompose actionable requirements into independent workstreams.
 ///
 /// 1. Build a dependency DAG from the RequirementsDb.
@@ -972,6 +1031,110 @@ mod tests {
                 );
             }
         }
+    }
+
+    // rtmx:req REQ-RTMX-019
+    #[test]
+    fn test_dot_export_valid_syntax() {
+        let db = RequirementsDb::from_csv(test_csv()).unwrap();
+        let dag = build_dag(&db);
+        let dot = export_dot(&dag, &db);
+
+        assert!(dot.contains("digraph"), "DOT output must contain 'digraph'");
+        assert!(dot.contains("->"), "DOT output must contain edges");
+        assert!(dot.contains("REQ-A"), "DOT output must contain node REQ-A");
+        assert!(dot.contains("REQ-C"), "DOT output must contain node REQ-C");
+        assert!(
+            dot.contains("#90EE90") || dot.contains("#FFB6C1"),
+            "DOT output must contain color codes"
+        );
+    }
+
+    // rtmx:req REQ-RTMX-019
+    #[test]
+    fn test_dot_export_empty_dag() {
+        let csv = "req_id,category,subcategory,requirement_text,target_value,test_module,test_function,validation_method,status,priority,phase,notes,effort_weeks,dependencies,blocks,assignee,sprint,started_date,completed_date\n";
+        let db = RequirementsDb::from_csv(csv).unwrap();
+        let dag = build_dag(&db);
+        let dot = export_dot(&dag, &db);
+
+        assert!(dot.contains("digraph"), "empty DOT must still be valid");
+        assert!(!dot.contains("->"), "empty DAG should have no edges");
+    }
+
+    // rtmx:req REQ-RTMX-019
+    #[test]
+    fn test_dot_export_colors_by_status() {
+        let db = RequirementsDb::from_csv(test_csv()).unwrap();
+        let dag = build_dag(&db);
+        let dot = export_dot(&dag, &db);
+
+        // REQ-A is COMPLETE -> green
+        assert!(
+            dot.contains("\"REQ-A\" [style=filled, fillcolor=\"#90EE90\"]"),
+            "COMPLETE node REQ-A should be green"
+        );
+        // REQ-C is MISSING -> red
+        assert!(
+            dot.contains("\"REQ-C\" [style=filled, fillcolor=\"#FFB6C1\"]"),
+            "MISSING node REQ-C should be red"
+        );
+    }
+
+    // rtmx:req REQ-RTMX-020
+    #[test]
+    fn test_mermaid_export_valid_syntax() {
+        let db = RequirementsDb::from_csv(test_csv()).unwrap();
+        let dag = build_dag(&db);
+        let mermaid = export_mermaid(&dag, &db);
+
+        assert!(
+            mermaid.contains("graph TD"),
+            "Mermaid output must contain 'graph TD'"
+        );
+        assert!(mermaid.contains("-->"), "Mermaid output must contain edges");
+        assert!(
+            mermaid.contains("REQ-A"),
+            "Mermaid output must contain node REQ-A"
+        );
+        assert!(
+            mermaid.contains("classDef"),
+            "Mermaid output must contain classDef"
+        );
+    }
+
+    // rtmx:req REQ-RTMX-020
+    #[test]
+    fn test_mermaid_export_empty_dag() {
+        let csv = "req_id,category,subcategory,requirement_text,target_value,test_module,test_function,validation_method,status,priority,phase,notes,effort_weeks,dependencies,blocks,assignee,sprint,started_date,completed_date\n";
+        let db = RequirementsDb::from_csv(csv).unwrap();
+        let dag = build_dag(&db);
+        let mermaid = export_mermaid(&dag, &db);
+
+        assert!(
+            mermaid.contains("graph TD"),
+            "empty Mermaid must still be valid"
+        );
+        assert!(!mermaid.contains("-->"), "empty DAG should have no edges");
+    }
+
+    // rtmx:req REQ-RTMX-020
+    #[test]
+    fn test_mermaid_export_colors_by_status() {
+        let db = RequirementsDb::from_csv(test_csv()).unwrap();
+        let dag = build_dag(&db);
+        let mermaid = export_mermaid(&dag, &db);
+
+        // REQ-A is COMPLETE -> class complete
+        assert!(
+            mermaid.contains("REQ-A[REQ-A]:::complete"),
+            "COMPLETE node REQ-A should have class 'complete'"
+        );
+        // REQ-C is MISSING -> class missing
+        assert!(
+            mermaid.contains("REQ-C[REQ-C]:::missing"),
+            "MISSING node REQ-C should have class 'missing'"
+        );
     }
 
     // rtmx:req REQ-AGENT-034
