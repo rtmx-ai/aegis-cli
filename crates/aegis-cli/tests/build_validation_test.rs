@@ -606,6 +606,37 @@ fn test_bdd_lint_script_exists() {
     );
 }
 
+// rtmx:req REQ-TEST-034
+#[test]
+fn test_ci_has_coverage_threshold_gate() {
+    let ci = workspace_root().join(".github/workflows/ci.yml");
+    let content = std::fs::read_to_string(&ci).unwrap();
+    assert!(
+        content.contains("COVERAGE_FAIL_THRESHOLD"),
+        "CI must define coverage fail threshold"
+    );
+    assert!(
+        content.contains("COVERAGE_WARN_THRESHOLD"),
+        "CI must define coverage warn threshold"
+    );
+    assert!(
+        content.contains("cargo llvm-cov"),
+        "CI must run cargo llvm-cov for coverage"
+    );
+}
+
+// rtmx:req REQ-TEST-037
+#[test]
+fn test_bdd_step_reuse_audit_in_lint() {
+    let script = workspace_root().join("scripts/bdd-lint.sh");
+    assert!(script.exists(), "scripts/bdd-lint.sh must exist");
+    let content = std::fs::read_to_string(&script).unwrap();
+    assert!(
+        content.contains("DUPLICATE") || content.contains("reuse") || content.contains("similar"),
+        "BDD linter should audit step definition reuse"
+    );
+}
+
 // rtmx:req REQ-BUILD-061
 #[test]
 fn test_cargo_config_toml_exists() {

@@ -343,6 +343,66 @@ async fn test_endpoint_openai_compatible(
     })
 }
 
+/// Format provider info as a CLI-friendly table.
+///
+/// Output format:
+/// ```text
+/// Provider    | Model              | Context Window | Status
+/// ------------|--------------------|-----------------|-----------
+/// vertex      | gemini-2.5-pro     | 1,000,000      | Configured
+/// bedrock     |                    |                 | Not Configured
+/// ```
+pub fn format_providers_table(providers: &[ProviderInfo]) -> String {
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "{:<12} | {:<25} | {:>14} | {}",
+        "Provider", "Model", "Context Window", "Status"
+    ));
+    lines.push(format!(
+        "{:-<12}-+-{:-<25}-+-{:->14}-+-{:-<14}",
+        "", "", "", ""
+    ));
+    for p in providers {
+        let status_str = match &p.status {
+            ProviderStatus::Configured => "Configured",
+            ProviderStatus::NotConfigured => "Not Configured",
+        };
+        if p.models.is_empty() {
+            lines.push(format!(
+                "{:<12} | {:<25} | {:>14} | {}",
+                p.name, "", "", status_str
+            ));
+        } else {
+            for (i, m) in p.models.iter().enumerate() {
+                let name = if i == 0 { p.name.as_str() } else { "" };
+                let ctx = match m.context_window {
+                    Some(w) => format_context_window(w),
+                    None => String::new(),
+                };
+                let status = if i == 0 { status_str } else { "" };
+                lines.push(format!(
+                    "{:<12} | {:<25} | {:>14} | {}",
+                    name, m.model_id, ctx, status
+                ));
+            }
+        }
+    }
+    lines.join("\n")
+}
+
+/// Format a context window size with thousands separators.
+fn format_context_window(n: u32) -> String {
+    let s = n.to_string();
+    let mut result = String::new();
+    for (i, c) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            result.push(',');
+        }
+        result.push(c);
+    }
+    result.chars().rev().collect()
+}
+
 /// Format a list of ModelInfo as a human-readable table.
 pub fn format_model_table(models: &[ModelInfo]) -> String {
     let mut lines = Vec::new();
@@ -714,6 +774,31 @@ mod tests {
         // local should be NotConfigured
         let local = providers.iter().find(|p| p.name == "local").unwrap();
         assert_eq!(local.status, ProviderStatus::NotConfigured);
+    }
+
+    // rtmx:req REQ-LLM-041
+    #[test]
+    fn test_providers_list_table_format() {
+        let providers = list_providers(&ProviderRegistryInput {
+            provider: "local".to_string(),
+            model: "llama3".to_string(),
+            endpoint: "http://localhost:11434".to_string(),
+            region: None,
+        });
+        let table = format_providers_table(&providers);
+        assert!(table.contains("Provider"));
+        assert!(table.contains("local"));
+        assert!(table.contains("Configured"));
+        assert!(table.contains("Not Configured"));
+    }
+
+    // rtmx:req REQ-LLM-041
+    #[test]
+    fn test_format_context_window_thousands_separator() {
+        assert_eq!(format_context_window(1_000_000), "1,000,000");
+        assert_eq!(format_context_window(8_192), "8,192");
+        assert_eq!(format_context_window(128_000), "128,000");
+        assert_eq!(format_context_window(100), "100");
     }
 
     // rtmx:req REQ-LLM-040

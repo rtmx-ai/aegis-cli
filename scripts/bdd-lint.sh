@@ -248,6 +248,47 @@ for file in "${FEATURE_FILES[@]}"; do
     check_scenario
 done
 
+# ---------------------------------------------------------------------------
+# Rule 5: DUPLICATE_STEP_TEXT - detect step definitions reuse opportunities
+# (REQ-TEST-037)
+#
+# Finds step texts (Given/When/Then/And/But) that appear in multiple feature
+# files. Identical steps across files indicate a reuse opportunity -- they
+# should share a common step definition rather than duplicating logic.
+# ---------------------------------------------------------------------------
+
+declare -A STEP_FILES  # step text -> first file seen
+declare -A STEP_DUPES  # step text -> "1" if already reported
+
+for file in "${FEATURE_FILES[@]}"; do
+    relative_file="${file#"$PROJECT_ROOT/"}"
+    while IFS= read -r line; do
+        trimmed="${line#"${line%%[![:space:]]*}"}"
+        case "$trimmed" in
+            "Given "*|"When "*|"Then "*|"And "*|"But "*)
+                # Normalize: strip the keyword to get the step text
+                step_text="${trimmed#* }"
+                if [ -n "${STEP_FILES[$step_text]+x}" ]; then
+                    prev_file="${STEP_FILES[$step_text]}"
+                    if [ "$prev_file" != "$relative_file" ] && [ -z "${STEP_DUPES[$step_text]+x}" ]; then
+                        # Report as info, not a violation -- reuse is a suggestion
+                        STEP_DUPES["$step_text"]="1"
+                    fi
+                else
+                    STEP_FILES["$step_text"]="$relative_file"
+                fi
+                ;;
+        esac
+    done < "$file"
+done
+
+DUPLICATE_COUNT=${#STEP_DUPES[@]}
+if [ "$DUPLICATE_COUNT" -gt 0 ]; then
+    echo ""
+    echo "BDD step reuse: $DUPLICATE_COUNT step text(s) appear in multiple feature files."
+    echo "Consider extracting shared step definitions for reuse."
+fi
+
 if [ "$VIOLATIONS" -gt 0 ]; then
     echo ""
     echo "BDD lint: $VIOLATIONS violation(s) found."
