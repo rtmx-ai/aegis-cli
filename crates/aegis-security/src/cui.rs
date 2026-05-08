@@ -14,6 +14,41 @@ pub struct CuiPattern {
     pub regex: Regex,
 }
 
+/// A match found by [`scan_for_cui`] indicating a CUI marking in text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CuiMatch {
+    /// Name of the CUI pattern that matched (e.g., "CUI_BANNER", "FOUO").
+    pub pattern_name: String,
+    /// Byte offset of the match start in the input text.
+    pub start: usize,
+    /// Byte offset of the match end (exclusive) in the input text.
+    pub end: usize,
+    /// The literal text that was matched.
+    pub matched_text: String,
+}
+
+/// Scan `text` for all CUI markings, returning every match found.
+///
+/// Applies every pattern from [`cui_patterns`] and collects all
+/// non-overlapping matches. Supports multi-line input.
+pub fn scan_for_cui(text: &str) -> Vec<CuiMatch> {
+    let patterns = cui_patterns();
+    let mut matches = Vec::new();
+    for pat in &patterns {
+        for m in pat.regex.find_iter(text) {
+            matches.push(CuiMatch {
+                pattern_name: pat.name.clone(),
+                start: m.start(),
+                end: m.end(),
+                matched_text: m.as_str().to_string(),
+            });
+        }
+    }
+    // Sort by position for deterministic output.
+    matches.sort_by_key(|m| (m.start, m.end));
+    matches
+}
+
 /// Classification of a network endpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EndpointClass {
@@ -271,6 +306,80 @@ mod tests {
         assert_eq!(
             classify_endpoint("https://US-GOVCLOUD.example.com/v1"),
             EndpointClass::Government
+        );
+    }
+
+    // rtmx:req REQ-SECURITY-021
+    #[test]
+    fn test_scanner_finds_cui_in_text() {
+        let matches = scan_for_cui("This document is CUI and FOUO restricted.");
+        assert!(
+            !matches.is_empty(),
+            "Scanner must detect CUI markings in text"
+        );
+
+        let names: Vec<&str> = matches.iter().map(|m| m.pattern_name.as_str()).collect();
+        assert!(names.contains(&"CUI_BANNER"), "Should find CUI_BANNER");
+        assert!(names.contains(&"FOUO"), "Should find FOUO");
+
+        // Verify position data is sensible
+        for m in &matches {
+            assert!(m.start < m.end, "start must precede end");
+            assert_eq!(
+                &"This document is CUI and FOUO restricted."[m.start..m.end],
+                m.matched_text,
+                "matched_text must correspond to byte offsets"
+            );
+        }
+    }
+
+    // rtmx:req REQ-SECURITY-021
+    #[test]
+    fn test_scanner_clean_text_returns_empty() {
+        let matches = scan_for_cui("Just a regular sentence with no markings.");
+        assert!(
+            matches.is_empty(),
+            "Clean text without CUI markings should return empty Vec"
+        );
+    }
+
+    // rtmx:req REQ-SECURITY-021
+    #[test]
+    fn test_scanner_multiple_markings_in_text() {
+        let text = "(CUI) First paragraph.\n(FOUO) Second paragraph.\nNOFORN applies.";
+        let matches = scan_for_cui(text);
+
+        let names: Vec<&str> = matches.iter().map(|m| m.pattern_name.as_str()).collect();
+        assert!(
+            names.contains(&"PORTION_MARKING"),
+            "Should detect (CUI) portion marking"
+        );
+        assert!(names.contains(&"FOUO"), "Should detect FOUO");
+        assert!(names.contains(&"NOFORN"), "Should detect NOFORN");
+
+        // Sorted by position
+        for w in matches.windows(2) {
+            assert!(
+                w[0].start <= w[1].start,
+                "Matches must be sorted by position"
+            );
+        }
+    }
+
+    // rtmx:req REQ-SECURITY-021
+    #[test]
+    fn test_scanner_multiline() {
+        let text = "Line one\nCUI//SP-ITAR on line two\nLine three with ORCON";
+        let matches = scan_for_cui(text);
+
+        let names: Vec<&str> = matches.iter().map(|m| m.pattern_name.as_str()).collect();
+        assert!(
+            names.contains(&"CUI_SPECIFIED"),
+            "Should find CUI_SPECIFIED across lines"
+        );
+        assert!(
+            names.contains(&"ORCON"),
+            "Should find ORCON on a later line"
         );
     }
 }

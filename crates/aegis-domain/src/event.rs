@@ -42,6 +42,8 @@ pub enum DomainEvent {
     KillSwitch {
         session_id: SessionId,
         timestamp: DateTime<Utc>,
+        /// Number of pending tool calls denied when the kill switch fired.
+        pending_tool_count: usize,
     },
     /// Token usage for a single LLM turn, with provider attribution.
     TokensConsumed {

@@ -819,6 +819,47 @@ mod tests {
         );
     }
 
+    // rtmx:req REQ-HITL-016
+    #[tokio::test]
+    async fn test_kill_switch_audit_event_recorded() {
+        let dir = TempDir::new().unwrap();
+        let ledger = make_ledger(dir.path()).await;
+
+        let session_id = SessionId::new();
+        let timestamp = Utc::now();
+        let pending_tool_count = 3;
+
+        let event = DomainEvent::KillSwitch {
+            session_id: session_id.clone(),
+            timestamp,
+            pending_tool_count,
+        };
+
+        ledger.record(&event).await.unwrap();
+
+        let entries = read_log_entries(dir.path());
+        assert_eq!(entries.len(), 1, "Kill switch event must be recorded");
+
+        let parsed: serde_json::Value = serde_json::from_str(&entries[0]).unwrap();
+
+        // Verify mandatory audit fields
+        assert!(parsed.get("timestamp").is_some(), "Missing timestamp");
+        assert!(parsed.get("os_user").is_some(), "Missing os_user");
+        assert!(parsed.get("hostname").is_some(), "Missing hostname");
+
+        // Verify the event payload
+        let event_val = &parsed["event"];
+        assert_eq!(event_val["KillSwitch"]["pending_tool_count"], 3);
+        assert!(
+            event_val["KillSwitch"]["session_id"].is_string(),
+            "session_id must be present in KillSwitch event"
+        );
+        assert!(
+            event_val["KillSwitch"]["timestamp"].is_string(),
+            "timestamp must be present in KillSwitch event"
+        );
+    }
+
     // rtmx:req REQ-AUDIT-003
     #[tokio::test]
     async fn record_with_req_none_omits_req_id() {
