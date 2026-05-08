@@ -202,6 +202,166 @@ pub fn cleanup_worktree(worktree_path: &str, branch: &str, force: bool) -> Clean
     }
 }
 
+/// Directed acyclic graph of requirement dependencies.
+#[derive(Debug, Clone)]
+pub struct DependencyDag {
+    /// All requirement IDs in the graph (nodes).
+    pub nodes: Vec<String>,
+    /// Adjacency list: req_id -> list of req_ids it depends on.
+    pub edges: HashMap<String, Vec<String>>,
+}
+
+/// A cycle detected in the dependency graph (SCC with size > 1).
+#[derive(Debug, Clone)]
+pub struct Cycle {
+    /// Requirement IDs forming the cycle.
+    pub members: Vec<String>,
+    /// Edges within the cycle as (from, to) pairs.
+    pub edges: Vec<(String, String)>,
+}
+
+/// Build a directed graph (adjacency list) from the RequirementsDb dependencies
+/// column (REQ-RTMX-017).
+///
+/// Every requirement in the database appears as a node. The `dependencies`
+/// field (pipe-separated, e.g. "REQ-A|REQ-B") populates the adjacency list.
+pub fn build_dag(db: &RequirementsDb) -> DependencyDag {
+    let mut nodes = Vec::new();
+    let mut edges: HashMap<String, Vec<String>> = HashMap::new();
+
+    for req in db.all() {
+        nodes.push(req.req_id.clone());
+        let deps: Vec<String> = req
+            .dependency_ids()
+            .into_iter()
+            .filter(|d| !d.is_empty())
+            .map(|d| d.to_string())
+            .collect();
+        edges.insert(req.req_id.clone(), deps);
+    }
+
+    DependencyDag { nodes, edges }
+}
+
+/// Detect cycles in the dependency graph using Tarjan's strongly connected
+/// components algorithm (REQ-RTMX-018).
+///
+/// Returns only SCCs with size > 1 (actual cycles). Each `Cycle` includes
+/// the member requirement IDs and the intra-cycle edges as (from, to) pairs.
+pub fn detect_cycles(dag: &DependencyDag) -> Vec<Cycle> {
+    let n = dag.nodes.len();
+    let node_idx: HashMap<&str, usize> = dag
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.as_str(), i))
+        .collect();
+
+    // Build numeric adjacency list.
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (i, node) in dag.nodes.iter().enumerate() {
+        if let Some(deps) = dag.edges.get(node) {
+            for dep in deps {
+                if let Some(&j) = node_idx.get(dep.as_str()) {
+                    adj[i].push(j);
+                }
+            }
+        }
+    }
+
+    // Tarjan's SCC (iterative).
+    let mut index_counter: usize = 0;
+    let mut stack: Vec<usize> = Vec::new();
+    let mut on_stack = vec![false; n];
+    let mut indices: Vec<Option<usize>> = vec![None; n];
+    let mut lowlinks = vec![0usize; n];
+    let mut sccs: Vec<Vec<usize>> = Vec::new();
+
+    for start in 0..n {
+        if indices[start].is_some() {
+            continue;
+        }
+        let mut work: Vec<(usize, usize)> = Vec::new();
+        indices[start] = Some(index_counter);
+        lowlinks[start] = index_counter;
+        index_counter += 1;
+        stack.push(start);
+        on_stack[start] = true;
+        work.push((start, 0));
+
+        while let Some(&(v, ci)) = work.last() {
+            if ci < adj[v].len() {
+                let last = work.len() - 1;
+                work[last].1 = ci + 1;
+                let w = adj[v][ci];
+                match indices[w] {
+                    None => {
+                        indices[w] = Some(index_counter);
+                        lowlinks[w] = index_counter;
+                        index_counter += 1;
+                        stack.push(w);
+                        on_stack[w] = true;
+                        work.push((w, 0));
+                    }
+                    Some(w_idx) if on_stack[w] => {
+                        if w_idx < lowlinks[v] {
+                            lowlinks[v] = w_idx;
+                        }
+                    }
+                    Some(_) => {}
+                }
+            } else {
+                work.pop();
+                if indices[v] == Some(lowlinks[v]) {
+                    let mut component = Vec::new();
+                    loop {
+                        let w = stack.pop().expect("stack non-empty during SCC pop");
+                        on_stack[w] = false;
+                        component.push(w);
+                        if w == v {
+                            break;
+                        }
+                    }
+                    sccs.push(component);
+                }
+                if let Some((parent, _)) = work.last().copied()
+                    && lowlinks[v] < lowlinks[parent]
+                {
+                    lowlinks[parent] = lowlinks[v];
+                }
+            }
+        }
+    }
+
+    // Filter to SCCs with size > 1 and build Cycle structs.
+    let mut cycles = Vec::new();
+    for scc in sccs {
+        if scc.len() <= 1 {
+            continue;
+        }
+        let member_set: HashSet<usize> = scc.iter().copied().collect();
+        let mut members: Vec<String> = scc.iter().map(|&i| dag.nodes[i].clone()).collect();
+        members.sort();
+
+        let mut cycle_edges: Vec<(String, String)> = Vec::new();
+        for &i in &scc {
+            for &j in &adj[i] {
+                if member_set.contains(&j) {
+                    cycle_edges.push((dag.nodes[i].clone(), dag.nodes[j].clone()));
+                }
+            }
+        }
+        cycle_edges.sort();
+
+        cycles.push(Cycle {
+            members,
+            edges: cycle_edges,
+        });
+    }
+
+    cycles
+}
+
 /// Decompose actionable requirements into independent workstreams.
 ///
 /// 1. Build a dependency DAG from the RequirementsDb.
@@ -668,6 +828,150 @@ mod tests {
         // The key invariant: because worktree removal failed, we never
         // attempted branch deletion. The branch is preserved for debugging.
         assert_eq!(result.branch, "branch-should-not-be-deleted");
+    }
+
+    // rtmx:req REQ-RTMX-017
+    #[test]
+    fn test_dag_from_rtm_dependencies() {
+        let csv = "req_id,category,subcategory,requirement_text,target_value,test_module,test_function,validation_method,status,priority,phase,notes,effort_weeks,dependencies,blocks,assignee,sprint,started_date,completed_date\n\
+                   REQ-A,AGENT,CORE,A,V,a.rs,ta,Unit Test,MISSING,HIGH,1,,,,,,,,,\n\
+                   REQ-B,AGENT,CORE,B,V,b.rs,tb,Unit Test,MISSING,HIGH,1,,,REQ-A,,,,,\n\
+                   REQ-C,AGENT,CORE,C,V,c.rs,tc,Unit Test,MISSING,HIGH,1,,,REQ-A|REQ-B,,,,,";
+        let db = RequirementsDb::from_csv(csv).unwrap();
+        let dag = build_dag(&db);
+
+        // Verify nodes.
+        assert_eq!(dag.nodes.len(), 3);
+        assert!(dag.nodes.contains(&"REQ-A".to_string()));
+        assert!(dag.nodes.contains(&"REQ-B".to_string()));
+        assert!(dag.nodes.contains(&"REQ-C".to_string()));
+
+        // Verify edges.
+        assert!(dag.edges.get("REQ-A").unwrap().is_empty());
+        assert_eq!(dag.edges.get("REQ-B").unwrap(), &vec!["REQ-A".to_string()]);
+        let c_deps = dag.edges.get("REQ-C").unwrap();
+        assert!(c_deps.contains(&"REQ-A".to_string()));
+        assert!(c_deps.contains(&"REQ-B".to_string()));
+        assert_eq!(c_deps.len(), 2);
+    }
+
+    // rtmx:req REQ-RTMX-017
+    #[test]
+    fn test_dag_includes_all_requirements() {
+        let db = RequirementsDb::from_csv(test_csv()).unwrap();
+        let dag = build_dag(&db);
+
+        let node_set: HashSet<String> = dag.nodes.iter().cloned().collect();
+        for req in db.all() {
+            assert!(
+                node_set.contains(&req.req_id),
+                "requirement {} missing from DAG nodes",
+                req.req_id
+            );
+        }
+        assert_eq!(dag.nodes.len(), db.count());
+    }
+
+    // rtmx:req REQ-RTMX-018
+    #[test]
+    fn test_tarjan_detects_cycle() {
+        let csv = "req_id,category,subcategory,requirement_text,target_value,test_module,test_function,validation_method,status,priority,phase,notes,effort_weeks,dependencies,blocks,assignee,sprint,started_date,completed_date\n\
+                   REQ-A,AGENT,CORE,A,V,a.rs,ta,Unit Test,MISSING,HIGH,1,,,REQ-C,,,,,\n\
+                   REQ-B,AGENT,CORE,B,V,b.rs,tb,Unit Test,MISSING,HIGH,1,,,REQ-A,,,,,\n\
+                   REQ-C,AGENT,CORE,C,V,c.rs,tc,Unit Test,MISSING,HIGH,1,,,REQ-B,,,,,";
+        let db = RequirementsDb::from_csv(csv).unwrap();
+        let dag = build_dag(&db);
+        let cycles = detect_cycles(&dag);
+
+        assert_eq!(cycles.len(), 1, "expected exactly one cycle");
+        let cycle = &cycles[0];
+        assert_eq!(cycle.members.len(), 3);
+        assert!(cycle.members.contains(&"REQ-A".to_string()));
+        assert!(cycle.members.contains(&"REQ-B".to_string()));
+        assert!(cycle.members.contains(&"REQ-C".to_string()));
+        // 3 edges in a 3-node cycle.
+        assert_eq!(cycle.edges.len(), 3);
+    }
+
+    // rtmx:req REQ-RTMX-018
+    #[test]
+    fn test_tarjan_no_cycles_in_acyclic_graph() {
+        let csv = "req_id,category,subcategory,requirement_text,target_value,test_module,test_function,validation_method,status,priority,phase,notes,effort_weeks,dependencies,blocks,assignee,sprint,started_date,completed_date\n\
+                   REQ-A,AGENT,CORE,A,V,a.rs,ta,Unit Test,MISSING,HIGH,1,,,,,,,,,\n\
+                   REQ-B,AGENT,CORE,B,V,b.rs,tb,Unit Test,MISSING,HIGH,1,,,REQ-A,,,,,\n\
+                   REQ-C,AGENT,CORE,C,V,c.rs,tc,Unit Test,MISSING,HIGH,1,,,REQ-B,,,,,";
+        let db = RequirementsDb::from_csv(csv).unwrap();
+        let dag = build_dag(&db);
+        let cycles = detect_cycles(&dag);
+
+        assert!(cycles.is_empty(), "acyclic graph should have no cycles");
+    }
+
+    // rtmx:req REQ-RTMX-018
+    #[test]
+    fn test_tarjan_multiple_cycles() {
+        let csv = "req_id,category,subcategory,requirement_text,target_value,test_module,test_function,validation_method,status,priority,phase,notes,effort_weeks,dependencies,blocks,assignee,sprint,started_date,completed_date\n\
+                   REQ-A,AGENT,CORE,A,V,a.rs,ta,Unit Test,MISSING,HIGH,1,,,REQ-B,,,,,\n\
+                   REQ-B,AGENT,CORE,B,V,b.rs,tb,Unit Test,MISSING,HIGH,1,,,REQ-A,,,,,\n\
+                   REQ-C,AGENT,CORE,C,V,c.rs,tc,Unit Test,MISSING,HIGH,1,,,REQ-D,,,,,\n\
+                   REQ-D,AGENT,CORE,D,V,d.rs,td,Unit Test,MISSING,HIGH,1,,,REQ-C,,,,,\n\
+                   REQ-E,AGENT,CORE,E,V,e.rs,te,Unit Test,MISSING,HIGH,1,,,,,,,,,";
+        let db = RequirementsDb::from_csv(csv).unwrap();
+        let dag = build_dag(&db);
+        let cycles = detect_cycles(&dag);
+
+        assert_eq!(cycles.len(), 2, "expected exactly two cycles");
+
+        // Collect all cycle member sets for flexible matching.
+        let cycle_sets: Vec<HashSet<String>> = cycles
+            .iter()
+            .map(|c| c.members.iter().cloned().collect())
+            .collect();
+
+        let ab: HashSet<String> = ["REQ-A", "REQ-B"].iter().map(|s| s.to_string()).collect();
+        let cd: HashSet<String> = ["REQ-C", "REQ-D"].iter().map(|s| s.to_string()).collect();
+
+        assert!(
+            cycle_sets.contains(&ab),
+            "expected cycle containing REQ-A and REQ-B"
+        );
+        assert!(
+            cycle_sets.contains(&cd),
+            "expected cycle containing REQ-C and REQ-D"
+        );
+
+        // REQ-E is acyclic -- must not appear in any cycle.
+        for cycle in &cycles {
+            assert!(
+                !cycle.members.contains(&"REQ-E".to_string()),
+                "REQ-E should not be in any cycle"
+            );
+        }
+    }
+
+    // rtmx:req REQ-RTMX-018
+    #[test]
+    fn test_tarjan_with_real_database() {
+        let path = std::path::Path::new(".rtmx/database.csv");
+        if path.exists() {
+            let db = RequirementsDb::load(path).unwrap();
+            let dag = build_dag(&db);
+            let cycles = detect_cycles(&dag);
+
+            // The real database should be acyclic (well-formed RTM).
+            // If cycles exist, report them for debugging.
+            for cycle in &cycles {
+                eprintln!("Unexpected cycle in real database: {:?}", cycle.members);
+            }
+            // Every node in the DAG should correspond to a DB entry.
+            for node in &dag.nodes {
+                assert!(
+                    db.get(node).is_some(),
+                    "DAG node {} not found in database",
+                    node
+                );
+            }
+        }
     }
 
     // rtmx:req REQ-AGENT-034
