@@ -16,6 +16,7 @@ pub mod loop_runner;
 pub mod mcp;
 pub mod mcp_types;
 pub mod orchestration;
+pub mod oscal_import;
 pub mod rate_limiter;
 pub mod repo_context;
 pub mod retry;
