@@ -205,12 +205,13 @@ mod tests {
     // rtmx:req REQ-AUDIT-016
     #[test]
     fn test_ntp_timestamp_drift_check_default_threshold() {
-        let ntp = NtpTimestamp::new(5.0);
+        // Use non-routable address for deterministic behavior in tests/CI.
+        // Real NTP servers are unreliable in CI (firewalls, timeouts).
+        let ntp = NtpTimestamp::with_server(5.0, "192.0.2.1:123");
         let result = ntp.check_drift();
-        // In test/CI environments the NTP server may be unreachable,
-        // which returns zero offset (within threshold). If reachable,
-        // the system clock should still be within 5s of NTP.
+        // Unreachable NTP returns zero offset -> within threshold.
         assert!(result.within_threshold);
+        assert!(result.estimated_offset_secs.abs() < 0.001);
     }
 
     // rtmx:req REQ-AUDIT-016
