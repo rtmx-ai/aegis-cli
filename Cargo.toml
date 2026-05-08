@@ -12,6 +12,7 @@ members = [
     "crates/aegis-onboard",
     "crates/aegis-cli",
     "crates/aegis-test-support",
+    "benches",
 ]
 
 [workspace.package]
@@ -76,6 +77,7 @@ rexpect = "0.6"
 cucumber = "0.22"
 tempfile = "3"
 cargo-nextest = "0.9"
+criterion = { version = "0.5", features = ["html_reports"] }
 sha2 = "0.10"
 fs2 = "0.4"
 zstd = "0.13"

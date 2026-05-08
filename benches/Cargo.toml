@@ -1,0 +1,24 @@
+[package]
+name = "aegis-bench"
+description = "Criterion benchmark suite for aegis-cli hot paths"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+aegis-domain = { path = "../crates/aegis-domain" }
+aegis-audit = { path = "../crates/aegis-audit" }
+aegis-agent = { path = "../crates/aegis-agent" }
+aegis-security = { path = "../crates/aegis-security" }
+aegis-test-support = { path = "../crates/aegis-test-support" }
+criterion = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+chrono = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+
+[[bench]]
+name = "benchmark"
+path = "benchmark.rs"
+harness = false
