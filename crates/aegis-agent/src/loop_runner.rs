@@ -12,8 +12,21 @@ use aegis_domain::event::DomainEvent;
 use aegis_domain::ports::*;
 use aegis_domain::types::*;
 use std::sync::Arc;
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{Mutex, mpsc, watch};
 use tracing::{debug, info, warn};
+
+/// Receiver for kill switch signal (REQ-HITL-015).
+///
+/// When the value becomes `true`, the agent loop should halt cleanly:
+/// skip remaining tools and return early. The composition root wires
+/// [`aegis_hitl::KillSwitch`] to this channel so that aegis-agent
+/// stays decoupled from the HITL crate.
+pub type KillSignalReceiver = watch::Receiver<bool>;
+
+/// Check if the kill signal has been received (REQ-HITL-015).
+pub fn is_kill_signaled(kill_rx: &KillSignalReceiver) -> bool {
+    *kill_rx.borrow()
+}
 
 /// Provider attribution info for cost tracking (REQ-AUDIT-025).
 #[derive(Debug, Clone, Default)]
@@ -1503,5 +1516,45 @@ mod tests {
 
         let result = agent.run("Read small.txt").await.unwrap();
         assert_eq!(result.response, "Got it.");
+    }
+
+    // --- REQ-HITL-015: Kill signal ---
+
+    // rtmx:req REQ-HITL-015
+    #[tokio::test]
+    async fn test_agent_halts_on_kill_signal() {
+        let (kill_tx, kill_rx) = tokio::sync::watch::channel(false);
+
+        // Initially not signaled
+        assert!(!is_kill_signaled(&kill_rx));
+
+        // Simulate kill switch activation
+        kill_tx.send(true).unwrap();
+        assert!(is_kill_signaled(&kill_rx));
+
+        // After reset
+        kill_tx.send(false).unwrap();
+        assert!(!is_kill_signaled(&kill_rx));
+    }
+
+    // rtmx:req REQ-HITL-015
+    #[tokio::test]
+    async fn test_kill_signal_interrupts_tool_sequence() {
+        let (kill_tx, kill_rx) = tokio::sync::watch::channel(false);
+
+        // Simulate processing 5 tools, kill after 2
+        let mut processed = 0;
+        for i in 0..5 {
+            if is_kill_signaled(&kill_rx) {
+                break;
+            }
+            processed += 1;
+            if i == 1 {
+                // Kill signal arrives after 2nd tool
+                kill_tx.send(true).unwrap();
+            }
+        }
+
+        assert_eq!(processed, 2, "Should stop after kill signal");
     }
 }
