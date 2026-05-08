@@ -65,6 +65,26 @@ pub fn render_with_hyperlinks(text: &str) -> Vec<Span<'static>> {
     spans
 }
 
+/// Check if a string looks like a URL (starts with `http://` or `https://`).
+pub fn is_url(s: &str) -> bool {
+    s.starts_with("http://") || s.starts_with("https://")
+}
+
+/// Detect a URL in text that follows the `@url:` prefix.
+///
+/// Returns the URL substring if found. Leading/trailing whitespace around
+/// the URL portion is trimmed. Returns `None` when the input does not start
+/// with `@url:` or the value after the prefix is not a URL.
+pub fn detect_url_in_at_trigger(input: &str) -> Option<&str> {
+    let trimmed = input.trim();
+    let url_part = trimmed.strip_prefix("@url:")?.trim();
+    if is_url(url_part) {
+        Some(url_part)
+    } else {
+        None
+    }
+}
+
 /// Enrich an auth guidance message with relevant documentation URLs
 /// based on the cloud provider.
 pub fn enrich_auth_guidance(
@@ -254,5 +274,65 @@ mod tests {
     fn test_empty_string() {
         let spans = render_with_hyperlinks("");
         assert!(spans.is_empty(), "empty string should produce no spans");
+    }
+
+    // rtmx:req REQ-TUI-080
+    #[test]
+    fn test_url_detection_in_at_trigger() {
+        let result = detect_url_in_at_trigger("@url:https://example.com");
+        assert_eq!(result, Some("https://example.com"));
+
+        let result = detect_url_in_at_trigger("@url:http://example.com/path?q=1");
+        assert_eq!(result, Some("http://example.com/path?q=1"));
+    }
+
+    // rtmx:req REQ-TUI-080
+    #[test]
+    fn test_url_detection_no_prefix() {
+        // Without the @url: prefix, detection must return None.
+        assert_eq!(detect_url_in_at_trigger("https://example.com"), None);
+        assert_eq!(detect_url_in_at_trigger("http://example.com"), None);
+        assert_eq!(detect_url_in_at_trigger("plain text"), None);
+    }
+
+    // rtmx:req REQ-TUI-080
+    #[test]
+    fn test_url_detection_invalid_url() {
+        assert_eq!(detect_url_in_at_trigger("@url:not-a-url"), None);
+        assert_eq!(
+            detect_url_in_at_trigger("@url:ftp://files.example.com"),
+            None
+        );
+        assert_eq!(detect_url_in_at_trigger("@url:"), None);
+    }
+
+    // rtmx:req REQ-TUI-080
+    #[test]
+    fn test_url_detection_with_spaces() {
+        // Leading/trailing whitespace around the URL should be trimmed.
+        let result = detect_url_in_at_trigger("@url: https://example.com ");
+        assert_eq!(result, Some("https://example.com"));
+
+        let result = detect_url_in_at_trigger("  @url:  https://example.com  ");
+        assert_eq!(result, Some("https://example.com"));
+    }
+
+    // rtmx:req REQ-TUI-080
+    #[test]
+    fn test_is_url_valid() {
+        assert!(is_url("http://example.com"));
+        assert!(is_url("https://example.com"));
+        assert!(is_url("https://example.com/path?key=value#anchor"));
+        assert!(is_url("http://localhost:8080"));
+    }
+
+    // rtmx:req REQ-TUI-080
+    #[test]
+    fn test_is_url_invalid() {
+        assert!(!is_url("ftp://files.example.com"));
+        assert!(!is_url("file:///tmp/test"));
+        assert!(!is_url("example.com"));
+        assert!(!is_url("not a url at all"));
+        assert!(!is_url(""));
     }
 }

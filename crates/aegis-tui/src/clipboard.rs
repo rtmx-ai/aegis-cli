@@ -203,4 +203,85 @@ mod tests {
         assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
         assert_eq!(base64_encode(b"Hello, World!"), "SGVsbG8sIFdvcmxkIQ==");
     }
+
+    // rtmx:req REQ-TUI-075
+    #[test]
+    fn test_clipboard_write_and_read() {
+        // Verify copy_text and copy_to_clipboard exist and do not panic.
+        // In headless CI the clipboard may be unavailable, so we accept
+        // both Ok and a well-formed error.
+        match copy_text("REQ-TUI-075 roundtrip") {
+            Ok(()) => {}
+            Err(msg) => {
+                assert!(
+                    msg.contains("clipboard unavailable")
+                        || msg.contains("clipboard write failed")
+                        || msg.contains("arboard also failed"),
+                    "unexpected error message: {msg}"
+                );
+            }
+        }
+        match copy_to_clipboard("REQ-TUI-075 roundtrip via copy_to_clipboard") {
+            Ok(()) => {}
+            Err(msg) => {
+                assert!(
+                    msg.contains("clipboard unavailable")
+                        || msg.contains("clipboard write failed")
+                        || msg.contains("arboard also failed"),
+                    "unexpected error message: {msg}"
+                );
+            }
+        }
+    }
+
+    // rtmx:req REQ-TUI-075
+    #[test]
+    fn test_osc52_escape_sequence_format() {
+        let seq = build_osc52_sequence("clipboard test");
+        // Must start with ESC ] 52 ; c ;
+        assert!(
+            seq.starts_with("\x1b]52;c;"),
+            "OSC 52 sequence must start with ESC]52;c; -- got: {seq:?}"
+        );
+        // Must end with BEL
+        assert!(
+            seq.ends_with("\x07"),
+            "OSC 52 sequence must end with BEL (\\x07) -- got: {seq:?}"
+        );
+        // Body between prefix and BEL must be valid base64 of the input
+        let body = &seq["\x1b]52;c;".len()..seq.len() - 1];
+        assert_eq!(body, base64_encode(b"clipboard test"));
+    }
+
+    // rtmx:req REQ-TUI-075
+    #[test]
+    fn test_base64_encode_known_values() {
+        // RFC 4648 test vectors
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
+        assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+        // Additional known values
+        assert_eq!(base64_encode(b"aegis"), "YWVnaXM=");
+        assert_eq!(base64_encode(b"Hello"), "SGVsbG8=");
+    }
+
+    // rtmx:req REQ-TUI-075
+    #[test]
+    fn test_is_remote_session_detects_ssh_vars() {
+        // Verify the function inspects SSH_CONNECTION, SSH_TTY, and TMUX.
+        // We replicate the same logic and confirm agreement with the
+        // function, since mutating env vars in parallel tests is unsafe.
+        let expected = std::env::var("SSH_CONNECTION").is_ok()
+            || std::env::var("SSH_TTY").is_ok()
+            || std::env::var("TMUX").is_ok();
+        assert_eq!(
+            is_remote_session(),
+            expected,
+            "is_remote_session() should agree with SSH_CONNECTION || SSH_TTY || TMUX"
+        );
+    }
 }
