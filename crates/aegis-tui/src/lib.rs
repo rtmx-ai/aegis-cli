@@ -25,4 +25,5 @@ pub mod session_store;
 pub mod slash_commands;
 pub mod splash;
 pub mod terminal;
+pub mod theme;
 pub mod thinking;
