@@ -7,6 +7,7 @@
 pub mod adversary;
 pub mod aegisignore;
 pub mod cert_pin;
+pub mod cui;
 pub mod dlp;
 pub mod injection;
 pub mod transport;
