@@ -183,3 +183,61 @@ fn release_profile_binary_compiles() {
     let bin = Command::cargo_bin("aegis");
     assert!(bin.is_ok(), "aegis binary must compile and be discoverable");
 }
+
+// rtmx:req REQ-BUILD-067
+#[test]
+fn test_update_bundle_validates_path() {
+    Command::cargo_bin("aegis")
+        .unwrap()
+        .arg("update")
+        .arg("--bundle")
+        .arg("/nonexistent/path.tar.gz")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("bundle not found"));
+}
+
+// rtmx:req REQ-BUILD-067
+#[test]
+fn test_update_bundle_rejects_non_targz() {
+    let dir = tempfile::tempdir().unwrap();
+    let zip_path = dir.path().join("update.zip");
+    std::fs::write(&zip_path, b"fake zip").unwrap();
+
+    Command::cargo_bin("aegis")
+        .unwrap()
+        .arg("update")
+        .arg("--bundle")
+        .arg(zip_path.to_str().unwrap())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("must be a .tar.gz"));
+}
+
+// rtmx:req REQ-BUILD-067
+#[test]
+fn test_update_bundle_accepts_valid_tar_gz() {
+    let dir = tempfile::tempdir().unwrap();
+    let bundle_path = dir.path().join("aegis-1.0.0.tar.gz");
+    std::fs::write(&bundle_path, b"fake bundle").unwrap();
+
+    Command::cargo_bin("aegis")
+        .unwrap()
+        .arg("update")
+        .arg("--bundle")
+        .arg(bundle_path.to_str().unwrap())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("SHA-256:"));
+}
+
+// rtmx:req REQ-BUILD-067
+#[test]
+fn test_update_appears_in_help() {
+    Command::cargo_bin("aegis")
+        .unwrap()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("update"));
+}

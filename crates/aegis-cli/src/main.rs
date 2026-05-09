@@ -1,6 +1,8 @@
 //! aegis-cli: Terminal-native agentic AI pair programmer for CUI
 //! environments.
 
+mod update;
+
 use aegis_domain::error::DomainError;
 use aegis_domain::ports::{ApprovalGate, StreamEvent};
 use aegis_domain::types::{ApprovalDecision, ToolCall};
@@ -146,6 +148,12 @@ enum Commands {
         #[command(subcommand)]
         action: ProvidersAction,
     },
+    /// Self-update from an airgap bundle
+    Update {
+        /// Path to the .tar.gz update bundle
+        #[arg(long)]
+        bundle: std::path::PathBuf,
+    },
 }
 
 #[derive(clap::Subcommand)]
@@ -236,6 +244,9 @@ fn main() {
         }
         Some(Commands::History { session, denied }) => run_history(session, denied),
         Some(Commands::Providers { action }) => run_providers(action),
+        Some(Commands::Update { bundle }) => {
+            update::run_update(bundle).map_err(|e| e.to_string())
+        }
         None => {
             if needs_first_run_wizard() {
                 // First run: launch the init wizard
