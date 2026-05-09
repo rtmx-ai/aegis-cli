@@ -61,6 +61,36 @@ impl Requirement {
 }
 
 /// A parsed RTMX requirements database.
+///
+/// # Examples
+///
+/// Parse a minimal CSV and query requirements:
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::rtmx::RequirementsDb;
+///
+/// let csv = "req_id,category,subcategory,requirement_text,target_value,\
+///     test_module,test_function,validation_method,status,priority,phase,notes\n\
+///     REQ-A,CAT,SUB,desc,target,mod.rs,test_fn,Unit Test,TODO,HIGH,1,note";
+/// let db = RequirementsDb::from_csv(csv).unwrap();
+/// assert_eq!(db.count(), 1);
+/// assert!(db.get("REQ-A").is_some());
+/// ```
+///
+/// Filter by category:
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::rtmx::RequirementsDb;
+///
+/// let csv = "req_id,category,subcategory,requirement_text,target_value,\
+///     test_module,test_function,validation_method,status,priority,phase,notes\n\
+///     REQ-A,BUILD,X,a,t,m,f,Unit Test,TODO,HIGH,1,\n\
+///     REQ-B,TUI,X,b,t,m,f,Unit Test,TODO,HIGH,1,";
+/// let db = RequirementsDb::from_csv(csv).unwrap();
+/// assert_eq!(db.by_category("BUILD").len(), 1);
+/// ```
 #[derive(Debug, Clone)]
 pub struct RequirementsDb {
     requirements: Vec<Requirement>,

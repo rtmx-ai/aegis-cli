@@ -20,6 +20,18 @@ fn home_lock() -> &'static Mutex<()> {
 
 /// Owns a tempdir that masquerades as `$HOME` for the duration of a test.
 ///
+/// # Examples
+///
+/// ```no_run
+/// // rtmx:req REQ-TEST-047
+/// use aegis_test_support::isolation::IsolatedHome;
+///
+/// let home = IsolatedHome::new().unwrap();
+/// assert!(home.aegis_dir().exists());
+/// assert!(home.sessions_dir().is_dir());
+/// // HOME is restored when `home` is dropped.
+/// ```
+///
 /// On construction:
 /// - Creates a fresh tempdir.
 /// - Acquires the global HOME mutex.

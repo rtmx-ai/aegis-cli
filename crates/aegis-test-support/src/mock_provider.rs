@@ -11,6 +11,16 @@ use async_trait::async_trait;
 use std::collections::VecDeque;
 
 /// A mock provider that returns pre-configured responses in sequence.
+///
+/// # Examples
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_test_support::mock_provider::MockLlmProvider;
+///
+/// let provider = MockLlmProvider::new();
+/// // Queue responses before passing to the agent loop.
+/// ```
 pub struct MockLlmProvider {
     responses: std::sync::Mutex<VecDeque<Vec<StreamEvent>>>,
     /// Tool schemas received on each `stream()` call, for test assertions.

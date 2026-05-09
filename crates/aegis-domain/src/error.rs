@@ -2,6 +2,57 @@
 
 use thiserror::Error;
 
+/// Domain-level error variants.
+///
+/// # Examples
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::error::DomainError;
+///
+/// let e = DomainError::FileBlocked { path: "/etc/shadow".to_string() };
+/// assert!(e.to_string().contains("/etc/shadow"));
+/// ```
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::error::DomainError;
+///
+/// let e = DomainError::PermissionDenied;
+/// assert_eq!(e.to_string(), "tool execution denied by HITL gate");
+/// ```
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::error::DomainError;
+///
+/// let e = DomainError::RequirementNotFound { id: "REQ-FAKE-999".to_string() };
+/// assert!(e.to_string().contains("REQ-FAKE-999"));
+/// ```
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::error::DomainError;
+///
+/// let e = DomainError::ProviderError { message: "timeout".to_string() };
+/// assert!(e.to_string().contains("timeout"));
+/// ```
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::error::DomainError;
+///
+/// let e = DomainError::AuthExpired { provider_kind: "vertex".to_string() };
+/// assert!(e.to_string().contains("vertex"));
+/// ```
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::error::DomainError;
+///
+/// let e = DomainError::Other("custom error".to_string());
+/// assert_eq!(e.to_string(), "custom error");
+/// ```
 #[derive(Debug, Error)]
 pub enum DomainError {
     #[error("file access denied by .aegisignore: {path}")]

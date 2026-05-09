@@ -16,6 +16,36 @@ mod tests {
         );
     }
 
+    // rtmx:req REQ-TEST-050
+    #[test]
+    fn test_baseline_script_exists() {
+        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("scripts/bench-baseline.sh");
+        assert!(
+            script.exists(),
+            "scripts/bench-baseline.sh must exist at repo root"
+        );
+        // Verify it is executable (Unix only).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::metadata(&script).unwrap().permissions();
+            assert!(
+                perms.mode() & 0o111 != 0,
+                "bench-baseline.sh must be executable"
+            );
+        }
+        // Verify it supports save and compare modes.
+        let content = std::fs::read_to_string(&script).unwrap();
+        assert!(content.contains("save"), "script must support save mode");
+        assert!(
+            content.contains("compare"),
+            "script must support compare mode"
+        );
+    }
+
     // rtmx:req REQ-TEST-049
     #[test]
     fn test_benchmark_suite_covers_hot_paths() {

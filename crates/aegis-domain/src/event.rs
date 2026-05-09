@@ -4,6 +4,67 @@ use crate::types::*;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// Domain events emitted during agent operation.
+///
+/// # Examples
+///
+/// Construct a `SessionStarted` event:
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::event::DomainEvent;
+/// use aegis_domain::types::SessionId;
+/// use chrono::Utc;
+///
+/// let event = DomainEvent::SessionStarted {
+///     session_id: SessionId::new(),
+///     timestamp: Utc::now(),
+/// };
+/// ```
+///
+/// Construct a `SessionEnded` event:
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::event::DomainEvent;
+/// use aegis_domain::types::SessionId;
+/// use chrono::Utc;
+///
+/// let event = DomainEvent::SessionEnded {
+///     session_id: SessionId::new(),
+///     timestamp: Utc::now(),
+/// };
+/// ```
+///
+/// Construct a `RequirementLinked` event:
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::event::DomainEvent;
+/// use aegis_domain::types::{SessionId, RequirementId};
+/// use chrono::Utc;
+///
+/// let event = DomainEvent::RequirementLinked {
+///     session_id: SessionId::new(),
+///     requirement_id: RequirementId::new("REQ-BUILD-001"),
+///     timestamp: Utc::now(),
+/// };
+/// ```
+///
+/// Construct a `KillSwitch` event:
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::event::DomainEvent;
+/// use aegis_domain::types::SessionId;
+/// use chrono::Utc;
+///
+/// let event = DomainEvent::KillSwitch {
+///     session_id: SessionId::new(),
+///     timestamp: Utc::now(),
+///     pending_tool_count: 3,
+/// };
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DomainEvent {
     SessionStarted {

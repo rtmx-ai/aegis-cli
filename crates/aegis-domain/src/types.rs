@@ -9,6 +9,27 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 /// Unique identifier for an agent session.
+///
+/// # Examples
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::types::SessionId;
+/// let id = SessionId::new();
+/// // Each session ID is unique.
+/// let id2 = SessionId::new();
+/// assert_ne!(id, id2);
+/// ```
+///
+/// Display produces the underlying UUID string:
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::types::SessionId;
+/// let id = SessionId::new();
+/// let display = format!("{id}");
+/// assert!(!display.is_empty());
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SessionId(Uuid);
 
@@ -31,6 +52,16 @@ impl fmt::Display for SessionId {
 }
 
 /// Unique identifier for a single request within a session.
+///
+/// # Examples
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::types::RequestId;
+/// let rid = RequestId::new();
+/// let rid2 = RequestId::new();
+/// assert_ne!(rid, rid2);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RequestId(Uuid);
 
@@ -47,6 +78,16 @@ impl RequestId {
 }
 
 /// An RTMX requirement identifier (e.g., "REQ-BUILD-001").
+///
+/// # Examples
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::types::RequirementId;
+/// let rid = RequirementId::new("REQ-BUILD-001");
+/// assert_eq!(rid.as_str(), "REQ-BUILD-001");
+/// assert_eq!(format!("{rid}"), "REQ-BUILD-001");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RequirementId(String);
 
@@ -67,6 +108,24 @@ impl fmt::Display for RequirementId {
 }
 
 /// A validated file path that has been checked against .aegisignore.
+///
+/// # Examples
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::types::FilePath;
+/// let fp = FilePath::new_unchecked("src/main.rs");
+/// assert_eq!(fp.as_path(), std::path::Path::new("src/main.rs"));
+/// ```
+///
+/// Display renders the path:
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::types::FilePath;
+/// let fp = FilePath::new_unchecked("/tmp/file.txt");
+/// assert_eq!(format!("{fp}"), "/tmp/file.txt");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FilePath(PathBuf);
 
@@ -116,6 +175,68 @@ impl From<String> for ContentPart {
 }
 
 /// A tool call the agent wants to execute.
+///
+/// # Examples
+///
+/// Construct a `ReadFile` variant:
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::types::{ToolCall, FilePath};
+/// let tc = ToolCall::ReadFile { path: FilePath::new_unchecked("main.rs") };
+/// ```
+///
+/// Construct a `WriteFile` variant:
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::types::{ToolCall, FilePath};
+/// let tc = ToolCall::WriteFile {
+///     path: FilePath::new_unchecked("out.txt"),
+///     content: "hello".to_string(),
+/// };
+/// ```
+///
+/// Construct a `RunCommand` variant:
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::types::ToolCall;
+/// let tc = ToolCall::RunCommand {
+///     command: "cargo test".to_string(),
+///     timeout_secs: 60,
+/// };
+/// ```
+///
+/// Construct a `ListDir` variant:
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::types::{ToolCall, FilePath};
+/// let tc = ToolCall::ListDir { path: FilePath::new_unchecked(".") };
+/// ```
+///
+/// Construct a `Grep` variant:
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::types::{ToolCall, FilePath};
+/// let tc = ToolCall::Grep {
+///     pattern: "TODO".to_string(),
+///     path: FilePath::new_unchecked("src"),
+/// };
+/// ```
+///
+/// Construct an `McpTool` variant:
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::types::ToolCall;
+/// let tc = ToolCall::McpTool {
+///     qualified_name: "server/tool".to_string(),
+///     arguments: serde_json::json!({"key": "value"}),
+/// };
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ToolCall {
     ReadFile {
@@ -144,6 +265,21 @@ pub enum ToolCall {
 }
 
 /// Risk classification for tool calls.
+///
+/// # Examples
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::types::{ToolCall, ToolRisk, FilePath};
+/// let read = ToolCall::ReadFile { path: FilePath::new_unchecked("f.rs") };
+/// assert_eq!(read.risk(), ToolRisk::ReadOnly);
+///
+/// let write = ToolCall::WriteFile {
+///     path: FilePath::new_unchecked("f.rs"),
+///     content: String::new(),
+/// };
+/// assert_eq!(write.risk(), ToolRisk::StateMutating);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolRisk {
     ReadOnly,
@@ -164,6 +300,16 @@ impl ToolCall {
 }
 
 /// The result of executing a tool call.
+///
+/// # Examples
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::types::ToolResult;
+/// let ok = ToolResult::Success { output: "done".to_string() };
+/// let err = ToolResult::Error { message: "fail".to_string() };
+/// let denied = ToolResult::PermissionDenied { reason: "blocked".to_string() };
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ToolResult {
     Success { output: String },
@@ -172,6 +318,15 @@ pub enum ToolResult {
 }
 
 /// HITL approval decision.
+///
+/// # Examples
+///
+/// ```
+/// // rtmx:req REQ-TEST-047
+/// use aegis_domain::types::ApprovalDecision;
+/// let decision = ApprovalDecision::Approved;
+/// assert_eq!(decision, ApprovalDecision::Approved);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ApprovalDecision {
     Approved,
