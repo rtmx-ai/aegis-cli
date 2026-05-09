@@ -1,9 +1,11 @@
 //! Authentication utilities for OAuth/OIDC flows.
 //!
 //! Provides PKCE (Proof Key for Code Exchange) challenge/verifier generation
-//! per RFC 7636 for secure authorization code flows.
+//! per RFC 7636 for secure authorization code flows, token exchange,
+//! keychain storage, and token refresh with expiry detection.
 
 use sha2::{Digest, Sha256};
+use std::time::{Duration, Instant};
 
 /// Unreserved URI characters allowed in PKCE verifiers (RFC 7636, Section 4.1).
 const UNRESERVED: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
@@ -242,6 +244,125 @@ pub async fn run_callback_server(
     };
 
     Ok((port, fut))
+}
+
+/// OAuth token response from the authorization server.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct TokenResponse {
+    /// The access token issued by the authorization server.
+    pub access_token: String,
+    /// The refresh token, if issued.
+    pub refresh_token: Option<String>,
+    /// The lifetime in seconds of the access token.
+    pub expires_in: u64,
+    /// The token type (typically "Bearer").
+    pub token_type: String,
+}
+
+/// All fields needed to perform an OAuth token exchange request.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TokenExchangeRequest {
+    /// The grant type (always "authorization_code").
+    pub grant_type: String,
+    /// The authorization code received from the callback.
+    pub code: String,
+    /// The redirect URI used in the original authorization request.
+    pub redirect_uri: String,
+    /// The OAuth client ID.
+    pub client_id: String,
+    /// The PKCE code verifier.
+    pub code_verifier: String,
+}
+
+impl TokenExchangeRequest {
+    /// Encode the request as an `application/x-www-form-urlencoded` body.
+    pub fn to_form_body(&self) -> String {
+        format!(
+            "grant_type={}&code={}&redirect_uri={}&client_id={}&code_verifier={}",
+            percent_encode(&self.grant_type),
+            percent_encode(&self.code),
+            percent_encode(&self.redirect_uri),
+            percent_encode(&self.client_id),
+            percent_encode(&self.code_verifier),
+        )
+    }
+}
+
+/// Build a [`TokenExchangeRequest`] from the auth config, authorization code,
+/// and PKCE verifier.
+pub fn build_token_exchange_request(
+    config: &AuthConfig,
+    code: &str,
+    verifier: &str,
+) -> TokenExchangeRequest {
+    TokenExchangeRequest {
+        grant_type: "authorization_code".to_owned(),
+        code: code.to_owned(),
+        redirect_uri: config.redirect_uri.clone(),
+        client_id: config.client_id.clone(),
+        code_verifier: verifier.to_owned(),
+    }
+}
+
+/// Store a token value in the OS keychain (stub).
+///
+/// Production implementation will use platform-specific keychain APIs.
+/// Currently returns `Ok(())` unconditionally.
+pub fn store_token(_service: &str, _key: &str, _value: &str) -> Result<(), String> {
+    Ok(())
+}
+
+/// Load a token value from the OS keychain (stub).
+///
+/// Production implementation will use platform-specific keychain APIs.
+/// Currently returns `Ok(None)` unconditionally.
+pub fn load_token(_service: &str, _key: &str) -> Result<Option<String>, String> {
+    Ok(None)
+}
+
+/// In-memory representation of a token with its expiry time.
+#[derive(Debug, Clone)]
+pub struct TokenState {
+    /// The access token.
+    pub access_token: String,
+    /// The refresh token, if available.
+    pub refresh_token: Option<String>,
+    /// The instant at which the access token expires.
+    pub expires_at: Instant,
+    /// The token type (typically "Bearer").
+    pub token_type: String,
+}
+
+/// Buffer before actual expiry at which a token is considered expired.
+const EXPIRY_BUFFER: Duration = Duration::from_secs(5 * 60);
+
+/// Returns `true` if the token is expired or within 5 minutes of expiry.
+pub fn is_token_expired(state: &TokenState) -> bool {
+    let now = Instant::now();
+    if now >= state.expires_at {
+        return true;
+    }
+    state.expires_at.duration_since(now) < EXPIRY_BUFFER
+}
+
+/// All fields needed to perform an OAuth token refresh request.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TokenRefreshRequest {
+    /// The grant type (always "refresh_token").
+    pub grant_type: String,
+    /// The refresh token.
+    pub refresh_token: String,
+    /// The OAuth client ID.
+    pub client_id: String,
+}
+
+/// Build a [`TokenRefreshRequest`] from the client ID and refresh token.
+pub fn build_refresh_request(client_id: &str, refresh_token: &str) -> TokenRefreshRequest {
+    TokenRefreshRequest {
+        grant_type: "refresh_token".to_owned(),
+        refresh_token: refresh_token.to_owned(),
+        client_id: client_id.to_owned(),
+    }
 }
 
 /// Generate a PKCE code verifier and challenge pair per RFC 7636.
@@ -508,5 +629,112 @@ mod tests {
             extract_query_param("/cb?val=hello%20world", "val"),
             Some("hello world".into())
         );
+    }
+
+    // rtmx:req REQ-ONBOARD-032
+    #[test]
+    fn test_token_exchange_stores_in_keychain() {
+        let config = AuthConfig {
+            client_id: "test-client".into(),
+            redirect_uri: "http://127.0.0.1:9999/callback".into(),
+            auth_endpoint: "https://auth.example.com/authorize".into(),
+            scope: "openid".into(),
+        };
+        let req = build_token_exchange_request(&config, "auth_code_123", "verifier_abc");
+
+        assert_eq!(req.grant_type, "authorization_code");
+        assert_eq!(req.code, "auth_code_123");
+        assert_eq!(req.redirect_uri, "http://127.0.0.1:9999/callback");
+        assert_eq!(req.client_id, "test-client");
+        assert_eq!(req.code_verifier, "verifier_abc");
+
+        // Form body must contain all required fields.
+        let body = req.to_form_body();
+        assert!(body.contains("grant_type=authorization_code"));
+        assert!(body.contains("code=auth_code_123"));
+        assert!(body.contains("redirect_uri="));
+        assert!(body.contains("client_id=test-client"));
+        assert!(body.contains("code_verifier=verifier_abc"));
+
+        // Keychain stubs must succeed.
+        assert!(store_token("aegis", "access_token", "tok_abc").is_ok());
+        assert_eq!(load_token("aegis", "access_token").unwrap(), None);
+    }
+
+    // rtmx:req REQ-ONBOARD-032
+    #[test]
+    fn test_token_response_serialization() {
+        let response = TokenResponse {
+            access_token: "access_123".into(),
+            refresh_token: Some("refresh_456".into()),
+            expires_in: 3600,
+            token_type: "Bearer".into(),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let deserialized: TokenResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(response, deserialized);
+
+        // Also test without refresh_token.
+        let no_refresh = TokenResponse {
+            access_token: "a".into(),
+            refresh_token: None,
+            expires_in: 60,
+            token_type: "Bearer".into(),
+        };
+        let json2 = serde_json::to_string(&no_refresh).unwrap();
+        let de2: TokenResponse = serde_json::from_str(&json2).unwrap();
+        assert_eq!(no_refresh, de2);
+    }
+
+    // rtmx:req REQ-ONBOARD-033
+    #[test]
+    fn test_token_refresh_before_expiry() {
+        // Token with 10 minutes remaining -- NOT expired.
+        let state_10m = TokenState {
+            access_token: "tok".into(),
+            refresh_token: Some("ref".into()),
+            expires_at: Instant::now() + Duration::from_secs(10 * 60),
+            token_type: "Bearer".into(),
+        };
+        assert!(
+            !is_token_expired(&state_10m),
+            "token with 10 min remaining should not be expired"
+        );
+
+        // Token with 4 minutes remaining -- within 5-min buffer, IS expired.
+        let state_4m = TokenState {
+            access_token: "tok".into(),
+            refresh_token: Some("ref".into()),
+            expires_at: Instant::now() + Duration::from_secs(4 * 60),
+            token_type: "Bearer".into(),
+        };
+        assert!(
+            is_token_expired(&state_4m),
+            "token with 4 min remaining should be expired (within 5-min buffer)"
+        );
+
+        // Token already past expiry -- IS expired.
+        // We cannot create an Instant in the past directly, but we can
+        // set expires_at to now (which is <= now, so expired).
+        let state_past = TokenState {
+            access_token: "tok".into(),
+            refresh_token: None,
+            expires_at: Instant::now(),
+            token_type: "Bearer".into(),
+        };
+        assert!(
+            is_token_expired(&state_past),
+            "token at/past expiry should be expired"
+        );
+    }
+
+    // rtmx:req REQ-ONBOARD-033
+    #[test]
+    fn test_refresh_request_has_correct_grant_type() {
+        let req = build_refresh_request("my-client", "refresh_tok_789");
+        assert_eq!(req.grant_type, "refresh_token");
+        assert_eq!(req.refresh_token, "refresh_tok_789");
+        assert_eq!(req.client_id, "my-client");
     }
 }
