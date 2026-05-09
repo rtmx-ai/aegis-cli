@@ -13,6 +13,7 @@ pub mod dedup;
 pub mod dispatch;
 pub mod export;
 pub mod jira_import;
+pub mod living_docs;
 pub mod loop_runner;
 pub mod mcp;
 pub mod mcp_types;
