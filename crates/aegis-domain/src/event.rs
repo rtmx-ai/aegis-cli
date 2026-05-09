@@ -45,6 +45,13 @@ pub enum DomainEvent {
         /// Number of pending tool calls denied when the kill switch fired.
         pending_tool_count: usize,
     },
+    /// A CUI-marked message was blocked from transmission to a commercial endpoint.
+    CuiBlocked {
+        session_id: SessionId,
+        endpoint_url: String,
+        pattern_matched: String,
+        timestamp: DateTime<Utc>,
+    },
     /// Token usage for a single LLM turn, with provider attribution.
     TokensConsumed {
         session_id: String,

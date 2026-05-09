@@ -143,6 +143,50 @@ fn extract_host(url: &str) -> String {
     without_port.to_string()
 }
 
+/// Result of checking whether a message may be transmitted to an endpoint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CuiGateResult {
+    /// No CUI markings found, or endpoint is government -- transmission allowed.
+    Allowed,
+    /// CUI markings detected and endpoint is commercial -- transmission blocked.
+    Blocked {
+        /// CUI markings found in the message.
+        matches: Vec<CuiMatch>,
+        /// The endpoint URL that was classified as commercial.
+        endpoint: String,
+    },
+}
+
+/// Check whether `message` may be transmitted to `endpoint_url`.
+///
+/// Scans the message for CUI markings and classifies the endpoint. If any CUI
+/// markings are found and the endpoint is commercial, the transmission is blocked.
+pub fn check_cui_gate(message: &str, endpoint_url: &str) -> CuiGateResult {
+    check_cui_gate_with_config(message, endpoint_url, &EndpointConfig::default())
+}
+
+/// Check whether `message` may be transmitted to `endpoint_url` using a custom
+/// endpoint configuration.
+pub fn check_cui_gate_with_config(
+    message: &str,
+    endpoint_url: &str,
+    config: &EndpointConfig,
+) -> CuiGateResult {
+    let matches = scan_for_cui(message);
+    if matches.is_empty() {
+        return CuiGateResult::Allowed;
+    }
+
+    let class = classify_endpoint_with_config(endpoint_url, config);
+    match class {
+        EndpointClass::Government => CuiGateResult::Allowed,
+        EndpointClass::Commercial => CuiGateResult::Blocked {
+            matches,
+            endpoint: endpoint_url.to_string(),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -381,5 +425,70 @@ mod tests {
             names.contains(&"ORCON"),
             "Should find ORCON on a later line"
         );
+    }
+
+    // rtmx:req REQ-SECURITY-023
+    #[test]
+    fn test_gate_blocks_cui_to_commercial() {
+        let result = check_cui_gate("This document is CUI", "https://api.openai.com/v1");
+        match result {
+            CuiGateResult::Blocked { matches, endpoint } => {
+                assert!(!matches.is_empty(), "Should have CUI matches");
+                assert_eq!(endpoint, "https://api.openai.com/v1");
+            }
+            CuiGateResult::Allowed => {
+                panic!("CUI text to commercial endpoint must be blocked");
+            }
+        }
+    }
+
+    // rtmx:req REQ-SECURITY-023
+    #[test]
+    fn test_gate_allows_cui_to_government() {
+        let result = check_cui_gate("This document is CUI", "https://api.defense.mil/v1");
+        assert_eq!(
+            result,
+            CuiGateResult::Allowed,
+            "CUI text to government endpoint should be allowed"
+        );
+    }
+
+    // rtmx:req REQ-SECURITY-023
+    #[test]
+    fn test_gate_allows_clean_text_to_commercial() {
+        let result = check_cui_gate(
+            "Just a regular message with no markings",
+            "https://api.openai.com/v1",
+        );
+        assert_eq!(
+            result,
+            CuiGateResult::Allowed,
+            "Clean text to commercial endpoint should be allowed"
+        );
+    }
+
+    // rtmx:req REQ-SECURITY-023
+    #[test]
+    fn test_gate_blocked_result_contains_multiple_matches() {
+        let result = check_cui_gate(
+            "(CUI) First section. FOUO material. NOFORN applies.",
+            "https://example.com/api",
+        );
+        match result {
+            CuiGateResult::Blocked { matches, .. } => {
+                assert!(
+                    matches.len() >= 3,
+                    "Should detect at least 3 CUI markings, found {}",
+                    matches.len()
+                );
+                let names: Vec<&str> = matches.iter().map(|m| m.pattern_name.as_str()).collect();
+                assert!(names.contains(&"PORTION_MARKING"));
+                assert!(names.contains(&"FOUO"));
+                assert!(names.contains(&"NOFORN"));
+            }
+            CuiGateResult::Allowed => {
+                panic!("Multiple CUI markings to commercial must be blocked");
+            }
+        }
     }
 }

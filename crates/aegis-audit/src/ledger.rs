@@ -860,6 +860,54 @@ mod tests {
         );
     }
 
+    // rtmx:req REQ-SECURITY-024
+    #[tokio::test]
+    async fn test_cui_blocked_audit_event() {
+        let dir = TempDir::new().unwrap();
+        let ledger = make_ledger(dir.path()).await;
+
+        let session_id = SessionId::new();
+        let event = DomainEvent::CuiBlocked {
+            session_id: session_id.clone(),
+            endpoint_url: "https://api.openai.com/v1".to_string(),
+            pattern_matched: "CUI_BANNER".to_string(),
+            timestamp: Utc::now(),
+        };
+
+        ledger.record(&event).await.unwrap();
+
+        let entries = read_log_entries(dir.path());
+        assert_eq!(entries.len(), 1, "CuiBlocked event must be recorded");
+
+        let parsed: serde_json::Value = serde_json::from_str(&entries[0]).unwrap();
+
+        // Verify mandatory audit fields
+        assert!(parsed.get("timestamp").is_some(), "Missing timestamp");
+        assert!(parsed.get("os_user").is_some(), "Missing os_user");
+        assert!(parsed.get("hostname").is_some(), "Missing hostname");
+
+        // Verify event payload
+        let event_val = &parsed["event"];
+        assert!(
+            event_val["CuiBlocked"]["session_id"].is_string(),
+            "session_id must be present in CuiBlocked event"
+        );
+        assert_eq!(
+            event_val["CuiBlocked"]["endpoint_url"].as_str(),
+            Some("https://api.openai.com/v1"),
+            "endpoint_url must match"
+        );
+        assert_eq!(
+            event_val["CuiBlocked"]["pattern_matched"].as_str(),
+            Some("CUI_BANNER"),
+            "pattern_matched must match"
+        );
+        assert!(
+            event_val["CuiBlocked"]["timestamp"].is_string(),
+            "timestamp must be present in CuiBlocked event"
+        );
+    }
+
     // rtmx:req REQ-AUDIT-003
     #[tokio::test]
     async fn record_with_req_none_omits_req_id() {
