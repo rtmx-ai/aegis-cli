@@ -25,6 +25,7 @@ allow = [
     "Zlib",
     "CDLA-Permissive-2.0",
     "BSL-1.0",            # Boost Software License -- permissive, used by clipboard-win
+    "OpenSSL",            # OpenSSL License -- permissive, used by ring and aws-lc-fips-sys
 ]
 confidence-threshold = 0.8
 

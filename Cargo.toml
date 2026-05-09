@@ -51,6 +51,10 @@ syntect = { version = "5", default-features = false, features = ["default-fancy"
 # LLM providers
 reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
 
+# FIPS 140-2 validated crypto (REQ-SECURITY-026, CMVP #4631)
+aws-lc-rs = { version = "1", features = ["fips"] }
+rustls = { version = "0.23", features = ["aws_lc_rs"] }
+
 # AWS (Bedrock SigV4 signing)
 aws-sigv4 = "1"
 aws-credential-types = "1"
