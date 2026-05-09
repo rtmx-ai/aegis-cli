@@ -14,6 +14,7 @@ pub mod config;
 pub mod csp_discovery;
 pub mod discovery;
 pub mod dlp_gate;
+pub mod energy;
 pub mod failover;
 pub mod local;
 pub mod provider;
