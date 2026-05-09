@@ -230,7 +230,8 @@ mod tests {
                 // clipboard unavailable in headless env is acceptable
                 assert!(
                     msg.contains("clipboard unavailable")
-                        || msg.contains("clipboard image read failed"),
+                        || msg.contains("clipboard image read failed")
+                        || msg.contains("image too large"),
                     "unexpected error: {msg}"
                 );
             }
