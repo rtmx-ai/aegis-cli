@@ -305,7 +305,7 @@ jobs:
       - uses: Mozilla-Actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: Swatinem/rust-cache@v2
       - name: Install musl tools
-        run: sudo apt-get install -y musl-tools linux-headers-generic
+        run: sudo apt-get update -qq && sudo apt-get install -y musl-tools linux-libc-dev
       - name: Install cargo-generate-rpm
         run: cargo install cargo-generate-rpm --locked
       - name: Build release binary (musl static)
@@ -360,7 +360,7 @@ jobs:
       - uses: Mozilla-Actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: Swatinem/rust-cache@v2
       - name: Install musl tools
-        run: sudo apt-get install -y musl-tools linux-headers-generic
+        run: sudo apt-get update -qq && sudo apt-get install -y musl-tools linux-libc-dev
       - name: Install cargo-cyclonedx
         run: cargo install cargo-cyclonedx --locked
       - name: Build musl static binary
@@ -547,7 +547,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install musl tools
         if: contains(matrix.target, 'musl')
-        run: sudo apt-get install -y musl-tools linux-headers-generic
+        run: sudo apt-get update -qq && sudo apt-get install -y musl-tools linux-libc-dev
       # REQ-HDN-005: Use CI profile (thin LTO) instead of full release.
       - name: Build binary
         run: |
