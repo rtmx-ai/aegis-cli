@@ -34,6 +34,9 @@ tracing-subscriber = { workspace = true }
 aws-lc-rs = { workspace = true }
 rustls = { workspace = true }
 
+[dependencies.sha2]
+workspace = true
+
 [dev-dependencies]
 aegis-test-support = { path = "../aegis-test-support" }
 assert_cmd = { workspace = true }
