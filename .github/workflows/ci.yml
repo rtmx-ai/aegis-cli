@@ -305,14 +305,11 @@ jobs:
       - uses: Mozilla-Actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: Swatinem/rust-cache@v2
       - name: Install musl tools
-        run: sudo apt-get update -qq && sudo apt-get install -y musl-tools linux-libc-dev
+        run: sudo apt-get update -qq && sudo apt-get install -y musl-tools
       - name: Install cargo-generate-rpm
         run: cargo install cargo-generate-rpm --locked
       - name: Build release binary (musl static)
-        run: |
-          # aws-lc-fips-sys needs linux/random.h from kernel headers
-          export C_INCLUDE_PATH=/usr/include
-          cargo build --release --package aegis-cli --target x86_64-unknown-linux-musl
+        run: cargo build --release --package aegis-cli --target x86_64-unknown-linux-musl
       - name: Generate .rpm package
         # Run from workspace root with -p <path>. --auto-req disabled avoids
         # cargo-generate-rpm trying to parse the binary for dependencies
@@ -360,13 +357,11 @@ jobs:
       - uses: Mozilla-Actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: Swatinem/rust-cache@v2
       - name: Install musl tools
-        run: sudo apt-get update -qq && sudo apt-get install -y musl-tools linux-libc-dev
+        run: sudo apt-get update -qq && sudo apt-get install -y musl-tools
       - name: Install cargo-cyclonedx
         run: cargo install cargo-cyclonedx --locked
       - name: Build musl static binary
-        run: |
-          export C_INCLUDE_PATH=/usr/include
-          cargo build --release --package aegis-cli --target x86_64-unknown-linux-musl
+        run: cargo build --release --package aegis-cli --target x86_64-unknown-linux-musl
       - name: Generate CycloneDX SBOM
         run: cargo cyclonedx --format json --spec-version 1.5
       - name: Build airgap bundle
@@ -547,13 +542,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install musl tools
         if: contains(matrix.target, 'musl')
-        run: sudo apt-get update -qq && sudo apt-get install -y musl-tools linux-libc-dev
+        run: sudo apt-get update -qq && sudo apt-get install -y musl-tools
       # REQ-HDN-005: Use CI profile (thin LTO) instead of full release.
       - name: Build binary
-        run: |
-          # aws-lc-fips-sys needs linux/random.h from kernel headers
-          export C_INCLUDE_PATH=/usr/include
-          cargo build --profile ci --target ${{ matrix.target }}
+        run: cargo build --profile ci --target ${{ matrix.target }}
       - name: Upload binary
         uses: actions/upload-artifact@v7
         with:
