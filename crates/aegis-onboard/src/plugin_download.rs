@@ -97,6 +97,10 @@ pub fn platform_asset_suffix() -> &'static str {
     {
         "windows-x86_64"
     }
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    {
+        "linux-aarch64"
+    }
 }
 
 /// Download the plugin binary from GitHub releases.
