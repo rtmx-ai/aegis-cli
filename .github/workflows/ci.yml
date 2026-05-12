@@ -360,6 +360,9 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y musl-tools
       - name: Install cargo-cyclonedx
         run: cargo install cargo-cyclonedx --locked
+      # rtmx:req REQ-BUILD-076 -- generate system prompt before build
+      - name: Generate system prompt from verified RTM
+        run: bash scripts/generate-system-prompt.sh
       - name: Build musl static binary
         run: cargo build --release --package aegis-cli --target x86_64-unknown-linux-musl
       - name: Generate CycloneDX SBOM
@@ -404,9 +407,12 @@ jobs:
           }
           JSON
 
+          # rtmx:req REQ-BUILD-078 -- system prompt as inspectable sidecar
+          cp crates/aegis-agent/src/system_prompt.md "$STAGING/system_prompt.md"
+
           # manifest.txt: SHA-256 of every file in the bundle
           cd "$STAGING"
-          sha256sum aegis sbom.json LICENSE README.md version.json plugins/PLUGINS.md > manifest.txt
+          sha256sum aegis sbom.json LICENSE README.md version.json plugins/PLUGINS.md system_prompt.md > manifest.txt
           cat manifest.txt
 
           # Tarball

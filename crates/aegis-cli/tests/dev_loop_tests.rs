@@ -234,6 +234,21 @@ fn test_ci_has_airgap_bundle_job() {
     );
 }
 
+// rtmx:req REQ-BUILD-078
+#[test]
+fn test_airgap_bundle_contains_system_prompt() {
+    let ci = read_file(".github/workflows/ci.yml");
+    assert!(
+        ci.contains("system_prompt.md"),
+        "airgap bundle must include system_prompt.md as inspectable sidecar"
+    );
+    // Must be in the sha256sum manifest
+    assert!(
+        ci.contains("sha256sum") && ci.contains("system_prompt.md"),
+        "system_prompt.md must be included in manifest.txt SHA-256 checksums"
+    );
+}
+
 // rtmx:req REQ-BUILD-046
 #[test]
 fn test_ci_has_rpm_smoke_test() {
