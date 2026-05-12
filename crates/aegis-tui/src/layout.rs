@@ -36,6 +36,8 @@ pub struct StatusInfo {
     pub auth_provider_name: Option<String>,
     /// Auth token time-to-live in seconds. None for local/no-auth.
     pub auth_ttl_secs: Option<u64>,
+    /// Number of prompts queued for processing (REQ-TUI-094).
+    pub queue_depth: usize,
 }
 
 impl StatusInfo {
@@ -274,6 +276,19 @@ fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &Ap
             spans.push(Span::styled(
                 phase_section,
                 Style::default().fg(phase_color),
+            ));
+        }
+    }
+
+    // REQ-TUI-094: Queue depth indicator (between phase and auth/cost)
+    if info.queue_depth > 0 {
+        let queue_text = format!("{} queued", info.queue_depth);
+        let used: usize = spans.iter().map(|s| s.content.len()).sum();
+        if used + queue_text.len() + 6 < width {
+            spans.push(Span::raw(" | "));
+            spans.push(Span::styled(
+                queue_text,
+                Style::default().fg(Color::Magenta),
             ));
         }
     }

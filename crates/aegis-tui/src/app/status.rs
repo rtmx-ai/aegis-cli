@@ -88,6 +88,7 @@ impl App {
             session_cost_usd: self.session_cost_usd,
             auth_provider_name: self.auth_provider_name.clone(),
             auth_ttl_secs: self.auth_ttl_secs,
+            queue_depth: self.prompt_queue.len(),
         }
     }
 
@@ -115,7 +116,12 @@ impl App {
         } else {
             String::new()
         };
-        format!("{}{}{}", info.model, phase, tokens)
+        let queued = if info.queue_depth > 0 {
+            format!(" | {} queued", info.queue_depth)
+        } else {
+            String::new()
+        };
+        format!("{}{}{}{}", info.model, phase, tokens, queued)
     }
 }
 

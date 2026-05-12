@@ -28,6 +28,7 @@ use crate::thinking::ThinkingAnimation;
 use aegis_domain::types::ToolCall;
 use aegis_hitl::rollback::RollbackJournal;
 use crossterm::event::Event as CtEvent;
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::time::Instant;
 use tokio::sync::mpsc;
@@ -114,6 +115,9 @@ pub struct App {
     /// Current status of CSP project discovery (for UI feedback).
     pub csp_discovery_status: CspDiscoveryStatus,
 
+    /// Prompt queue: prompts submitted while agent is busy (REQ-TUI-094).
+    pub prompt_queue: VecDeque<String>,
+
     /// Rollback journal for `/undo`: captures pre-write file state.
     pub rollback_journal: RollbackJournal,
 
@@ -159,6 +163,7 @@ impl App {
             current_provider_info: None,
             pending_csp_discovery: None,
             csp_discovery_status: CspDiscoveryStatus::Idle,
+            prompt_queue: VecDeque::new(),
             rollback_journal: RollbackJournal::new(50),
             auth_provider_name: None,
             auth_ttl_secs: None,
@@ -227,7 +232,17 @@ impl App {
                     let content = std::mem::take(&mut self.stream_buffer);
                     self.messages.push(ChatMessage::assistant(content));
                 }
-                self.phase = AppPhase::Idle;
+                // REQ-TUI-094: drain next queued prompt if any
+                if let Some(next_prompt) = self.prompt_queue.pop_front() {
+                    self.phase = AppPhase::Streaming;
+                    self.stream_buffer.clear();
+                    self.prompt_submitted_at = Some(Instant::now());
+                    self.prompt_count = self.prompt_count.wrapping_add(1);
+                    self.thinking.reset();
+                    let _ = agent_tx.send(next_prompt);
+                } else {
+                    self.phase = AppPhase::Idle;
+                }
                 Action::Continue
             }
             TuiEvent::AgentError(msg) => {
@@ -365,7 +380,11 @@ impl App {
         match event {
             CtEvent::Key(key) => self.handle_key(key, agent_tx),
             CtEvent::Paste(text) => {
-                if self.phase == AppPhase::Idle {
+                // REQ-TUI-093: allow paste during streaming too
+                if self.phase == AppPhase::Idle
+                    || self.phase == AppPhase::Streaming
+                    || self.phase == AppPhase::ToolExecuting
+                {
                     self.input.insert_paste(&text);
                 }
                 Action::Continue
@@ -631,15 +650,16 @@ mod tests {
 
     // rtmx:req REQ-TUI-034
     #[test]
-    fn bracketed_paste_ignored_during_streaming() {
+    fn bracketed_paste_accepted_during_streaming() {
         let mut app = make_app();
         app.phase = AppPhase::Streaming;
         let (tx, _rx) = make_agent_tx();
         app.handle_event(
-            TuiEvent::Terminal(CtEvent::Paste("should not appear".to_string())),
+            TuiEvent::Terminal(CtEvent::Paste("pasted text".to_string())),
             &tx,
         );
-        assert_eq!(app.input.text, "");
+        // REQ-TUI-093: input is non-blocking during streaming
+        assert_eq!(app.input.text, "pasted text");
     }
 
     // rtmx:req REQ-TUI-001

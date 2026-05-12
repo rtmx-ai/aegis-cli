@@ -39,18 +39,22 @@ impl App {
             }
             AppPhase::AwaitingApproval => return self.handle_approval_key(key),
             AppPhase::Streaming | AppPhase::ToolExecuting => {
-                // Ctrl+C cancels (handled by caller via cancel_token)
+                // Ctrl+C cancels and clears prompt queue (REQ-TUI-094)
                 if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL)
                 {
+                    self.prompt_queue.clear();
                     return Action::Quit;
                 }
-                return Action::Continue;
+                // REQ-TUI-093: fall through to basic input handling below.
+                // Command palette, file picker, and slash commands are
+                // suppressed during streaming -- only typing and queue
+                // submission are allowed.
             }
             AppPhase::Idle => {}
         }
 
-        // Command palette intercept: handle keys when palette is visible.
-        if self.command_palette.is_visible {
+        // Command palette intercept: handle keys when palette is visible (idle only).
+        if self.phase == AppPhase::Idle && self.command_palette.is_visible {
             match key.code {
                 KeyCode::Up => {
                     self.command_palette.prev();
@@ -203,13 +207,13 @@ impl App {
             }
         }
 
-        // File-picker intercept: capture keystrokes when picker is open.
-        if self.file_picker.is_some() {
+        // File-picker intercept: capture keystrokes when picker is open (idle only).
+        if self.phase == AppPhase::Idle && self.file_picker.is_some() {
             return self.handle_file_picker_key(key);
         }
 
-        // Search-mode intercept: capture keystrokes when search is active.
-        if self.input.in_search_mode() {
+        // Search-mode intercept: capture keystrokes when search is active (idle only).
+        if self.phase == AppPhase::Idle && self.input.in_search_mode() {
             match key.code {
                 KeyCode::Char(c) => {
                     self.input.search_insert_char(c);
@@ -230,11 +234,17 @@ impl App {
             }
         }
 
-        // Idle-phase key handling
+        // Key handling (shared between Idle and Streaming/ToolExecuting phases).
         match key.code {
             KeyCode::Enter if !key.modifiers.contains(KeyModifiers::SHIFT) => {
                 let text = self.input.submit();
                 if text.is_empty() {
+                    return Action::Continue;
+                }
+                // REQ-TUI-094: queue prompt if agent is busy
+                if self.phase == AppPhase::Streaming || self.phase == AppPhase::ToolExecuting {
+                    self.messages.push(ChatMessage::user(&text));
+                    self.prompt_queue.push_back(text);
                     return Action::Continue;
                 }
                 // Check for slash commands. Always push the user's input
@@ -270,9 +280,15 @@ impl App {
                 self.input.insert_newline();
                 Action::Continue
             }
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Quit,
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // During streaming, Ctrl+C is handled above in phase gate
+                Action::Quit
+            }
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Quit,
-            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('f')
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && self.phase == AppPhase::Idle =>
+            {
                 self.input.enter_search_mode();
                 Action::Continue
             }
@@ -287,7 +303,7 @@ impl App {
                 }
                 Action::Continue
             }
-            KeyCode::Esc => {
+            KeyCode::Esc if self.phase == AppPhase::Idle => {
                 if self.input.mode == crate::input::InputMode::Insert {
                     self.input.enter_normal_mode();
                 } else {
@@ -296,23 +312,35 @@ impl App {
                 Action::Continue
             }
             // Vim normal mode: 'o' opens new line below cursor and enters insert
-            KeyCode::Char('o') if self.input.mode == crate::input::InputMode::Normal => {
+            KeyCode::Char('o')
+                if self.phase == AppPhase::Idle
+                    && self.input.mode == crate::input::InputMode::Normal =>
+            {
                 self.input.enter_insert_mode();
                 self.input.move_end();
                 self.input.insert_newline();
                 Action::Continue
             }
             // Vim normal mode: 'i' enters insert mode (explicit for clarity)
-            KeyCode::Char('i') if self.input.mode == crate::input::InputMode::Normal => {
+            KeyCode::Char('i')
+                if self.phase == AppPhase::Idle
+                    && self.input.mode == crate::input::InputMode::Normal =>
+            {
                 self.input.enter_insert_mode();
                 Action::Continue
             }
             // Vim normal mode: n/N cycle search matches forward/backward
-            KeyCode::Char('n') if self.input.mode == crate::input::InputMode::Normal => {
+            KeyCode::Char('n')
+                if self.phase == AppPhase::Idle
+                    && self.input.mode == crate::input::InputMode::Normal =>
+            {
                 self.cycle_search_match(true);
                 Action::Continue
             }
-            KeyCode::Char('N') if self.input.mode == crate::input::InputMode::Normal => {
+            KeyCode::Char('N')
+                if self.phase == AppPhase::Idle
+                    && self.input.mode == crate::input::InputMode::Normal =>
+            {
                 self.cycle_search_match(false);
                 Action::Continue
             }
@@ -328,11 +356,11 @@ impl App {
                 }
                 Action::Continue
             }
-            KeyCode::Up => {
+            KeyCode::Up if self.phase == AppPhase::Idle => {
                 self.input.history_prev();
                 Action::Continue
             }
-            KeyCode::Down => {
+            KeyCode::Down if self.phase == AppPhase::Idle => {
                 self.input.history_next();
                 Action::Continue
             }
@@ -356,19 +384,21 @@ impl App {
                 self.input.move_end();
                 Action::Continue
             }
-            KeyCode::Char('@') => {
+            KeyCode::Char('@') if self.phase == AppPhase::Idle => {
                 self.input.insert_char('@');
                 self.open_file_picker();
                 Action::Continue
             }
             KeyCode::Char(c) => {
                 self.input.insert_char(c);
-                // Show/update command palette when typing /commands
-                if self.input.text.starts_with('/') && !self.input.text.contains(' ') {
-                    self.command_palette.show();
-                    self.command_palette.filter(&self.input.text);
-                } else if self.command_palette.is_visible {
-                    self.command_palette.hide();
+                // Show/update command palette when typing /commands (idle only)
+                if self.phase == AppPhase::Idle {
+                    if self.input.text.starts_with('/') && !self.input.text.contains(' ') {
+                        self.command_palette.show();
+                        self.command_palette.filter(&self.input.text);
+                    } else if self.command_palette.is_visible {
+                        self.command_palette.hide();
+                    }
                 }
                 Action::Continue
             }
