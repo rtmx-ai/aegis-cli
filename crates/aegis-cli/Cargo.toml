@@ -37,6 +37,19 @@ rustls = { workspace = true }
 [dependencies.sha2]
 workspace = true
 
+[dependencies.serde_json]
+workspace = true
+
+# REQ-BUILD-050: Airgap bundle extraction
+[dependencies.tar]
+version = "0.4"
+
+[dependencies.flate2]
+version = "1"
+
+[dependencies.tempfile]
+workspace = true
+
 [dev-dependencies]
 aegis-test-support = { path = "../aegis-test-support" }
 assert_cmd = { workspace = true }
@@ -44,8 +57,6 @@ assert_fs = { workspace = true }
 chrono = { workspace = true }
 cucumber = { workspace = true }
 predicates = { workspace = true }
-serde_json = { workspace = true }
-tempfile = { workspace = true }
 
 # REQ-TEST-020: Cucumber integration test binary.
 # Runs scenarios from tests/features/ against the real aegis ports.

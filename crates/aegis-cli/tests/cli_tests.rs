@@ -216,9 +216,10 @@ fn test_update_bundle_rejects_non_targz() {
 
 // rtmx:req REQ-BUILD-067
 #[test]
-fn test_update_bundle_accepts_valid_tar_gz() {
+fn test_update_bundle_validates_and_computes_sha256() {
     let dir = tempfile::tempdir().unwrap();
     let bundle_path = dir.path().join("aegis-1.0.0.tar.gz");
+    // Write a non-gzip file; path validation passes but extraction fails
     std::fs::write(&bundle_path, b"fake bundle").unwrap();
 
     Command::cargo_bin("aegis")
@@ -227,7 +228,7 @@ fn test_update_bundle_accepts_valid_tar_gz() {
         .arg("--bundle")
         .arg(bundle_path.to_str().unwrap())
         .assert()
-        .success()
+        .failure()
         .stderr(predicate::str::contains("SHA-256:"));
 }
 
