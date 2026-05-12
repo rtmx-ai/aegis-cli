@@ -10,6 +10,94 @@
 
 use std::collections::BTreeMap;
 
+/// Generated system prompt with tier markers, embedded at compile time.
+/// Produced by scripts/generate-system-prompt.sh from verified RTM data.
+const TIERED_SYSTEM_PROMPT: &str = include_str!("system_prompt.md");
+
+/// Tier delimiter prefix used to split the generated prompt.
+const TIER_MARKER_PREFIX: &str = "<!-- TIER:";
+
+/// Extract content for tiers up to the given token budget.
+///
+/// Parses `<!-- TIER:N -->` markers from the embedded prompt and returns
+/// concatenated content from T0 through the highest tier that fits within
+/// `token_budget`. T0 is always included regardless of budget.
+///
+/// Token estimation uses word_count * 1.3 as a rough approximation.
+pub fn load_tiered_prompt(token_budget: usize) -> String {
+    let tiers = parse_tiers(TIERED_SYSTEM_PROMPT);
+    if tiers.is_empty() {
+        return TIERED_SYSTEM_PROMPT.to_string();
+    }
+
+    let mut result = String::new();
+    let mut tokens_used: usize = 0;
+
+    for (i, tier_content) in tiers.iter().enumerate() {
+        let tier_tokens = estimate_tokens(tier_content);
+
+        // T0 is always included regardless of budget
+        if i == 0 {
+            result.push_str(tier_content);
+            tokens_used += tier_tokens;
+            continue;
+        }
+
+        if tokens_used + tier_tokens <= token_budget {
+            result.push_str("\n\n");
+            result.push_str(tier_content);
+            tokens_used += tier_tokens;
+        } else {
+            break;
+        }
+    }
+
+    result
+}
+
+/// Parse tier content blocks from the embedded prompt.
+///
+/// Splits on `<!-- TIER:N -->` markers and returns content between each
+/// marker pair. The `<!-- TIER:END -->` marker terminates the last tier.
+fn parse_tiers(prompt: &str) -> Vec<String> {
+    let mut tiers = Vec::new();
+    let mut current_tier: Option<String> = None;
+
+    for line in prompt.lines() {
+        if line.trim().starts_with(TIER_MARKER_PREFIX) {
+            // Save previous tier if any
+            if let Some(content) = current_tier.take() {
+                tiers.push(content.trim().to_string());
+            }
+            // Check if this is the END marker
+            if line.contains("TIER:END") {
+                break;
+            }
+            // Start new tier
+            current_tier = Some(String::new());
+        } else if let Some(ref mut content) = current_tier {
+            content.push_str(line);
+            content.push('\n');
+        }
+    }
+
+    // Capture any trailing tier without END marker
+    if let Some(content) = current_tier {
+        let trimmed = content.trim().to_string();
+        if !trimmed.is_empty() {
+            tiers.push(trimmed);
+        }
+    }
+
+    tiers
+}
+
+/// Rough token estimate: word_count * 1.3
+fn estimate_tokens(text: &str) -> usize {
+    let word_count = text.split_whitespace().count();
+    (word_count as f64 * 1.3).ceil() as usize
+}
+
 /// Base system prompt shipped with the aegis binary (REQ-AGENT-042).
 ///
 /// Teaches the model its identity, available tools, security posture,
@@ -111,6 +199,19 @@ impl SystemPromptManager {
     pub fn with_base() -> Self {
         let mut mgr = Self::new();
         mgr.set_layer(SystemPromptLayer::Base, BASE_SYSTEM_PROMPT);
+        mgr
+    }
+
+    /// Create a manager with the tiered system prompt, loading tiers
+    /// up to a budget of `context_window / 20` (5% ceiling).
+    ///
+    /// This uses the generated prompt from verified RTM data, providing
+    /// the model with complete self-awareness of aegis capabilities
+    /// scaled to the provider's context window.
+    pub fn with_tiered(context_window: usize) -> Self {
+        let budget = context_window / 20;
+        let mut mgr = Self::new();
+        mgr.set_layer(SystemPromptLayer::Base, load_tiered_prompt(budget));
         mgr
     }
 
@@ -273,6 +374,75 @@ mod tests {
     fn layer_ordering_matches_enum_variants() {
         assert!(SystemPromptLayer::Base < SystemPromptLayer::Project);
         assert!(SystemPromptLayer::Project < SystemPromptLayer::Session);
+    }
+
+    // rtmx:req REQ-AGENT-051
+    #[test]
+    fn test_tier_slicing_by_context_budget() {
+        // With a large budget, all tiers should load
+        let full = load_tiered_prompt(100_000);
+        assert!(full.contains("aegis"), "T0 identity must be present");
+
+        // With a tiny budget, only T0 should load
+        let minimal = load_tiered_prompt(1);
+        assert!(
+            minimal.contains("aegis"),
+            "T0 must always load regardless of budget"
+        );
+        assert!(
+            minimal.len() < full.len(),
+            "minimal prompt should be shorter than full prompt"
+        );
+    }
+
+    // rtmx:req REQ-AGENT-051
+    #[test]
+    fn test_parse_tiers_extracts_all_tiers() {
+        let tiers = parse_tiers(TIERED_SYSTEM_PROMPT);
+        assert!(
+            tiers.len() >= 2,
+            "must extract at least T0 and T1, got {}",
+            tiers.len()
+        );
+        // T0 must contain identity
+        assert!(tiers[0].contains("aegis"), "T0 must contain aegis identity");
+    }
+
+    // rtmx:req REQ-AGENT-051
+    #[test]
+    fn test_with_tiered_respects_context_window() {
+        // 8k context -> budget of 400 tokens -> should get T0 only
+        let mgr_small = SystemPromptManager::with_tiered(8_000);
+        let small_prompt = mgr_small.build();
+
+        // 1M context -> budget of 50k tokens -> should get all tiers
+        let mgr_large = SystemPromptManager::with_tiered(1_000_000);
+        let large_prompt = mgr_large.build();
+
+        assert!(
+            large_prompt.len() >= small_prompt.len(),
+            "large context window should produce longer or equal prompt"
+        );
+        assert!(
+            !small_prompt.is_empty(),
+            "even small context must produce a prompt"
+        );
+    }
+
+    // rtmx:req REQ-AGENT-051
+    #[test]
+    fn test_t0_always_loaded_even_with_zero_budget() {
+        let prompt = load_tiered_prompt(0);
+        assert!(!prompt.is_empty(), "T0 must load even with zero budget");
+        assert!(prompt.contains("aegis"), "T0 must contain aegis identity");
+    }
+
+    // rtmx:req REQ-AGENT-051
+    #[test]
+    fn test_tiered_prompt_is_deterministic() {
+        let a = load_tiered_prompt(10_000);
+        let b = load_tiered_prompt(10_000);
+        assert_eq!(a, b, "same budget must produce identical prompt");
     }
 
     // rtmx:req REQ-AGENT-015
