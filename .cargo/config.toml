@@ -33,5 +33,11 @@ rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 [target.aarch64-apple-darwin]
 rustflags = ["-C", "split-debuginfo=unpacked"]
 
+# REQ-BUILD-070: aarch64 Linux musl cross-compilation linker.
+# Uses the aarch64-linux-gnu-gcc cross-compiler to link musl-targeted binaries.
+# Install: sudo apt-get install gcc-aarch64-linux-gnu
+[target.aarch64-unknown-linux-musl]
+linker = "aarch64-linux-gnu-gcc"
+
 [target.x86_64-apple-darwin]
 rustflags = ["-C", "split-debuginfo=unpacked"]

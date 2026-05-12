@@ -531,6 +531,9 @@ jobs:
             os: ubuntu-latest
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+          # REQ-BUILD-070: aarch64 Linux musl cross-compilation target
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -540,12 +543,25 @@ jobs:
       # rtmx:req REQ-BUILD-013 -- sccache compilation caching
       - uses: Mozilla-Actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: Swatinem/rust-cache@v2
-      - name: Install musl tools
-        if: contains(matrix.target, 'musl')
+      - name: Install musl tools (x86_64)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get update -qq && sudo apt-get install -y musl-tools
+      # REQ-BUILD-070: Install aarch64 cross-compilation toolchain
+      - name: Install aarch64 cross tools
+        if: matrix.target == 'aarch64-unknown-linux-musl'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
       # REQ-HDN-005: Use CI profile (thin LTO) instead of full release.
       - name: Build binary
         run: cargo build --profile ci --target ${{ matrix.target }}
+      # REQ-BUILD-072: Smoke test aarch64 binary via qemu-user-static
+      - name: Smoke test aarch64 binary (qemu)
+        if: matrix.target == 'aarch64-unknown-linux-musl'
+        run: |
+          sudo apt-get install -y qemu-user-static
+          qemu-aarch64-static ./target/aarch64-unknown-linux-musl/ci/aegis --help
+          echo "PASS: aarch64 binary runs under qemu-user-static"
       - name: Upload binary
         uses: actions/upload-artifact@v7
         with:
@@ -587,6 +603,9 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          # REQ-BUILD-070: Verify aarch64 musl binary is statically linked
+          - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
     runs-on: ${{ matrix.os }}
     steps:

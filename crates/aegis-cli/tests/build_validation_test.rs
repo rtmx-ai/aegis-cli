@@ -240,9 +240,9 @@ fn test_every_release_platform_has_signing() {
         release.contains("Set-AuthenticodeSignature"),
         "release workflow must Authenticode-sign Windows artifacts (REQ-BUILD-041)"
     );
-    // Sign job depends on all three platform builds
+    // Sign job depends on all platform builds
     assert!(
-        release.contains("needs: [build-linux, build-macos, build-windows]"),
+        release.contains("needs: [build-linux, build-linux-aarch64, build-macos, build-windows]"),
         "sign job must depend on all platform builds to sign everything"
     );
 }
@@ -520,6 +520,7 @@ fn test_deny_toml_covers_all_release_targets() {
         "x86_64-pc-windows-msvc",
         "aarch64-apple-darwin",
         "x86_64-apple-darwin",
+        "aarch64-unknown-linux-musl",
     ] {
         assert!(
             content.contains(target),
@@ -634,6 +635,103 @@ fn test_bdd_step_reuse_audit_in_lint() {
     assert!(
         content.contains("DUPLICATE") || content.contains("reuse") || content.contains("similar"),
         "BDD linter should audit step definition reuse"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// REQ-BUILD-070: aarch64-unknown-linux-musl cross-compilation target in CI
+// ---------------------------------------------------------------------------
+
+// rtmx:req REQ-BUILD-070
+#[test]
+fn test_ci_has_aarch64_linux_target() {
+    let ci = read_ci_yml();
+    assert!(
+        ci.contains("aarch64-unknown-linux-musl"),
+        "CI binary-build matrix must include aarch64-unknown-linux-musl target"
+    );
+    assert!(
+        ci.contains("gcc-aarch64-linux-gnu"),
+        "CI must install gcc-aarch64-linux-gnu for aarch64 cross-compilation"
+    );
+    // Verify toolchain config exists
+    let toolchain = workspace_root().join("rust-toolchain.toml");
+    let toolchain_content = std::fs::read_to_string(&toolchain).unwrap();
+    assert!(
+        toolchain_content.contains("aarch64-unknown-linux-musl"),
+        "rust-toolchain.toml must include aarch64-unknown-linux-musl target"
+    );
+    // Verify cargo config has linker setting
+    let cargo_config = workspace_root().join(".cargo/config.toml");
+    let cargo_content = std::fs::read_to_string(&cargo_config).unwrap();
+    assert!(
+        cargo_content.contains("[target.aarch64-unknown-linux-musl]"),
+        ".cargo/config.toml must configure aarch64-unknown-linux-musl linker"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// REQ-BUILD-071: Release workflow matrix includes aarch64 target
+// ---------------------------------------------------------------------------
+
+// rtmx:req REQ-BUILD-071
+#[test]
+fn test_release_has_aarch64_linux_build() {
+    let release = read_release_yml();
+    assert!(
+        release.contains("aarch64-unknown-linux-musl"),
+        "release workflow must build for aarch64-unknown-linux-musl"
+    );
+    assert!(
+        release.contains("linux-aarch64"),
+        "release workflow must produce linux-aarch64 tarball"
+    );
+    assert!(
+        release.contains("build-linux-aarch64"),
+        "release workflow must have a build-linux-aarch64 job"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// REQ-BUILD-072: Smoke test aarch64 binary with qemu-user-static
+// ---------------------------------------------------------------------------
+
+// rtmx:req REQ-BUILD-072
+#[test]
+fn test_ci_has_aarch64_smoke_test() {
+    let ci = read_ci_yml();
+    assert!(
+        ci.contains("qemu-user-static"),
+        "CI must install qemu-user-static for aarch64 smoke testing"
+    );
+    assert!(
+        ci.contains("qemu-aarch64-static"),
+        "CI must run aarch64 binary via qemu-aarch64-static"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// REQ-BUILD-073: Release asset upload for aarch64 binary
+// ---------------------------------------------------------------------------
+
+// rtmx:req REQ-BUILD-073
+#[test]
+fn test_release_has_aarch64_asset_upload() {
+    let release = read_release_yml();
+    // aarch64 artifacts must be included in the sign job
+    assert!(
+        release.contains("release-artifacts-linux-aarch64"),
+        "release sign job must download aarch64 Linux artifacts"
+    );
+    // Sign job must depend on the aarch64 build
+    assert!(
+        release.contains("build-linux-aarch64"),
+        "release sign job must depend on build-linux-aarch64"
+    );
+    // aarch64 tarball is created
+    assert!(
+        release.contains("linux-aarch64.tar.gz"),
+        "release must create linux-aarch64 tarball"
     );
 }
 

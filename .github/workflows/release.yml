@@ -150,6 +150,68 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
+  # Job 1a: Build Linux aarch64 musl static binary (REQ-BUILD-071)
+  # ---------------------------------------------------------------------------
+  build-linux-aarch64:
+    name: Build Linux aarch64 Artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+      # REQ-BUILD-070: Install aarch64 cross-compilation toolchain
+      - name: Install aarch64 cross tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
+      - name: Build release binary (aarch64 musl static)
+        run: |
+          cargo build --release --package aegis-cli --target aarch64-unknown-linux-musl
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      # REQ-BUILD-072: Smoke test aarch64 binary via qemu-user-static
+      - name: Smoke test aarch64 binary (qemu)
+        run: |
+          sudo apt-get install -y qemu-user-static
+          qemu-aarch64-static ./target/aarch64-unknown-linux-musl/release/aegis --help
+          echo "PASS: aarch64 binary runs under qemu-user-static"
+      # REQ-BUILD-073: Create release tarball for aarch64
+      - name: Create release tarball
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TARBALL_NAME="aegis-${VERSION}-linux-aarch64"
+          STAGING="target/release-staging/${TARBALL_NAME}"
+          mkdir -p "$STAGING"
+          cp target/aarch64-unknown-linux-musl/release/aegis "$STAGING/aegis"
+          cp LICENSE "$STAGING/LICENSE"
+          cp README.md "$STAGING/README.md"
+          cd target/release-staging
+          tar czf "${TARBALL_NAME}.tar.gz" "${TARBALL_NAME}"
+          echo "Created: ${TARBALL_NAME}.tar.gz"
+      - name: Collect artifacts for signing
+        run: |
+          mkdir -p target/release-artifacts
+          VERSION="${{ steps.version.outputs.version }}"
+          # Binary
+          cp target/aarch64-unknown-linux-musl/release/aegis target/release-artifacts/aegis-linux-aarch64
+          # Release tarball
+          cp target/release-staging/aegis-*-linux-aarch64.tar.gz target/release-artifacts/
+          echo "--- aarch64 artifacts ---"
+          ls -la target/release-artifacts/
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-artifacts-linux-aarch64
+          path: target/release-artifacts/*
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
   # Job 1b: Build macOS aarch64 (Apple Silicon) binary (REQ-BUILD-026)
   # ---------------------------------------------------------------------------
   build-macos:
@@ -314,12 +376,18 @@ jobs:
     name: Sign Artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [build-linux, build-macos, build-windows]
+    needs: [build-linux, build-linux-aarch64, build-macos, build-windows]
     steps:
       - name: Download Linux build artifacts
         uses: actions/download-artifact@v8
         with:
           name: release-artifacts
+          path: artifacts
+      # REQ-BUILD-073: Include aarch64 Linux artifacts in signing
+      - name: Download Linux aarch64 build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: release-artifacts-linux-aarch64
           path: artifacts
       - name: Download macOS build artifacts
         uses: actions/download-artifact@v8
