@@ -1,0 +1,92 @@
+## Capability categories
+
+The following categories describe the functional areas of aegis. Each category
+lists the number of requirements delivered out of the total tracked.
+
+<!-- CATEGORIES_START -->
+{{#each categories}}
+### {{category_name}} ({{complete_count}}/{{total_count}} delivered)
+
+{{category_description}}
+
+{{/each}}
+<!-- CATEGORIES_END -->
+
+The category descriptions below are static references used by the generation
+script to populate the template above.
+
+### AGENT
+Agentic REA (Read-Evaluate-Act) loop that drives the conversation. Handles
+function calling against the LLM, tool orchestration and dispatch, context
+window management including compaction, and conversation history with session
+persistence. The agent loop is the core execution engine that ties together
+the LLM provider, tool executor, approval gate, and audit ledger.
+
+### AUDIT
+Immutable JSONL audit ledger for compliance and forensics. Provides identity
+binding (every entry ties to an authenticated user), session correlation (every
+entry ties to a session ID), crash recovery (incomplete sessions are detected
+on next startup), and size-based rotation. The ledger records metadata only --
+never CUI content.
+
+### BUILD
+Static binary production for two target platforms: x86_64-unknown-linux-musl
+(RHEL 8/9) and x86_64-pc-windows-msvc (Windows 10/11). Includes packaging
+(deb, rpm, msi), binary signing, SBOM generation, air-gap bundle creation
+(binary + local model weights + configuration), and cross-compilation in CI.
+
+### CLI
+Composition root that wires all bounded contexts together. Handles clap-based
+argument parsing, subcommand dispatch (chat, init, status, version), signal
+handling, and graceful shutdown sequencing.
+
+### HITL
+Human-in-the-loop approval gate that interposes between the agent and all
+state-mutating tool calls. Classifies tool risk (read-only, write, destructive),
+presents approval prompts with full command or diff preview, and provides a
+kill switch (Ctrl+K) that cancels pending operations and flushes the approval
+queue.
+
+### INFRA
+Plugin host for infrastructure-as-code operations via the aegis-infra/v1
+protocol. Manages plugin subprocess lifecycle, parses NDJSON event streams,
+aggregates health check results across plugin phases (PREFLIGHT,
+API_ENABLEMENT, PROVISION, VERIFY), and reports plugin status to the TUI.
+
+### LLM
+Multi-provider abstraction layer supporting Vertex AI (GCP), Bedrock (AWS),
+Azure OpenAI, and local models (Ollama, vLLM). Handles streaming responses,
+token counting, provider-specific authentication, model capability detection,
+and automatic fallback when a provider is unreachable.
+
+### ONBOARD
+The `aegis init` interactive state machine that configures a new installation.
+Walks the user through selecting a deployment mode (managed, self-managed,
+air-gapped), configuring the LLM endpoint, testing connectivity, and persisting
+configuration. Supports re-running to change configuration without losing
+session history.
+
+### RTMX
+Integration with the RTMX requirements traceability tool. Tracks requirement
+lifecycle status (PROPOSED, IN_PROGRESS, COMPLETE), maps tests to requirements
+via `// rtmx:req` markers, computes dependency graphs, and reports health
+metrics for CI enforcement.
+
+### SECURITY
+Security boundary enforcement. Implements the mandatory `.aegisignore`
+blocklist (cannot be disabled), CUI marker detection (scans outbound content
+for controlled markings), DLP scanning (PII pattern matching), endpoint
+classification (government vs. commercial), and transport security (TLS 1.3
+minimum, FIPS 140-2 validated cryptography).
+
+### TEST
+CI pipeline configuration and test infrastructure. Defines the cross-platform
+test matrix (Linux + Windows), coverage thresholds, integration test harness,
+benchmark suite, and the pre-commit/pre-push hook chain that mirrors CI
+locally.
+
+### TUI
+Terminal user interface built on ratatui. Implements a single-pane layout with
+streaming markdown rendering, syntax highlighting for code blocks, HITL
+approval prompts inline in the chat flow, slash command parsing, and status bar
+with model/provider/token information.
