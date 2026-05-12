@@ -559,7 +559,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
       # REQ-HDN-005: Use CI profile (thin LTO) instead of full release.
+      # For aarch64-musl cross-compilation, set CC and CFLAGS to avoid glibc
+      # fortification symbols (__memcpy_chk etc.) leaking into C deps like zstd-sys.
       - name: Build binary
+        env:
+          CC_aarch64_unknown_linux_musl: aarch64-linux-gnu-gcc
+          CFLAGS_aarch64_unknown_linux_musl: "-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
         run: cargo build --profile ci --target ${{ matrix.target }}
       # REQ-BUILD-072: Smoke test aarch64 binary via qemu-user-static
       - name: Smoke test aarch64 binary (qemu)
