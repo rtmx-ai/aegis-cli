@@ -66,6 +66,37 @@ fn test_ci_has_unit_tests_on_both_platforms() {
     );
 }
 
+// rtmx:req REQ-TEST-043
+#[test]
+fn test_integration_tests_run_on_windows() {
+    let ci = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join(".github/workflows/ci.yml");
+    let content = std::fs::read_to_string(&ci).unwrap();
+    // REQ-TEST-043: integration tests must run on Windows in CI
+    assert!(
+        content.contains("integration-tests-windows"),
+        "CI must have a Windows integration tests job"
+    );
+    assert!(
+        content.contains("Integration Tests (windows)"),
+        "Windows integration test job must have correct display name"
+    );
+    // Verify it runs on windows-latest
+    assert!(
+        content.contains("runs-on: windows-latest"),
+        "Windows integration tests must run on windows-latest"
+    );
+    // Verify MCP tests are excluded (Unix-only)
+    assert!(
+        content.contains("mcp_"),
+        "Windows integration tests should filter out Unix-only MCP tests"
+    );
+}
+
 // rtmx:req REQ-TEST-011
 #[test]
 fn test_ci_has_rhel_coverage_via_rpm_smoke_test() {
