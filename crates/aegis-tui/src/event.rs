@@ -52,6 +52,12 @@ pub enum TuiEvent {
     AuthDeviceCodeComplete { provider: String },
     /// Device code auth flow failed.
     AuthDeviceCodeFailed { provider: String, reason: String },
+    /// Model discovery completed successfully (REQ-TUI-090).
+    ModelsReady {
+        models: Vec<(String, String)>, // (model_id, status)
+    },
+    /// Model discovery failed (REQ-TUI-090).
+    ModelsError { message: String },
 }
 
 /// A pending HITL approval request with the channel to send the decision back.

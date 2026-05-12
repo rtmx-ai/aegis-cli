@@ -1518,6 +1518,27 @@ async fn run_interactive_chat(
             });
         }
 
+        // REQ-TUI-090: Model discovery for /model picker dropdown.
+        if app.pending_model_discovery {
+            app.pending_model_discovery = false;
+            let cfg = shared_provider_config.read().unwrap().clone();
+            let kind = cfg.kind;
+            let endpoint = cfg.endpoint.clone();
+            let event_tx_models = event_tx.clone();
+            tokio::spawn(async move {
+                match aegis_llm::providers::list_models(kind, &endpoint).await {
+                    Ok(models) => {
+                        let pairs: Vec<(String, String)> =
+                            models.into_iter().map(|m| (m.model_id, m.status)).collect();
+                        let _ = event_tx_models.send(TuiEvent::ModelsReady { models: pairs });
+                    }
+                    Err(e) => {
+                        let _ = event_tx_models.send(TuiEvent::ModelsError { message: e });
+                    }
+                }
+            });
+        }
+
         // REQ-TUI-060: autosave after every completed assistant turn so a
         // crash right after the turn (hot reload, panic, OOM) does not lose
         // the just-finished response.

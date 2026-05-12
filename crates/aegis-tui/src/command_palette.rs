@@ -226,6 +226,7 @@ impl CommandPalette {
     pub fn grammar_for(&self, command_name: &str) -> Option<CommandGrammar> {
         match command_name {
             "/connect" => Some(connect_grammar()),
+            "/model" => Some(model_grammar()),
             _ => None,
         }
     }
@@ -397,8 +398,11 @@ impl CommandPalette {
                             if hardcoded.is_empty() {
                                 // No hardcoded either -- show loading indicator
                                 return vec![CommandEntry {
-                                    name: "Discovering projects...".into(),
-                                    description: "Querying CSP for available projects".into(),
+                                    name: format!("Discovering {}...", slot.name),
+                                    description: format!(
+                                        "Querying provider for available {}",
+                                        slot.name
+                                    ),
                                     usage: None,
                                 }];
                             }
@@ -476,6 +480,22 @@ pub fn connect_grammar() -> CommandGrammar {
                 prefix: Some("--project=".into()),
             },
         ],
+    }
+}
+
+/// Build the /model command grammar with a single model selection slot.
+/// The slot is populated dynamically via `inject_options("model", ...)`
+/// when async model discovery completes (REQ-TUI-090).
+pub fn model_grammar() -> CommandGrammar {
+    CommandGrammar {
+        name: "/model".into(),
+        description: "Switch active model".into(),
+        slots: vec![TokenSlot {
+            name: "model".into(),
+            kind: TokenKind::Enum(vec![]), // populated dynamically by list_models()
+            required: true,
+            prefix: None,
+        }],
     }
 }
 

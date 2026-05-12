@@ -141,6 +141,10 @@ impl App {
                         if let Some(grammar) = self.command_palette.grammar_for(&cmd_name) {
                             self.command_palette.enter_token_stage(grammar);
                             self.input.ghost_text = self.command_palette.stage_hint();
+                            // REQ-TUI-090: trigger async model discovery
+                            if cmd_name == "/model" {
+                                self.pending_model_discovery = true;
+                            }
                             return Action::Continue;
                         }
                     }

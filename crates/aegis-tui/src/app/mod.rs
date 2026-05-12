@@ -118,6 +118,11 @@ pub struct App {
     /// Prompt queue: prompts submitted while agent is busy (REQ-TUI-094).
     pub prompt_queue: VecDeque<String>,
 
+    /// Pending model discovery request for the composition root (REQ-TUI-090).
+    pub pending_model_discovery: bool,
+    /// Cached model discovery results for validation (REQ-TUI-092).
+    pub discovered_models: Vec<(String, String)>,
+
     /// Rollback journal for `/undo`: captures pre-write file state.
     pub rollback_journal: RollbackJournal,
 
@@ -164,6 +169,8 @@ impl App {
             pending_csp_discovery: None,
             csp_discovery_status: CspDiscoveryStatus::Idle,
             prompt_queue: VecDeque::new(),
+            pending_model_discovery: false,
+            discovered_models: Vec::new(),
             rollback_journal: RollbackJournal::new(50),
             auth_provider_name: None,
             auth_ttl_secs: None,
@@ -355,6 +362,47 @@ impl App {
                     "Authentication failed for {provider}: {reason}\n\
                      Try again with /connect"
                 )));
+                Action::Continue
+            }
+            // REQ-TUI-090: Model discovery completed.
+            TuiEvent::ModelsReady { models } => {
+                use crate::command_palette::TokenOption;
+                let current = self.model_name.clone();
+                self.discovered_models = models.clone();
+                let options: Vec<TokenOption> = models
+                    .into_iter()
+                    .map(|(id, status)| {
+                        let is_current = id == current;
+                        let desc = if is_current {
+                            format!("{status} (current)")
+                        } else {
+                            status
+                        };
+                        TokenOption {
+                            value: id.clone(),
+                            label: id,
+                            description: desc,
+                        }
+                    })
+                    .collect();
+                self.command_palette.inject_options("model", options);
+                self.command_palette.refresh_current_slot();
+                Action::Continue
+            }
+            TuiEvent::ModelsError { message } => {
+                self.messages.push(ChatMessage::system(format!(
+                    "Model discovery failed: {message}"
+                )));
+                use crate::command_palette::TokenOption;
+                self.command_palette.inject_options(
+                    "model",
+                    vec![TokenOption {
+                        value: "__manual__".into(),
+                        label: "Type model name manually...".into(),
+                        description: message,
+                    }],
+                );
+                self.command_palette.refresh_current_slot();
                 Action::Continue
             }
             TuiEvent::Tick => {

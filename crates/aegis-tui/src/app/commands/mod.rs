@@ -14,7 +14,7 @@ use crate::slash_commands::SlashCommand;
 use connect::{ConnectProvider, ConnectRequest};
 
 impl App {
-    pub(crate) fn execute_slash_command(&mut self, cmd: SlashCommand) -> Action {
+    pub fn execute_slash_command(&mut self, cmd: SlashCommand) -> Action {
         match cmd {
             SlashCommand::Clear => {
                 self.messages.clear();
@@ -67,6 +67,28 @@ impl App {
                         self.model_name
                     )));
                 } else {
+                    // REQ-TUI-092: validate model against discovered models
+                    if !self.discovered_models.is_empty()
+                        && let Some((_, status)) =
+                            self.discovered_models.iter().find(|(id, _)| id == &name)
+                        && status != "available"
+                    {
+                        let available: Vec<String> = self
+                            .discovered_models
+                            .iter()
+                            .filter(|(_, s)| s == "available")
+                            .map(|(id, _)| format!("  {id}"))
+                            .collect();
+                        let alt = if available.is_empty() {
+                            String::new()
+                        } else {
+                            format!("\nAvailable models:\n{}", available.join("\n"))
+                        };
+                        self.messages.push(ChatMessage::error(format!(
+                            "Model '{name}' is {status}.{alt}"
+                        )));
+                        return Action::Continue;
+                    }
                     tracing::info!(
                         old = %self.model_name,
                         new = %name,
