@@ -6,6 +6,7 @@ use aegis_domain::ports::LlmProvider;
 use crate::azure::AzureProvider;
 use crate::bedrock::BedrockProvider;
 use crate::config::{ProviderConfig, ProviderKind};
+use crate::dlp_gate::DlpGatedProvider;
 use crate::local::LocalProvider;
 use crate::vertex::VertexProvider;
 
@@ -14,21 +15,25 @@ use crate::vertex::VertexProvider;
 /// Resolves authentication automatically. For testable construction
 /// with pre-resolved auth, use `create_provider_with_token`.
 pub fn create_provider(config: &ProviderConfig) -> Result<Box<dyn LlmProvider>, DomainError> {
-    match config.kind {
-        ProviderKind::Local => Ok(Box::new(LocalProvider::new(config)?)),
+    let provider: Box<dyn LlmProvider> = match config.kind {
+        ProviderKind::Local => Box::new(LocalProvider::new(config)?),
         ProviderKind::Vertex => {
             let access_token = crate::auth::resolve_gcp_access_token()?;
-            Ok(Box::new(VertexProvider::new(config, access_token)?))
+            Box::new(VertexProvider::new(config, access_token)?)
         }
         ProviderKind::Bedrock => {
             let auth = crate::auth::resolve_auth(config)?;
-            Ok(Box::new(BedrockProvider::new(config, auth)?))
+            Box::new(BedrockProvider::new(config, auth)?)
         }
         ProviderKind::Azure => {
             let auth = crate::auth::resolve_auth(config)?;
-            Ok(Box::new(AzureProvider::new(config, auth)?))
+            Box::new(AzureProvider::new(config, auth)?)
         }
-    }
+    };
+    // REQ-SECURITY-006: wrap all providers with DLP gate.
+    // Local endpoints are unconditionally allowed by the gate's
+    // classify_endpoint() fast path, so the overhead is negligible.
+    Ok(Box::new(DlpGatedProvider::wrap(provider, &config.endpoint)))
 }
 
 /// Create a Vertex AI provider with a pre-resolved access token.

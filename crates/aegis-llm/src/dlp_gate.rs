@@ -17,7 +17,10 @@
 //! stream path is a separate integration (future work); this module only
 //! exposes [`DlpTransmissionGate::check`].
 
+use aegis_domain::error::DomainError;
+use aegis_domain::ports::{LlmProvider, Message, ProviderHealth, Role, TokenStream, ToolSchema};
 use aegis_security::dlp::{DlpCategory, DlpMatch, DlpScanner};
+use async_trait::async_trait;
 
 /// Classification of the remote endpoint, controlling what content may
 /// be transmitted to it.
@@ -287,6 +290,59 @@ impl DlpTransmissionGate {
                 DlpGateDecision::Allow
             }
         }
+    }
+}
+
+/// LLM provider decorator that checks all outbound user messages
+/// through the DLP transmission gate before forwarding to the inner
+/// provider (REQ-SECURITY-006).
+///
+/// If any user message contains CUI/PII that the gate blocks for the
+/// configured endpoint, the request is denied with `DomainError::DlpBlocked`
+/// and nothing is sent to the remote model.
+pub struct DlpGatedProvider {
+    inner: Box<dyn LlmProvider>,
+    gate: DlpTransmissionGate,
+    endpoint_url: String,
+}
+
+impl DlpGatedProvider {
+    /// Wrap an existing provider with DLP enforcement.
+    pub fn wrap(inner: Box<dyn LlmProvider>, endpoint_url: impl Into<String>) -> Self {
+        Self {
+            inner,
+            gate: DlpTransmissionGate::new(),
+            endpoint_url: endpoint_url.into(),
+        }
+    }
+}
+
+#[async_trait]
+impl LlmProvider for DlpGatedProvider {
+    async fn stream(
+        &self,
+        messages: &[Message],
+        tools: &[ToolSchema],
+    ) -> Result<Box<dyn TokenStream>, DomainError> {
+        // Scan user messages for CUI/PII before transmission.
+        // System and assistant messages are not scanned because they
+        // originate from trusted sources (the binary or the model).
+        for msg in messages {
+            if msg.role != Role::User {
+                continue;
+            }
+            match self.gate.check(&msg.content, &self.endpoint_url) {
+                DlpGateDecision::Allow => {}
+                DlpGateDecision::Block { reason, .. } => {
+                    return Err(DomainError::DlpBlocked { reason });
+                }
+            }
+        }
+        self.inner.stream(messages, tools).await
+    }
+
+    async fn health_check(&self) -> ProviderHealth {
+        self.inner.health_check().await
     }
 }
 

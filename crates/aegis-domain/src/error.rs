@@ -72,6 +72,10 @@ pub enum DomainError {
     #[error("authentication token expired for {provider_kind}")]
     AuthExpired { provider_kind: String },
 
+    /// DLP transmission gate blocked outbound content (REQ-SECURITY-006).
+    #[error("DLP blocked: {reason}")]
+    DlpBlocked { reason: String },
+
     #[error("configuration error: {message}")]
     ConfigError { message: String },
 
