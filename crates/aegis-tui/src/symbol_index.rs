@@ -112,6 +112,70 @@ fn extract_identifier(line: &str, keyword: &str) -> Option<String> {
     if name.is_empty() { None } else { Some(name) }
 }
 
+/// A location where a symbol was found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SymbolLocation {
+    pub file_path: String,
+    pub line: usize,
+    pub kind: SymbolKind,
+}
+
+/// Index mapping symbol names to their locations across multiple files.
+#[derive(Debug, Default)]
+pub struct SymbolIndex {
+    entries: std::collections::HashMap<String, Vec<SymbolLocation>>,
+}
+
+impl SymbolIndex {
+    /// Create a new empty index.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add all symbols from a file to the index.
+    pub fn index_file(&mut self, content: &str, file_path: &str) {
+        let symbols = extract_symbols(content, file_path);
+        for sym in symbols {
+            self.entries
+                .entry(sym.name)
+                .or_default()
+                .push(SymbolLocation {
+                    file_path: sym.file_path,
+                    line: sym.line,
+                    kind: sym.kind,
+                });
+        }
+    }
+
+    /// Look up all locations for a given symbol name (exact match).
+    pub fn lookup(&self, name: &str) -> &[SymbolLocation] {
+        self.entries.get(name).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+
+    /// Search for symbols matching a prefix (case-insensitive).
+    pub fn search(&self, query: &str) -> Vec<(&str, &[SymbolLocation])> {
+        let query_lower = query.to_lowercase();
+        let mut results: Vec<(&str, &[SymbolLocation])> = self
+            .entries
+            .iter()
+            .filter(|(name, _)| name.to_lowercase().contains(&query_lower))
+            .map(|(name, locs)| (name.as_str(), locs.as_slice()))
+            .collect();
+        results.sort_by_key(|(name, _)| name.to_lowercase());
+        results
+    }
+
+    /// Total number of unique symbol names in the index.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Whether the index is empty.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,6 +300,50 @@ const add = (a, b) => a + b;
         assert!(
             symbols.is_empty(),
             "unknown extension should return empty Vec"
+        );
+    }
+
+    // rtmx:req REQ-TUI-084
+    #[test]
+    fn test_symbol_index_lookup() {
+        let mut index = SymbolIndex::new();
+        assert!(index.is_empty());
+
+        let rust_src = "pub fn main() {}\nstruct Config {}\nfn helper() {}";
+        index.index_file(rust_src, "src/main.rs");
+
+        assert!(!index.is_empty());
+        assert!(index.len() >= 3);
+
+        // Exact lookup
+        let main_locs = index.lookup("main");
+        assert_eq!(main_locs.len(), 1);
+        assert_eq!(main_locs[0].file_path, "src/main.rs");
+        assert_eq!(main_locs[0].line, 1);
+        assert_eq!(main_locs[0].kind, SymbolKind::Function);
+
+        let config_locs = index.lookup("Config");
+        assert_eq!(config_locs.len(), 1);
+        assert_eq!(config_locs[0].kind, SymbolKind::Struct);
+
+        // Missing symbol
+        assert!(index.lookup("nonexistent").is_empty());
+
+        // Search by prefix
+        let results = index.search("con");
+        assert!(
+            results.iter().any(|(name, _)| *name == "Config"),
+            "search for 'con' must find Config"
+        );
+
+        // Multiple files
+        let py_src = "def main():\n    pass\nclass Config:\n    pass";
+        index.index_file(py_src, "app.py");
+        let main_locs = index.lookup("main");
+        assert_eq!(
+            main_locs.len(),
+            2,
+            "main should appear in both Rust and Python files"
         );
     }
 }

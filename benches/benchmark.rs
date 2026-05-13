@@ -181,10 +181,68 @@ fn bench_tool_dispatch(c: &mut Criterion) {
     group.finish();
 }
 
+// ---------------------------------------------------------------------------
+// 4. Agent loop iteration overhead (REQ-TEST-010)
+// ---------------------------------------------------------------------------
+
+fn bench_agent_loop_iteration_overhead(c: &mut Criterion) {
+    use aegis_agent::loop_runner::AgentConfig;
+    use aegis_agent::working_memory::WorkingMemory;
+
+    let mut group = c.benchmark_group("agent_loop_overhead");
+
+    // Benchmark: working memory creation + render (done each iteration)
+    group.bench_function("working_memory_new_and_render", |b| {
+        b.iter(|| {
+            let wm = WorkingMemory::new(black_box("Fix the authentication bug in src/auth.rs"));
+            let msg = wm.render();
+            black_box(msg);
+        });
+    });
+
+    // Benchmark: construct initial history (system + working memory + user)
+    group.bench_function("build_initial_history", |b| {
+        let system_prompt = "You are an AI coding assistant.".repeat(100);
+        let user_prompt = "Fix the authentication bug in src/auth.rs";
+        b.iter(|| {
+            let wm = WorkingMemory::new(black_box(user_prompt));
+            let history = vec![
+                aegis_domain::ports::Message {
+                    role: aegis_domain::ports::Role::System,
+                    content: black_box(system_prompt.clone()),
+                    cache_control: None,
+                },
+                wm.render(),
+                aegis_domain::ports::Message {
+                    role: aegis_domain::ports::Role::User,
+                    content: black_box(user_prompt.to_string()),
+                    cache_control: None,
+                },
+            ];
+            black_box(history);
+        });
+    });
+
+    // Benchmark: AgentConfig construction
+    group.bench_function("agent_config_new", |b| {
+        b.iter(|| {
+            let config = AgentConfig {
+                system_prompt: black_box("system prompt".to_string()),
+                max_iterations: 25,
+                is_local_provider: false,
+            };
+            black_box(config);
+        });
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_rtm_csv_parse,
     bench_audit_ledger_append,
     bench_tool_dispatch,
+    bench_agent_loop_iteration_overhead,
 );
 criterion_main!(benches);

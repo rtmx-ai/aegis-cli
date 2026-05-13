@@ -28,3 +28,4 @@ pub mod symbol_index;
 pub mod terminal;
 pub mod theme;
 pub mod thinking;
+pub mod url_fetcher;

@@ -241,6 +241,7 @@ dependencies = [
  "crossterm 0.28.1",
  "insta",
  "ratatui",
+ "reqwest",
  "rstest",
  "serde",
  "serde_json",
