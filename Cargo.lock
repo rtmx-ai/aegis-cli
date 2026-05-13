@@ -190,6 +190,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "wiremock",
 ]
 
 [[package]]

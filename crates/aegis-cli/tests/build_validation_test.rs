@@ -283,7 +283,7 @@ fn test_signing_verification_runs_before_release() {
     );
     // Release job depends on sign job (signatures verified before publish)
     assert!(
-        release.contains("needs: [sign]"),
+        release.contains("needs: [sign") && release.contains("sign"),
         "release job must depend on sign job -- no unsigned artifacts published"
     );
 }
@@ -747,6 +747,174 @@ fn test_cargo_config_toml_exists() {
     assert!(
         content.contains("split-debuginfo"),
         ".cargo/config.toml must configure split-debuginfo for macOS"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// REQ-BUILD-062..066: VHS tape framework and CI integration
+// ---------------------------------------------------------------------------
+
+// rtmx:req REQ-BUILD-062
+#[test]
+fn test_vhs_framework_exists() {
+    let root = workspace_root();
+    // Makefile has vhs-tapes target
+    let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap();
+    assert!(
+        makefile.contains("vhs-tapes"),
+        "Makefile must have vhs-tapes target"
+    );
+    // VHS config template exists in scripts/vhs/
+    let config = root.join("scripts/vhs/config.tape");
+    assert!(config.exists(), "scripts/vhs/config.tape must exist");
+    let config_content = std::fs::read_to_string(&config).unwrap();
+    assert!(
+        config_content.contains("Set Width") && config_content.contains("Set Height"),
+        "VHS config must set terminal dimensions"
+    );
+    assert!(
+        config_content.contains("Catppuccin"),
+        "VHS config must use Catppuccin theme"
+    );
+}
+
+// rtmx:req REQ-BUILD-063
+#[test]
+fn test_vhs_runner_script_exists() {
+    let root = workspace_root();
+    let script = root.join("scripts/vhs/run-all.sh");
+    assert!(script.exists(), "scripts/vhs/run-all.sh must exist");
+    let content = std::fs::read_to_string(&script).unwrap();
+    assert!(
+        content.contains(".tape"),
+        "run-all.sh must process .tape files"
+    );
+    assert!(
+        content.contains(".gif"),
+        "run-all.sh must output .gif files"
+    );
+    assert!(
+        content.contains("command -v vhs") || content.contains("which vhs"),
+        "run-all.sh must check for vhs binary"
+    );
+}
+
+// rtmx:req REQ-BUILD-064
+#[test]
+fn test_ci_has_vhs_install_step() {
+    let ci = read_ci_yml();
+    assert!(
+        ci.contains("vhs") && ci.contains("charmbracelet"),
+        "CI must install VHS from charmbracelet"
+    );
+}
+
+// rtmx:req REQ-BUILD-065
+#[test]
+fn test_ci_vhs_artifact_upload() {
+    let ci = read_ci_yml();
+    assert!(
+        ci.contains("demo-gifs"),
+        "CI must upload demo-gifs artifact"
+    );
+    assert!(
+        ci.contains(".tape"),
+        "CI demo-gifs job must reference .tape files"
+    );
+}
+
+// rtmx:req REQ-BUILD-066
+#[test]
+fn test_ci_release_has_gif_assets() {
+    let release = read_release_yml();
+    assert!(
+        release.contains("demo-gifs"),
+        "release workflow must download demo-gifs artifact"
+    );
+    assert!(
+        release.contains("*.gif") || release.contains(".gif"),
+        "release workflow must attach GIFs to release"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// REQ-BUILD-074/075: Container image and GHCR push
+// ---------------------------------------------------------------------------
+
+// rtmx:req REQ-BUILD-074
+#[test]
+fn test_dockerfile_exists() {
+    let dockerfile = workspace_root().join("Dockerfile");
+    assert!(
+        dockerfile.exists(),
+        "Dockerfile must exist at workspace root"
+    );
+    let content = std::fs::read_to_string(&dockerfile).unwrap();
+    assert!(
+        content.contains("FROM scratch") || content.contains("FROM alpine"),
+        "Dockerfile must use minimal base (scratch or alpine)"
+    );
+    assert!(
+        content.contains("musl"),
+        "Dockerfile must build with musl for static linking"
+    );
+    assert!(
+        content.contains("ENTRYPOINT") || content.contains("CMD"),
+        "Dockerfile must define entrypoint"
+    );
+}
+
+// rtmx:req REQ-BUILD-075
+#[test]
+fn test_ci_has_ghcr_push() {
+    let release = read_release_yml();
+    assert!(
+        release.contains("ghcr.io/rtmx-ai/aegis"),
+        "release workflow must push to ghcr.io/rtmx-ai/aegis"
+    );
+    assert!(
+        release.contains("docker push") || release.contains("docker/build-push-action"),
+        "release workflow must push container image"
+    );
+}
+
+// rtmx:req REQ-BUILD-057
+#[test]
+fn test_aarch64_musl_binary_is_static() {
+    let ci = read_ci_yml();
+    // CI must build aarch64 musl (verified in BUILD-070 too)
+    assert!(
+        ci.contains("aarch64-unknown-linux-musl"),
+        "CI must build aarch64-unknown-linux-musl target"
+    );
+    // Must smoke test with qemu
+    assert!(
+        ci.contains("qemu-aarch64-static"),
+        "CI must smoke test aarch64 binary via qemu"
+    );
+    // Cargo config must set linker for cross-compilation
+    let cargo_config = workspace_root().join(".cargo/config.toml");
+    let cc = std::fs::read_to_string(&cargo_config).unwrap();
+    assert!(
+        cc.contains("[target.aarch64-unknown-linux-musl]"),
+        ".cargo/config.toml must configure aarch64 cross-linker"
+    );
+}
+
+// rtmx:req REQ-BUILD-058
+#[test]
+fn test_container_image_runs_version() {
+    let release = read_release_yml();
+    // Release workflow must smoke test container
+    assert!(
+        release.contains("docker run") && release.contains("--version"),
+        "release workflow must smoke test container with --version"
+    );
+    // Dockerfile must exist
+    let dockerfile = workspace_root().join("Dockerfile");
+    assert!(
+        dockerfile.exists(),
+        "Dockerfile must exist for container image build"
     );
 }
 

@@ -451,13 +451,33 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # Job 3: Create GitHub Release with all files
+  # Job 3: Generate demo GIFs from VHS tape scripts
+  # ---------------------------------------------------------------------------
+  demo-gifs:
+    name: Demo GIFs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install vhs
+        run: go install github.com/charmbracelet/vhs@latest
+      - name: Run VHS tapes
+        run: ./scripts/vhs/run-all.sh
+      - name: Upload demo GIFs
+        uses: actions/upload-artifact@v7
+        with:
+          name: demo-gifs
+          path: docs/demos/gifs/
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Job 4: Create GitHub Release with all files
   # ---------------------------------------------------------------------------
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [sign]
+    needs: [sign, demo-gifs]
     permissions:
       contents: write
     steps:
@@ -467,6 +487,12 @@ jobs:
         with:
           name: signed-artifacts
           path: artifacts
+      - name: Download demo GIFs
+        uses: actions/download-artifact@v8
+        with:
+          name: demo-gifs
+          path: demo-gifs
+        continue-on-error: true
       - name: Extract version from tag
         id: tag
         run: |
@@ -484,3 +510,39 @@ jobs:
             --title "aegis $VERSION" \
             --generate-notes \
             artifacts/*
+          # Attach demo GIFs as release assets if available
+          if [ -d demo-gifs ] && ls demo-gifs/*.gif 1>/dev/null 2>&1; then
+            gh release upload "$TAG" demo-gifs/*.gif --clobber
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Job 5: Build and push container image to GHCR
+  # REQ-BUILD-075: Tagged release pushes container image
+  # ---------------------------------------------------------------------------
+  container:
+    name: Container Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [release]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Extract version from tag
+        id: tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Build container image
+        run: docker build -t ghcr.io/rtmx-ai/aegis:${{ steps.tag.outputs.version }} -t ghcr.io/rtmx-ai/aegis:latest .
+      - name: Smoke test container
+        run: docker run --rm ghcr.io/rtmx-ai/aegis:${{ steps.tag.outputs.version }} --version
+      - name: Push container image
+        run: |
+          docker push ghcr.io/rtmx-ai/aegis:${{ steps.tag.outputs.version }}
+          docker push ghcr.io/rtmx-ai/aegis:latest

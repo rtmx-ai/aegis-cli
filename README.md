@@ -10,6 +10,8 @@
 
 Aegis is a terminal-native pair programmer built for defense and regulated environments. It delivers the full experience of a frontier AI coding assistant -- streaming responses, multi-step tool use, inline diffs, human-in-the-loop approval -- as a single static binary that connects only to LLM endpoints you control. GovCloud. Air-gapped. Your call.
 
+![hero demo](docs/demos/hero.gif)
+
 ---
 
 ## Why Aegis
@@ -30,6 +32,19 @@ Aegis eliminates the trade-off. You control the compute, network, and data bound
 - **Terminal UI** -- ratatui-based interface with streaming markdown, inline diffs, and approval dialogs
 - **Static binary** -- Single musl-linked binary for RHEL 8/9; MSVC build for Windows 10/11; no runtime dependencies
 - **Requirements traceability** -- 159 requirements tracked via [RTMX](https://rtmx.ai), 12 BDD feature files, ~450 Gherkin scenarios
+
+<details>
+<summary>Feature demos</summary>
+
+| Feature | Demo |
+|---|---|
+| HITL approval flow | ![HITL approval](docs/demos/hitl-approval.gif) |
+| Air-gapped local model | ![Air-gapped](docs/demos/airgapped.gif) |
+| Audit ledger | ![Audit ledger](docs/demos/gifs/04-audit-ledger.gif) |
+| IaC plugin provisioning | ![Plugin provisioning](docs/demos/gifs/05-plugin-provision.gif) |
+| .aegisignore filtering | ![aegisignore](docs/demos/gifs/06-aegisignore.gif) |
+
+</details>
 
 ## Architecture
 
