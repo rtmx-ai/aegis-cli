@@ -226,17 +226,32 @@ jobs:
         run: cargo bench --package aegis-bench 2>&1 | tee bench-output.txt
       - name: Check for regressions (>10% threshold)
         run: |
-          REGRESSED=$(grep -c "Performance has regressed" bench-output.txt || true)
-          echo "Regressions detected: $REGRESSED"
-          if [ "$REGRESSED" -gt 0 ]; then
-            echo ""
-            echo "=== Regressed benchmarks ==="
-            grep -B 2 "Performance has regressed" bench-output.txt || true
-            echo ""
-            echo "FAIL: $REGRESSED benchmark(s) regressed beyond threshold"
+          THRESHOLD=10.0
+          # Extract regression percentages: criterion prints "change: [lo% mid% hi%]"
+          # on the line before "Performance has regressed." Parse the middle estimate.
+          SEVERE=0
+          while IFS= read -r line; do
+            # Extract the middle percentage from "change: [+X% +Y% +Z%]"
+            PCT=$(echo "$line" | grep -oP '\+\K[0-9]+\.[0-9]+(?=%)' | sed -n '2p')
+            if [ -n "$PCT" ]; then
+              OVER=$(python3 -c "print(1 if float('$PCT') > $THRESHOLD else 0)")
+              if [ "$OVER" = "1" ]; then
+                echo "SEVERE REGRESSION: ${PCT}% (threshold: ${THRESHOLD}%)"
+                echo "  $line"
+                SEVERE=$((SEVERE + 1))
+              else
+                echo "Minor regression: ${PCT}% (below ${THRESHOLD}% threshold, ignoring)"
+              fi
+            fi
+          done < <(grep -B 1 "Performance has regressed" bench-output.txt || true)
+          echo ""
+          TOTAL=$(grep -c "Performance has regressed" bench-output.txt || true)
+          echo "Total regressions: $TOTAL (severe >$THRESHOLD%: $SEVERE)"
+          if [ "$SEVERE" -gt 0 ]; then
+            echo "FAIL: $SEVERE benchmark(s) regressed beyond ${THRESHOLD}% threshold"
             exit 1
           fi
-          echo "OK: No benchmark regressions detected"
+          echo "OK: No severe benchmark regressions detected"
       - name: Save baseline on main
         if: github.ref == 'refs/heads/main'
         uses: actions/cache/save@v4
