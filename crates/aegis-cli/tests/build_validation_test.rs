@@ -976,3 +976,67 @@ fn test_ci_uploads_benchmark_artifact() {
         "benchmark artifact must include criterion output"
     );
 }
+
+// rtmx:req REQ-TEST-010
+#[test]
+fn test_benchmark_suite_covers_hot_paths() {
+    let root = workspace_root();
+    let bench_rs = root.join("benches/benchmark.rs");
+    assert!(bench_rs.exists(), "benches/benchmark.rs must exist");
+    let content = std::fs::read_to_string(&bench_rs).unwrap();
+
+    // Must cover all four hot-path benchmark groups.
+    let groups = [
+        "rtm_csv_parse",
+        "audit_ledger_append",
+        "tool_dispatch",
+        "agent_loop_overhead",
+    ];
+    for group in &groups {
+        assert!(
+            content.contains(group),
+            "benchmark suite must include {group} group"
+        );
+    }
+
+    // CI must have a benchmark gate with regression threshold.
+    let ci = root.join(".github/workflows/ci.yml");
+    let ci_content = std::fs::read_to_string(&ci).unwrap();
+    assert!(
+        ci_content.contains("benchmarks") || ci_content.contains("Benchmarks"),
+        "CI must have a benchmarks job"
+    );
+    assert!(
+        ci_content.contains("threshold") || ci_content.contains("THRESHOLD"),
+        "CI benchmarks must have a regression threshold"
+    );
+}
+
+// rtmx:req REQ-TEST-030
+#[test]
+fn test_dev_loop_cargo_check() {
+    let root = workspace_root();
+
+    // Workspace Cargo.toml must exist.
+    let workspace_toml = root.join("Cargo.toml");
+    assert!(workspace_toml.exists(), "workspace Cargo.toml must exist");
+    let ws_content = std::fs::read_to_string(&workspace_toml).unwrap();
+    assert!(ws_content.contains("[workspace]"), "must be a workspace");
+
+    // aegis-cli must define the aegis binary target.
+    let cli_toml = root.join("crates/aegis-cli/Cargo.toml");
+    assert!(cli_toml.exists(), "aegis-cli Cargo.toml must exist");
+    let cli_content = std::fs::read_to_string(&cli_toml).unwrap();
+    assert!(
+        cli_content.contains("name = \"aegis\"") || cli_content.contains("aegis-cli"),
+        "aegis-cli must define the binary target"
+    );
+
+    // cargo metadata must succeed (proves workspace is valid).
+    let output = std::process::Command::new("cargo")
+        .args(["metadata", "--format-version=1", "--no-deps"])
+        .current_dir(&root)
+        .output()
+        .expect("cargo metadata must succeed");
+    assert!(output.status.success(), "cargo metadata must exit 0");
+}

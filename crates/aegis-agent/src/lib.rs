@@ -11,6 +11,7 @@ pub mod cancellation;
 pub mod compaction;
 pub mod dedup;
 pub mod dispatch;
+pub mod embedding;
 pub mod export;
 pub mod jira_import;
 pub mod living_docs;

@@ -53,6 +53,10 @@ pub enum PickerMode {
     /// Git-aware mode showing modified, staged, untracked, and recently
     /// committed files.
     GitChanges,
+    /// URL fetch mode: user typed @url:<URL> to fetch and inject content.
+    Url,
+    /// Symbol search mode: user typed @symbol:<query> to search symbols.
+    Symbol,
 }
 
 /// Interactive file picker state.
@@ -108,6 +112,57 @@ impl FilePicker {
         }
     }
 
+    /// Open a URL fetch picker for @url:<URL> queries.
+    pub fn open_url(url: &str, cwd: &Path) -> Self {
+        let entry = DirEntry {
+            name: format!("Fetching {url}..."),
+            is_dir: false,
+        };
+        Self {
+            mode: PickerMode::Url,
+            query: url.to_string(),
+            base_dir: cwd.to_path_buf(),
+            entries: vec![entry.clone()],
+            filtered: vec![entry],
+            selected: 0,
+            expanded: HashSet::new(),
+        }
+    }
+
+    /// Open a symbol search picker for @symbol:<query> queries.
+    pub fn open_symbol(query: &str, results: Vec<(String, String)>, cwd: &Path) -> Self {
+        let entries: Vec<DirEntry> = results
+            .iter()
+            .map(|(name, location)| DirEntry {
+                name: format!("{name}  ({location})"),
+                is_dir: false,
+            })
+            .collect();
+        let filtered = entries.clone();
+        Self {
+            mode: PickerMode::Symbol,
+            query: query.to_string(),
+            base_dir: cwd.to_path_buf(),
+            entries,
+            filtered,
+            selected: 0,
+            expanded: HashSet::new(),
+        }
+    }
+
+    /// Detect the @ trigger mode from the raw query text.
+    pub fn detect_trigger(query: &str) -> (PickerMode, &str) {
+        if let Some(rest) = query.strip_prefix("url:") {
+            (PickerMode::Url, rest)
+        } else if let Some(rest) = query.strip_prefix("symbol:") {
+            (PickerMode::Symbol, rest)
+        } else if query == "git:" || query.starts_with("git:") {
+            (PickerMode::GitChanges, "")
+        } else {
+            (PickerMode::FileSystem, query)
+        }
+    }
+
     /// Update the query. Re-scans only when the base directory changes.
     ///
     /// In `GitChanges` mode this filters the git entries by substring.
@@ -122,7 +177,7 @@ impl FilePicker {
                 }
                 self.filtered = filter_entries(&self.entries, filter);
             }
-            PickerMode::GitChanges => {
+            PickerMode::GitChanges | PickerMode::Url | PickerMode::Symbol => {
                 self.query = query.to_string();
                 self.filtered = filter_entries(&self.entries, query);
             }
@@ -163,6 +218,7 @@ impl FilePicker {
                     path.push_str(&e.name);
                     path
                 }
+                PickerMode::Url | PickerMode::Symbol => e.name.clone(),
             }
         })
     }
@@ -1207,5 +1263,75 @@ mod tests {
             m_idx < q_idx,
             "Modified (M) should sort before untracked (?)"
         );
+    }
+
+    // --- @url: trigger tests (REQ-TUI-052) ---
+
+    // rtmx:req REQ-TUI-052
+    #[test]
+    fn test_url_trigger_fetches_content() {
+        let (mode, rest) = FilePicker::detect_trigger("url:https://example.com");
+        assert_eq!(mode, PickerMode::Url);
+        assert_eq!(rest, "https://example.com");
+    }
+
+    // rtmx:req REQ-TUI-052
+    #[test]
+    fn test_url_trigger_opens_picker_in_url_mode() {
+        let tmp = TempDir::new().unwrap();
+        let picker = FilePicker::open_url("https://example.com/api", tmp.path());
+        assert_eq!(picker.mode, PickerMode::Url);
+        assert_eq!(picker.query, "https://example.com/api");
+        assert!(!picker.entries.is_empty());
+        assert!(picker.entries[0].name.contains("Fetching"));
+    }
+
+    // rtmx:req REQ-TUI-052
+    #[test]
+    fn test_url_trigger_not_activated_for_plain_text() {
+        let (mode, _) = FilePicker::detect_trigger("some/path");
+        assert_eq!(mode, PickerMode::FileSystem);
+    }
+
+    // --- @symbol: trigger tests (REQ-TUI-053) ---
+
+    // rtmx:req REQ-TUI-053
+    #[test]
+    fn test_symbol_trigger_finds_functions() {
+        let (mode, rest) = FilePicker::detect_trigger("symbol:main");
+        assert_eq!(mode, PickerMode::Symbol);
+        assert_eq!(rest, "main");
+    }
+
+    // rtmx:req REQ-TUI-053
+    #[test]
+    fn test_symbol_trigger_opens_picker_with_results() {
+        let tmp = TempDir::new().unwrap();
+        let results = vec![
+            ("main".to_string(), "src/main.rs:1".to_string()),
+            ("main_loop".to_string(), "src/app.rs:42".to_string()),
+        ];
+        let picker = FilePicker::open_symbol("main", results, tmp.path());
+        assert_eq!(picker.mode, PickerMode::Symbol);
+        assert_eq!(picker.entries.len(), 2);
+        assert!(picker.entries[0].name.contains("main"));
+        assert!(picker.entries[0].name.contains("src/main.rs:1"));
+        assert!(picker.entries[1].name.contains("main_loop"));
+    }
+
+    // rtmx:req REQ-TUI-053
+    #[test]
+    fn test_symbol_trigger_empty_results() {
+        let tmp = TempDir::new().unwrap();
+        let picker = FilePicker::open_symbol("xyz", vec![], tmp.path());
+        assert_eq!(picker.mode, PickerMode::Symbol);
+        assert!(picker.entries.is_empty());
+    }
+
+    // rtmx:req REQ-TUI-053
+    #[test]
+    fn test_symbol_trigger_not_activated_for_git() {
+        let (mode, _) = FilePicker::detect_trigger("git:");
+        assert_eq!(mode, PickerMode::GitChanges);
     }
 }

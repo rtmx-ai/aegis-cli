@@ -3,6 +3,7 @@
 //! This crate contains value objects, domain events, error types, and port
 //! traits shared across bounded contexts. It has zero I/O dependencies.
 
+pub mod dep_graph;
 pub mod error;
 pub mod event;
 pub mod nist;
