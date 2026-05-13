@@ -749,3 +749,41 @@ fn test_cargo_config_toml_exists() {
         ".cargo/config.toml must configure split-debuginfo for macOS"
     );
 }
+
+// rtmx:req REQ-TEST-051
+#[test]
+fn test_ci_has_benchmark_gate() {
+    let ci = workspace_root().join(".github/workflows/ci.yml");
+    let content = std::fs::read_to_string(&ci).unwrap();
+    // CI must have a benchmarks job
+    assert!(
+        content.contains("name: Benchmarks"),
+        "CI must have a Benchmarks job"
+    );
+    // Must check for regressions
+    assert!(
+        content.contains("Performance has regressed"),
+        "benchmark job must check for regressions"
+    );
+    // Must restore baseline from cache
+    assert!(
+        content.contains("benchmark-baseline"),
+        "benchmark job must use cached baselines"
+    );
+}
+
+// rtmx:req REQ-TEST-052
+#[test]
+fn test_ci_uploads_benchmark_artifact() {
+    let ci = workspace_root().join(".github/workflows/ci.yml");
+    let content = std::fs::read_to_string(&ci).unwrap();
+    // Must upload benchmark results as artifact
+    assert!(
+        content.contains("name: benchmark-results"),
+        "CI must upload benchmark results artifact"
+    );
+    assert!(
+        content.contains("target/criterion/"),
+        "benchmark artifact must include criterion output"
+    );
+}

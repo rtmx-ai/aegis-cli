@@ -203,6 +203,55 @@ jobs:
           files: lcov.info
           fail_ci_if_error: false
 
+  # rtmx:req REQ-TEST-051 -- Benchmark regression gate
+  # rtmx:req REQ-TEST-052 -- Benchmark artifact upload
+  benchmarks:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Disable sccache: benchmarks must use consistent optimizations
+    env:
+      RUSTC_WRAPPER: ""
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Restore benchmark baseline
+        uses: actions/cache@v4
+        with:
+          path: target/criterion
+          key: benchmark-baseline-${{ runner.os }}
+          restore-keys: benchmark-baseline-
+      - name: Run benchmarks
+        run: cargo bench --package aegis-bench 2>&1 | tee bench-output.txt
+      - name: Check for regressions (>10% threshold)
+        run: |
+          REGRESSED=$(grep -c "Performance has regressed" bench-output.txt || true)
+          echo "Regressions detected: $REGRESSED"
+          if [ "$REGRESSED" -gt 0 ]; then
+            echo ""
+            echo "=== Regressed benchmarks ==="
+            grep -B 2 "Performance has regressed" bench-output.txt || true
+            echo ""
+            echo "FAIL: $REGRESSED benchmark(s) regressed beyond threshold"
+            exit 1
+          fi
+          echo "OK: No benchmark regressions detected"
+      - name: Save baseline on main
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: target/criterion
+          key: benchmark-baseline-${{ runner.os }}-${{ github.sha }}
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-results
+          path: |
+            target/criterion/
+            bench-output.txt
+          retention-days: 30
+
   cargo-deny:
     name: License & Advisory Audit
     runs-on: ubuntu-latest
@@ -508,7 +557,7 @@ jobs:
     name: Build Gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [format, lint, unit-tests, integration-tests, integration-tests-windows, doc-tests, coverage, cargo-deny, sbom, deb-package, rpm-package, airgap-bundle, rtmx-health, rtmx-update]
+    needs: [format, lint, unit-tests, integration-tests, integration-tests-windows, doc-tests, coverage, benchmarks, cargo-deny, sbom, deb-package, rpm-package, airgap-bundle, rtmx-health, rtmx-update]
     if: always()
     steps:
       - name: Check required jobs
