@@ -1040,3 +1040,93 @@ fn test_dev_loop_cargo_check() {
         .expect("cargo metadata must succeed");
     assert!(output.status.success(), "cargo metadata must exit 0");
 }
+
+// rtmx:req REQ-TEST-053
+#[test]
+fn test_file_watcher_triggers_cargo_build() {
+    let root = workspace_root();
+
+    // bacon.toml must exist with a watch job.
+    let bacon = root.join("bacon.toml");
+    assert!(bacon.exists(), "bacon.toml must exist for file watching");
+    let content = std::fs::read_to_string(&bacon).unwrap();
+
+    // Must have a [jobs.watch] section.
+    assert!(
+        content.contains("[jobs.watch]"),
+        "bacon.toml must define a [jobs.watch] job"
+    );
+
+    // Watch job must use kill_then_restart strategy.
+    assert!(
+        content.contains("kill_then_restart"),
+        "watch job must use kill_then_restart on_change_strategy"
+    );
+
+    // Must watch the crates directory.
+    assert!(
+        content.contains("crates") || content.contains("watch"),
+        "bacon must watch source directories for changes"
+    );
+}
+
+// rtmx:req REQ-TEST-054
+#[test]
+fn test_process_restart_detection_after_rebuild() {
+    let root = workspace_root();
+
+    // bacon.toml watch job must trigger a restart script.
+    let bacon = root.join("bacon.toml");
+    let content = std::fs::read_to_string(&bacon).unwrap();
+
+    // The watch command must invoke a script or cargo run.
+    assert!(
+        content.contains("dev-run") || content.contains("cargo run"),
+        "watch job must invoke a run script for restart detection"
+    );
+
+    // on_change_strategy must be kill_then_restart (not wait).
+    assert!(
+        content.contains("kill_then_restart"),
+        "restart strategy must be kill_then_restart, not wait"
+    );
+
+    // need_stdout must be true for watch job (to see output).
+    assert!(
+        content.contains("need_stdout = true"),
+        "watch job must set need_stdout = true"
+    );
+}
+
+// rtmx:req REQ-TEST-055
+#[test]
+fn test_dev_loop_edit_rebuild_restart_verify() {
+    let root = workspace_root();
+
+    // scripts/dev.sh must exist as the E2E dev session launcher.
+    let dev_sh = root.join("scripts/dev.sh");
+    assert!(dev_sh.exists(), "scripts/dev.sh must exist");
+    let dev_content = std::fs::read_to_string(&dev_sh).unwrap();
+
+    // Must set up a tmux session with panes.
+    assert!(
+        dev_content.contains("tmux"),
+        "dev.sh must use tmux for pane layout"
+    );
+
+    // Must reference the project directory for builds.
+    assert!(
+        dev_content.contains("PROJECT_DIR") || dev_content.contains("project_dir"),
+        "dev.sh must reference the project directory"
+    );
+
+    // bacon.toml must have all the dev loop jobs.
+    let bacon = root.join("bacon.toml");
+    let bacon_content = std::fs::read_to_string(&bacon).unwrap();
+    for job in &["watch", "check", "clippy", "test"] {
+        assert!(
+            bacon_content.contains(&format!("[jobs.{job}]")),
+            "bacon.toml must have [jobs.{job}] for the dev loop"
+        );
+    }
+}

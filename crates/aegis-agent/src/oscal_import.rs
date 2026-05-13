@@ -318,4 +318,33 @@ mod tests {
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("Invalid OSCAL JSON"));
     }
+
+    // rtmx:req REQ-RTMX-014
+    // rtmx:req REQ-RTMX-010
+    #[test]
+    fn test_oscal_json_import_end_to_end() {
+        // Verify full pipeline: parse OSCAL JSON -> map to RTM rows.
+        let json = r#"{
+            "catalog": {
+                "groups": [{
+                    "id": "ac",
+                    "title": "Access Control",
+                    "controls": [{
+                        "id": "ac-2",
+                        "title": "Account Management",
+                        "parts": [{"prose": "Manage accounts."}],
+                        "params": []
+                    }]
+                }]
+            }
+        }"#;
+        let controls = parse_oscal(json).unwrap();
+        assert!(!controls.is_empty(), "must parse at least one control");
+        let rows = oscal_to_rtm(&controls);
+        assert!(!rows.is_empty(), "must produce RTM rows");
+        assert!(
+            rows[0].req_id.starts_with("REQ-NIST-"),
+            "OSCAL imports must use REQ-NIST- prefix"
+        );
+    }
 }

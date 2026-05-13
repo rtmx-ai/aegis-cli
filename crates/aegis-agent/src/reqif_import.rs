@@ -376,4 +376,33 @@ mod tests {
         let result2 = parse_reqif("not xml at all");
         assert!(result2.is_err());
     }
+
+    // rtmx:req REQ-RTMX-016
+    // rtmx:req REQ-RTMX-010
+    #[test]
+    fn test_reqif_xml_import_end_to_end() {
+        // Verify full pipeline: parse ReqIF XML -> map to RTM rows.
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <SPEC-OBJECTS>
+        <SPEC-OBJECT IDENTIFIER="REQ-001">
+          <VALUES>
+            <ATTRIBUTE-VALUE-STRING THE-VALUE="Shall support TLS 1.3"/>
+          </VALUES>
+        </SPEC-OBJECT>
+      </SPEC-OBJECTS>
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>"#;
+        let spec_objects = parse_reqif(xml).unwrap();
+        assert!(!spec_objects.is_empty(), "must parse spec objects");
+        let rows = reqif_to_rtm(&spec_objects);
+        assert!(!rows.is_empty(), "must produce RTM rows");
+        assert!(
+            rows[0].req_id.starts_with("REQ-REQIF-"),
+            "ReqIF imports must use REQ-REQIF- prefix"
+        );
+    }
 }

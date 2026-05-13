@@ -411,4 +411,24 @@ PROJ-1,Just a summary";
         assert_eq!(row.status, "MISSING");
         assert_eq!(row.external_id, "NEW-1");
     }
+
+    // rtmx:req REQ-RTMX-015
+    // rtmx:req REQ-RTMX-010
+    #[test]
+    fn test_jira_csv_import_end_to_end() {
+        // Verify full pipeline: parse JIRA CSV -> merge into RTM.
+        let csv = "Key,Summary,Priority,Status,Description,Issue Type\n\
+                   PROJ-42,Fix auth bug,High,In Progress,Auth is broken,Bug\n";
+        let issues = parse_jira_csv(csv).unwrap();
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].key, "PROJ-42");
+
+        let db = make_db(&[]);
+        let result = import_jira_issues(&issues, &db);
+        assert_eq!(result.added.len(), 1);
+        assert!(
+            result.added[0].req_id.starts_with("REQ-JIRA-"),
+            "JIRA imports must use REQ-JIRA- prefix"
+        );
+    }
 }
