@@ -215,6 +215,54 @@ async fn test_pkce_flow_expired_token_triggers_refresh() {
     );
 }
 
+// rtmx:req REQ-ONBOARD-014
+#[tokio::test]
+async fn test_managed_saas_pkce_flow() {
+    // REQ-ONBOARD-014 parent: Managed SaaS mode authenticates via OAuth 2.0 PKCE.
+    // Verifies all sub-components integrate: PKCE generation (029), auth URL (030),
+    // callback server (031), token exchange (032), refresh (033), E2E (034).
+    let (verifier, challenge) = generate_pkce();
+    assert_eq!(verifier.len(), 128);
+    assert_eq!(challenge.len(), 43);
+
+    let mock_server = MockServer::start().await;
+    let config = test_config(&mock_server.uri());
+    let state = generate_state();
+
+    // Auth URL must include all PKCE params
+    let url = build_auth_url(&config, &challenge, &state);
+    assert!(url.contains("code_challenge="));
+    assert!(url.contains("code_challenge_method=S256"));
+
+    // Callback server + token exchange
+    let state_for_server = state.clone();
+    let (port, callback_fut) = run_callback_server(&state_for_server)
+        .await
+        .expect("server start");
+    let state_clone = state.clone();
+    tokio::spawn(async move { simulate_redirect(port, "managed-code", &state_clone).await });
+    let cb = callback_fut.await.expect("callback");
+    assert_eq!(cb.code, "managed-code");
+
+    // Token exchange
+    let exchange = build_token_exchange_request(&config, &cb.code, &verifier);
+    assert_eq!(exchange.grant_type, "authorization_code");
+    assert_eq!(exchange.code_verifier, verifier);
+
+    // Refresh
+    let refresh = build_refresh_request(&config.client_id, "rt-managed");
+    assert_eq!(refresh.grant_type, "refresh_token");
+
+    // Token state lifecycle
+    let fresh = TokenState {
+        access_token: "at".into(),
+        refresh_token: Some("rt".into()),
+        expires_at: Instant::now() + Duration::from_secs(3600),
+        token_type: "Bearer".into(),
+    };
+    assert!(!is_token_expired(&fresh));
+}
+
 // rtmx:req REQ-ONBOARD-034
 #[tokio::test]
 async fn test_pkce_flow_callback_rejects_csrf() {
