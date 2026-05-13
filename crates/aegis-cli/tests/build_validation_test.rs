@@ -901,6 +901,27 @@ fn test_aarch64_musl_binary_is_static() {
     );
 }
 
+// rtmx:req REQ-TEST-042
+#[test]
+fn test_living_docs_generation() {
+    let root = workspace_root();
+    let script = root.join("scripts/bdd-living-docs.py");
+    assert!(script.exists(), "scripts/bdd-living-docs.py must exist");
+    let content = std::fs::read_to_string(&script).unwrap();
+    assert!(
+        content.contains(".feature"),
+        "living docs script must process .feature files"
+    );
+    assert!(
+        content.contains("html") || content.contains("HTML"),
+        "living docs script must generate HTML output"
+    );
+    assert!(
+        content.contains("search") || content.contains("filter"),
+        "living docs must support search/filter functionality"
+    );
+}
+
 // rtmx:req REQ-BUILD-058
 #[test]
 fn test_container_image_runs_version() {
