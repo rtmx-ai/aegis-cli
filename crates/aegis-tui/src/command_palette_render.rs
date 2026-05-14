@@ -4,9 +4,15 @@ use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState};
 
 use super::command_palette::CommandPaletteView;
+use crate::theme::Theme;
 
 /// Render the command palette as a floating dropdown above the input area.
-pub fn render_command_palette(frame: &mut Frame, palette: &CommandPaletteView, input_area: Rect) {
+pub fn render_command_palette(
+    frame: &mut Frame,
+    palette: &CommandPaletteView,
+    input_area: Rect,
+    theme: &Theme,
+) {
     let entries = &palette.entries;
     let height = (entries.len() as u16 + 2).min(12);
 
@@ -26,11 +32,11 @@ pub fn render_command_palette(frame: &mut Frame, palette: &CommandPaletteView, i
                 Span::styled(
                     &entry.name,
                     Style::default()
-                        .fg(Color::Green)
+                        .fg(theme.accent)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::raw("  "),
-                Span::styled(&entry.description, Style::default().fg(Color::DarkGray)),
+                Span::styled(&entry.description, Style::default().fg(theme.border)),
             ]);
             ListItem::new(line)
         })
@@ -42,7 +48,7 @@ pub fn render_command_palette(frame: &mut Frame, palette: &CommandPaletteView, i
     };
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(title))
-        .highlight_style(Style::default().bg(Color::DarkGray).fg(Color::White));
+        .highlight_style(Style::default().bg(theme.status_bg).fg(theme.fg));
 
     let mut state = ListState::default();
     state.select(Some(palette.selected));

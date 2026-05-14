@@ -1387,7 +1387,11 @@ async fn run_interactive_chat(
         terminal
             .draw(|frame| {
                 if app.phase == aegis_tui::app::AppPhase::Splash {
-                    aegis_tui::splash::render_splash(frame, frame.area());
+                    aegis_tui::splash::render_splash(
+                        frame,
+                        frame.area(),
+                        &aegis_tui::theme::DARK_THEME,
+                    );
                 } else {
                     let input_mode = match app.input.mode {
                         aegis_tui::input::InputMode::Insert => {
@@ -1411,6 +1415,7 @@ async fn run_interactive_chat(
                         command_palette: app.command_palette.view(),
                         ghost_text: app.input.ghost_text.clone(),
                         waiting_text: app.waiting_text(),
+                        theme: aegis_tui::theme::DARK_THEME.clone(),
                         file_picker: app.file_picker.as_ref().map(|fp| {
                             aegis_tui::layout::FilePickerView {
                                 query: fp.query.clone(),
