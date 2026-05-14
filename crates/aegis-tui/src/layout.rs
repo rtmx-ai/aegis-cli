@@ -9,7 +9,7 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph, Wrap};
 
 use crate::command_palette::CommandPaletteView;
 use crate::command_palette_render::render_command_palette;
@@ -184,7 +184,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
 
     render_status_line(frame, chunks[0], state);
     render_chat_log(frame, chunks[1], state);
-    render_separator(frame, chunks[2]);
+    render_separator(frame, chunks[2], &state.theme);
     render_input_line(frame, chunks[3], state);
     if show_hint {
         render_hint_line(frame, chunks[4], state);
@@ -192,13 +192,13 @@ pub fn render(frame: &mut Frame, state: &AppState) {
 
     // Render HITL approval modal overlay on top of everything.
     if let Some(ref info) = state.approval_display {
-        render_approval_modal(frame, frame.area(), info);
+        render_approval_modal(frame, frame.area(), info, &state.theme);
     }
 
     // Render command palette dropdown above the input line.
     if let Some(ref palette_view) = state.command_palette {
         let input_area = chunks[3];
-        render_command_palette(frame, palette_view, input_area);
+        render_command_palette(frame, palette_view, input_area, &state.theme);
     }
 
     // Render file picker dropdown below the separator.
@@ -211,7 +211,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         if dropdown_h > 0 {
             let dropdown_area =
                 Rect::new(0, separator_y - dropdown_h, frame.area().width, dropdown_h);
-            render_file_picker_dropdown(frame, dropdown_area, picker);
+            render_file_picker_dropdown(frame, dropdown_area, picker, &state.theme);
         }
     }
 }
@@ -221,12 +221,13 @@ fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &Ap
     let width = area.width as usize;
 
     // Phase indicator with color
+    let theme = &state.theme;
     let (phase_text, phase_color) = match info.phase {
         AppPhase::Idle => ("", Color::Reset),
         AppPhase::Splash => ("", Color::Reset),
-        AppPhase::Streaming => ("STREAMING", Color::Cyan),
-        AppPhase::ToolExecuting => ("TOOL", Color::Yellow),
-        AppPhase::AwaitingApproval => ("APPROVE?", Color::Rgb(255, 191, 0)),
+        AppPhase::Streaming => ("STREAMING", theme.streaming),
+        AppPhase::ToolExecuting => ("TOOL", theme.warning),
+        AppPhase::AwaitingApproval => ("APPROVE?", theme.approval_pending),
     };
 
     // Right section: cost + tokens (only if non-zero)
@@ -261,7 +262,7 @@ fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &Ap
     spans.push(Span::styled(
         &info.model,
         Style::default()
-            .fg(Color::Cyan)
+            .fg(theme.accent)
             .add_modifier(Modifier::BOLD),
     ));
 
@@ -292,7 +293,7 @@ fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &Ap
             spans.push(Span::raw(" | "));
             spans.push(Span::styled(
                 queue_text,
-                Style::default().fg(Color::Magenta),
+                Style::default().fg(theme.streaming),
             ));
         }
     }
@@ -304,11 +305,11 @@ fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &Ap
         let used: usize = spans.iter().map(|s| s.content.len()).sum();
         if used + auth_display.len() + 4 < width {
             let auth_color = if ttl > 600 {
-                Color::Green
+                theme.success
             } else if ttl >= 120 {
-                Color::Yellow
+                theme.warning
             } else {
-                Color::Red
+                theme.error
             };
             spans.push(Span::raw(" "));
             spans.push(Span::styled(auth_display, Style::default().fg(auth_color)));
@@ -324,7 +325,7 @@ fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &Ap
             if has_cost {
                 spans.push(Span::styled(
                     cost_text.clone(),
-                    Style::default().fg(Color::Green),
+                    Style::default().fg(theme.success),
                 ));
                 if has_tokens {
                     spans.push(Span::raw(" "));
@@ -333,46 +334,44 @@ fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &Ap
             if has_tokens {
                 spans.push(Span::styled(
                     "[tokens in: ",
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(theme.border),
                 ));
                 spans.push(Span::styled(
                     format_tokens(info.input_tokens),
-                    Style::default().fg(Color::Green),
+                    Style::default().fg(theme.success),
                 ));
-                spans.push(Span::styled(
-                    " | out: ",
-                    Style::default().fg(Color::DarkGray),
-                ));
+                spans.push(Span::styled(" | out: ", Style::default().fg(theme.border)));
                 spans.push(Span::styled(
                     format_tokens(info.output_tokens),
-                    Style::default().fg(Color::Rgb(100, 149, 237)),
+                    Style::default().fg(theme.metric_secondary),
                 ));
-                spans.push(Span::styled("]", Style::default().fg(Color::DarkGray)));
+                spans.push(Span::styled("]", Style::default().fg(theme.border)));
             }
         }
     }
 
     let status = Paragraph::new(Line::from(spans))
-        .style(Style::default().bg(Color::DarkGray).fg(Color::White));
+        .style(Style::default().bg(theme.status_bg).fg(theme.fg));
     frame.render_widget(status, area);
 }
 
-/// Border accent color for each message kind.
+/// Border accent color for each message kind (REQ-TUI-097).
 ///
-/// The user message border uses bright cyan (LightCyan) bold for visual scan
-/// ability in dense conversations (REQ-TUI-061). Other kinds use muted accents.
-fn border_color(kind: &MessageKind) -> Color {
+/// The user message border uses the `message_user` theme slot with bold for
+/// visual scan ability in dense conversations (REQ-TUI-061).
+fn border_color(kind: &MessageKind, theme: &Theme) -> Color {
     match kind {
-        MessageKind::User => Color::LightCyan,
-        MessageKind::Assistant => Color::Blue,
-        MessageKind::System => Color::Cyan,
-        MessageKind::Error => Color::Red,
-        MessageKind::ToolCall { .. } | MessageKind::ToolResult => Color::Yellow,
+        MessageKind::User => theme.message_user,
+        MessageKind::Assistant => theme.message_assistant,
+        MessageKind::System => theme.message_system,
+        MessageKind::Error => theme.error,
+        MessageKind::ToolCall { .. } | MessageKind::ToolResult => theme.warning,
     }
 }
 
-/// Prepend a colored left border `"| "` to a line's spans.
+/// Prepend a colored left border to a line's spans (REQ-TUI-102).
 ///
+/// Uses Unicode left half block (\u{258c}) for a refined visual weight.
 /// For `MessageKind::User` the border is rendered bold (REQ-TUI-061); for all
 /// other kinds the border uses a default (non-bold) style.
 fn with_border(kind: &MessageKind, color: Color, spans: Vec<Span<'static>>) -> Line<'static> {
@@ -380,7 +379,7 @@ fn with_border(kind: &MessageKind, color: Color, spans: Vec<Span<'static>>) -> L
         MessageKind::User => Style::default().fg(color).add_modifier(Modifier::BOLD),
         _ => Style::default().fg(color),
     };
-    let mut result = vec![Span::styled("| ", border_style)];
+    let mut result = vec![Span::styled("\u{258c} ", border_style)];
     result.extend(spans);
     Line::from(result)
 }
@@ -390,16 +389,20 @@ fn with_border(kind: &MessageKind, color: Color, spans: Vec<Span<'static>>) -> L
 /// Exposed at crate visibility so unit tests can inspect span styles without
 /// running the full `render_chat_log` -> `Paragraph` pipeline. `area_width` is
 /// used to size the horizontal separators rendered for system messages.
-pub(crate) fn build_message_lines(msg: &ChatMessage, area_width: u16) -> Vec<Line<'static>> {
+pub(crate) fn build_message_lines(
+    msg: &ChatMessage,
+    area_width: u16,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
-    let bc = border_color(&msg.kind);
+    let bc = border_color(&msg.kind, theme);
     match &msg.kind {
         MessageKind::User => {
             // REQ-TUI-061: user messages render with bright-cyan bold prefix
             // bar and "You:" label plus bold body so they stand out visually
             // in dense conversations.
             let prefix_style = Style::default()
-                .fg(Color::LightCyan)
+                .fg(theme.message_user)
                 .add_modifier(Modifier::BOLD);
             let body_style = Style::default().add_modifier(Modifier::BOLD);
             let msg_lines: Vec<&str> = msg.content.split('\n').collect();
@@ -438,9 +441,9 @@ pub(crate) fn build_message_lines(msg: &ChatMessage, area_width: u16) -> Vec<Lin
                 vec![
                     Span::styled(
                         format!("  > {tool_name}: "),
-                        Style::default().fg(Color::Yellow),
+                        Style::default().fg(theme.warning),
                     ),
-                    Span::styled(msg.content.clone(), Style::default().fg(Color::DarkGray)),
+                    Span::styled(msg.content.clone(), Style::default().fg(theme.border)),
                 ],
             ));
         }
@@ -451,7 +454,7 @@ pub(crate) fn build_message_lines(msg: &ChatMessage, area_width: u16) -> Vec<Lin
                     bc,
                     vec![Span::styled(
                         line_text.to_string(),
-                        Style::default().fg(Color::DarkGray),
+                        Style::default().fg(theme.border),
                     )],
                 ));
             }
@@ -463,7 +466,9 @@ pub(crate) fn build_message_lines(msg: &ChatMessage, area_width: u16) -> Vec<Lin
                     bc,
                     vec![Span::styled(
                         line_text.to_string(),
-                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(theme.error)
+                            .add_modifier(Modifier::BOLD),
                     )],
                 ));
             }
@@ -478,7 +483,7 @@ pub(crate) fn build_message_lines(msg: &ChatMessage, area_width: u16) -> Vec<Lin
                 vec![Span::styled(
                     thin_sep.clone(),
                     Style::default()
-                        .fg(Color::DarkGray)
+                        .fg(theme.border)
                         .add_modifier(Modifier::DIM),
                 )],
             ));
@@ -488,7 +493,7 @@ pub(crate) fn build_message_lines(msg: &ChatMessage, area_width: u16) -> Vec<Lin
                     bc,
                     vec![Span::styled(
                         format!("  {line_text}"),
-                        Style::default().fg(Color::Cyan),
+                        Style::default().fg(theme.message_system),
                     )],
                 ));
             }
@@ -498,7 +503,7 @@ pub(crate) fn build_message_lines(msg: &ChatMessage, area_width: u16) -> Vec<Lin
                 vec![Span::styled(
                     thin_sep,
                     Style::default()
-                        .fg(Color::DarkGray)
+                        .fg(theme.border)
                         .add_modifier(Modifier::DIM),
                 )],
             ));
@@ -511,7 +516,7 @@ fn render_chat_log(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppSt
     let mut lines: Vec<Line> = Vec::new();
 
     for msg in &state.messages {
-        lines.extend(build_message_lines(msg, area.width));
+        lines.extend(build_message_lines(msg, area.width, &state.theme));
         lines.push(Line::from(""));
     }
 
@@ -530,7 +535,7 @@ fn render_chat_log(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppSt
                 let sc = spinner_char(state.spinner_frame);
                 let mut spans = vec![Span::styled(
                     format!("{sc} "),
-                    Style::default().fg(Color::Yellow),
+                    Style::default().fg(state.theme.warning),
                 )];
                 spans.extend(lines[line_idx].spans.iter().cloned());
                 lines[line_idx] = Line::from(spans);
@@ -544,11 +549,11 @@ fn render_chat_log(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppSt
     {
         let sc = spinner_char(state.spinner_frame);
         lines.push(Line::from(vec![
-            Span::styled(format!("{sc} "), Style::default().fg(Color::Yellow)),
+            Span::styled(format!("{sc} "), Style::default().fg(state.theme.warning)),
             Span::styled(
                 waiting.as_str(),
                 Style::default()
-                    .fg(Color::DarkGray)
+                    .fg(state.theme.border)
                     .add_modifier(Modifier::ITALIC),
             ),
         ]));
@@ -562,7 +567,7 @@ fn render_chat_log(frame: &mut Frame, area: ratatui::layout::Rect, state: &AppSt
             Span::styled(
                 " ...",
                 Style::default()
-                    .fg(Color::DarkGray)
+                    .fg(state.theme.border)
                     .add_modifier(Modifier::DIM),
             ),
         ]));
@@ -605,7 +610,12 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 }
 
 /// Render the HITL approval modal as a centered overlay.
-fn render_approval_modal(frame: &mut Frame, area: Rect, info: &ApprovalDisplayInfo) {
+fn render_approval_modal(
+    frame: &mut Frame,
+    area: Rect,
+    info: &ApprovalDisplayInfo,
+    theme: &Theme,
+) {
     let modal_area = centered_rect(60, 40, area);
 
     // Clear the area behind the modal.
@@ -616,8 +626,8 @@ fn render_approval_modal(frame: &mut Frame, area: Rect, info: &ApprovalDisplayIn
         ToolRisk::ReadOnly => "READ-ONLY",
     };
     let risk_color = match info.risk {
-        ToolRisk::StateMutating => Color::Red,
-        ToolRisk::ReadOnly => Color::Green,
+        ToolRisk::StateMutating => theme.error,
+        ToolRisk::ReadOnly => theme.success,
     };
 
     let text = vec![
@@ -646,29 +656,38 @@ fn render_approval_modal(frame: &mut Frame, area: Rect, info: &ApprovalDisplayIn
         .title(" Approval Required ")
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow));
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(theme.approval_pending))
+        .padding(Padding::new(2, 2, 1, 1));
 
     let paragraph = Paragraph::new(text).block(block);
     frame.render_widget(paragraph, modal_area);
 }
 
-/// Background color for the file preview pane.
-const PREVIEW_BG: Color = Color::Rgb(30, 30, 30);
-
 /// Render the file picker dropdown with a tree view (left) and preview (right).
-fn render_file_picker_dropdown(frame: &mut Frame, area: Rect, picker: &FilePickerView) {
+fn render_file_picker_dropdown(
+    frame: &mut Frame,
+    area: Rect,
+    picker: &FilePickerView,
+    theme: &Theme,
+) {
     // Split horizontally: 40% tree, 60% preview.
     let panels = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
         .split(area);
 
-    render_file_picker_tree(frame, panels[0], picker);
-    render_file_picker_preview(frame, panels[1], picker);
+    render_file_picker_tree(frame, panels[0], picker, theme);
+    render_file_picker_preview(frame, panels[1], picker, theme);
 }
 
 /// Render the tree (left panel) of the file picker.
-fn render_file_picker_tree(frame: &mut Frame, area: Rect, picker: &FilePickerView) {
+fn render_file_picker_tree(
+    frame: &mut Frame,
+    area: Rect,
+    picker: &FilePickerView,
+    theme: &Theme,
+) {
     // Maximum visible entries in the list.
     let max_visible: usize = area.height.saturating_sub(1) as usize; // query line takes 1
 
@@ -683,7 +702,7 @@ fn render_file_picker_tree(frame: &mut Frame, area: Rect, picker: &FilePickerVie
 
     // Query line
     lines.push(Line::from(vec![
-        Span::styled(" @ ", Style::default().fg(Color::Cyan)),
+        Span::styled(" @ ", Style::default().fg(theme.accent)),
         Span::raw(&picker.query),
     ]));
 
@@ -697,13 +716,13 @@ fn render_file_picker_tree(frame: &mut Frame, area: Rect, picker: &FilePickerVie
     {
         let base_style = if i == picker.selected {
             Style::default()
-                .bg(Color::DarkGray)
-                .fg(Color::White)
+                .bg(theme.border)
+                .fg(theme.fg)
                 .add_modifier(Modifier::BOLD)
         } else if entry.is_dir {
-            Style::default().fg(Color::Blue)
+            Style::default().fg(theme.directory)
         } else {
-            Style::default().fg(Color::Reset)
+            Style::default().fg(theme.fg)
         };
         let indent = "  ".repeat(entry.depth);
         let prefix = if entry.is_dir {
@@ -721,16 +740,21 @@ fn render_file_picker_tree(frame: &mut Frame, area: Rect, picker: &FilePickerVie
     if picker.entries.is_empty() {
         lines.push(Line::from(Span::styled(
             "  (no matching files)",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme.border),
         )));
     }
 
-    let paragraph = Paragraph::new(lines).style(Style::default().bg(Color::Black));
+    let paragraph = Paragraph::new(lines).style(Style::default().bg(theme.bg));
     frame.render_widget(paragraph, area);
 }
 
 /// Render the preview (right panel) of the file picker.
-fn render_file_picker_preview(frame: &mut Frame, area: Rect, picker: &FilePickerView) {
+fn render_file_picker_preview(
+    frame: &mut Frame,
+    area: Rect,
+    picker: &FilePickerView,
+    theme: &Theme,
+) {
     use syntect::easy::HighlightLines;
     use syntect::highlighting::ThemeSet;
     use syntect::parsing::SyntaxSet;
@@ -742,12 +766,14 @@ fn render_file_picker_preview(frame: &mut Frame, area: Rect, picker: &FilePicker
         .map(|e| e.is_dir)
         .unwrap_or(false);
 
+    let preview_bg = theme.code_bg;
+
     if is_dir {
         let lines = vec![Line::from(Span::styled(
             "  Directory",
-            Style::default().fg(Color::DarkGray).bg(PREVIEW_BG),
+            Style::default().fg(theme.border).bg(preview_bg),
         ))];
-        let paragraph = Paragraph::new(lines).style(Style::default().bg(PREVIEW_BG));
+        let paragraph = Paragraph::new(lines).style(Style::default().bg(preview_bg));
         frame.render_widget(paragraph, area);
         return;
     }
@@ -757,9 +783,9 @@ fn render_file_picker_preview(frame: &mut Frame, area: Rect, picker: &FilePicker
         None => {
             let lines = vec![Line::from(Span::styled(
                 "  No preview",
-                Style::default().fg(Color::DarkGray).bg(PREVIEW_BG),
+                Style::default().fg(theme.border).bg(preview_bg),
             ))];
-            let paragraph = Paragraph::new(lines).style(Style::default().bg(PREVIEW_BG));
+            let paragraph = Paragraph::new(lines).style(Style::default().bg(preview_bg));
             frame.render_widget(paragraph, area);
             return;
         }
@@ -768,7 +794,7 @@ fn render_file_picker_preview(frame: &mut Frame, area: Rect, picker: &FilePicker
     // Set up syntect for highlighting based on file extension.
     let ss = SyntaxSet::load_defaults_newlines();
     let ts = ThemeSet::load_defaults();
-    let theme = &ts.themes["base16-ocean.dark"];
+    let syntect_theme = &ts.themes["base16-ocean.dark"];
 
     let syntax = picker
         .preview_extension
@@ -776,10 +802,10 @@ fn render_file_picker_preview(frame: &mut Frame, area: Rect, picker: &FilePicker
         .and_then(|ext| ss.find_syntax_by_extension(ext))
         .unwrap_or_else(|| ss.find_syntax_plain_text());
 
-    let mut highlighter = HighlightLines::new(syntax, theme);
+    let mut highlighter = HighlightLines::new(syntax, syntect_theme);
     let dim_style = Style::default()
-        .fg(Color::DarkGray)
-        .bg(PREVIEW_BG)
+        .fg(theme.border)
+        .bg(preview_bg)
         .add_modifier(Modifier::DIM);
 
     let mut lines: Vec<Line> = Vec::new();
@@ -794,28 +820,28 @@ fn render_file_picker_preview(frame: &mut Frame, area: Rect, picker: &FilePicker
             let fg = Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
             spans.push(Span::styled(
                 text.to_string(),
-                Style::default().fg(fg).bg(PREVIEW_BG),
+                Style::default().fg(fg).bg(preview_bg),
             ));
         }
         if regions.is_empty() {
             spans.push(Span::styled(
                 line_text.to_string(),
-                Style::default().bg(PREVIEW_BG),
+                Style::default().bg(preview_bg),
             ));
         }
 
         lines.push(Line::from(spans));
     }
 
-    let paragraph = Paragraph::new(lines).style(Style::default().bg(PREVIEW_BG));
+    let paragraph = Paragraph::new(lines).style(Style::default().bg(preview_bg));
     frame.render_widget(paragraph, area);
 }
 
-fn render_separator(frame: &mut Frame, area: Rect) {
+fn render_separator(frame: &mut Frame, area: Rect, theme: &Theme) {
     let sep = "\u{2500}".repeat(area.width as usize);
     let separator = Paragraph::new(Line::from(Span::styled(
         sep,
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(theme.border),
     )));
     frame.render_widget(separator, area);
 }
@@ -838,7 +864,7 @@ fn render_input_line(frame: &mut Frame, area: Rect, state: &AppState) {
                 Span::styled(
                     prompt_str,
                     Style::default()
-                        .fg(Color::Green)
+                        .fg(state.theme.success)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(*line_text),
@@ -857,7 +883,7 @@ fn render_input_line(frame: &mut Frame, area: Rect, state: &AppState) {
         last_line.spans.push(Span::styled(
             ghost.clone(),
             Style::default()
-                .fg(Color::DarkGray)
+                .fg(state.theme.border)
                 .add_modifier(Modifier::ITALIC),
         ));
     }
@@ -901,11 +927,14 @@ fn render_hint_line(frame: &mut Frame, area: Rect, state: &AppState) {
         Span::styled(
             format!(" {mode_label} "),
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::DarkGray)
+                .fg(state.theme.bg)
+                .bg(state.theme.border)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(format!("  {hints}"), Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("  {hints}"),
+            Style::default().fg(state.theme.border),
+        ),
     ]);
 
     frame.render_widget(Paragraph::new(line), area);
@@ -1786,10 +1815,10 @@ mod tests {
             output.contains("\u{2500}\u{2500}\u{2500}"),
             "System message should have separator lines: {output}"
         );
-        // Verify the cyan border is present (| prefix)
+        // Verify the left half block border is present
         let has_border = output
             .lines()
-            .any(|line| line.contains('|') && line.contains("Session restored"));
+            .any(|line| line.contains('\u{258c}') && line.contains("Session restored"));
         assert!(
             has_border,
             "System message should have left border accent: {output}"
@@ -1802,13 +1831,13 @@ mod tests {
         let mut state = AppState::default();
         state.push_message(ChatMessage::user("Hello"));
         let output = render_to_string(&state, 60, 20);
-        // User message lines should start with "| " border accent
+        // User message lines should start with left half block border accent
         let has_border = output
             .lines()
-            .any(|line| line.contains("| ") && line.contains("Hello"));
+            .any(|line| line.contains('\u{258c}') && line.contains("Hello"));
         assert!(
             has_border,
-            "User message should have '| ' left border accent: {output}"
+            "User message should have left border accent: {output}"
         );
     }
 
@@ -1820,10 +1849,10 @@ mod tests {
         let output = render_to_string(&state, 60, 20);
         let has_border = output
             .lines()
-            .any(|line| line.contains("| ") && line.contains("42"));
+            .any(|line| line.contains('\u{258c}') && line.contains("42"));
         assert!(
             has_border,
-            "Assistant message should have '| ' left border accent: {output}"
+            "Assistant message should have left border accent: {output}"
         );
     }
 
@@ -1835,10 +1864,10 @@ mod tests {
         let output = render_to_string(&state, 60, 20);
         let has_border = output
             .lines()
-            .any(|line| line.contains("| ") && line.contains("Connection lost"));
+            .any(|line| line.contains('\u{258c}') && line.contains("Connection lost"));
         assert!(
             has_border,
-            "Error message should have '| ' left border accent: {output}"
+            "Error message should have left border accent: {output}"
         );
     }
 
@@ -1899,7 +1928,7 @@ mod tests {
     #[test]
     fn test_user_message_has_distinct_styling() {
         let msg = ChatMessage::user("Explain main.rs");
-        let lines = build_message_lines(&msg, 80);
+        let lines = build_message_lines(&msg, 80, &DARK_THEME);
         assert!(!lines.is_empty(), "user message should produce lines");
 
         let first = &lines[0];
@@ -1909,13 +1938,16 @@ mod tests {
             first.spans
         );
 
-        // Border: "| " with LightCyan + BOLD.
+        // Border: left half block with theme.message_user + BOLD.
         let border = &first.spans[0];
-        assert_eq!(border.content, "| ", "first span should be the border bar");
+        assert_eq!(
+            border.content, "\u{258c} ",
+            "first span should be the border bar"
+        );
         assert_eq!(
             border.style.fg,
-            Some(Color::LightCyan),
-            "border should be bright cyan (LightCyan): {:?}",
+            Some(DARK_THEME.message_user),
+            "border should use theme.message_user: {:?}",
             border.style,
         );
         assert!(
@@ -1924,7 +1956,7 @@ mod tests {
             border.style,
         );
 
-        // Prefix: "You: " with LightCyan + BOLD.
+        // Prefix: "You: " with theme.message_user + BOLD.
         let prefix = &first.spans[1];
         assert_eq!(
             prefix.content, "You: ",
@@ -1932,8 +1964,8 @@ mod tests {
         );
         assert_eq!(
             prefix.style.fg,
-            Some(Color::LightCyan),
-            "'You:' prefix should be bright cyan (LightCyan): {:?}",
+            Some(DARK_THEME.message_user),
+            "'You:' prefix should use theme.message_user: {:?}",
             prefix.style,
         );
         assert!(
@@ -1985,16 +2017,16 @@ mod tests {
     #[test]
     fn test_assistant_message_keeps_default_styling() {
         let msg = ChatMessage::assistant("Done.");
-        let lines = build_message_lines(&msg, 80);
+        let lines = build_message_lines(&msg, 80, &DARK_THEME);
         assert!(!lines.is_empty(), "assistant message should produce lines");
 
         let first = &lines[0];
         let border = &first.spans[0];
-        assert_eq!(border.content, "| ");
+        assert_eq!(border.content, "\u{258c} ");
         assert_eq!(
             border.style.fg,
-            Some(Color::Blue),
-            "assistant border should stay blue, not LightCyan: {:?}",
+            Some(DARK_THEME.message_assistant),
+            "assistant border should use theme.message_assistant: {:?}",
             border.style,
         );
         assert!(
@@ -2019,7 +2051,7 @@ mod tests {
     #[test]
     fn test_user_multiline_continuation_keeps_bold_cyan_border() {
         let msg = ChatMessage::user("line one\nline two");
-        let lines = build_message_lines(&msg, 80);
+        let lines = build_message_lines(&msg, 80, &DARK_THEME);
         assert_eq!(
             lines.len(),
             2,
@@ -2030,8 +2062,8 @@ mod tests {
             let border = &line.spans[0];
             assert_eq!(
                 border.style.fg,
-                Some(Color::LightCyan),
-                "line {idx} border should be LightCyan",
+                Some(DARK_THEME.message_user),
+                "line {idx} border should use theme.message_user",
             );
             assert!(
                 border.style.add_modifier.contains(Modifier::BOLD),

@@ -1415,7 +1415,6 @@ async fn run_interactive_chat(
                         command_palette: app.command_palette.view(),
                         ghost_text: app.input.ghost_text.clone(),
                         waiting_text: app.waiting_text(),
-                        theme: aegis_tui::theme::DARK_THEME.clone(),
                         file_picker: app.file_picker.as_ref().map(|fp| {
                             aegis_tui::layout::FilePickerView {
                                 query: fp.query.clone(),
