@@ -297,6 +297,47 @@ impl ToolCall {
             }
         }
     }
+
+    /// Returns the canonical tool name for this call.
+    pub fn tool_name(&self) -> &str {
+        match self {
+            Self::ReadFile { .. } => "read_file",
+            Self::WriteFile { .. } => "write_file",
+            Self::RunCommand { .. } => "run_command",
+            Self::ListDir { .. } => "list_dir",
+            Self::Grep { .. } => "grep",
+            Self::McpTool { qualified_name, .. } => qualified_name.as_str(),
+        }
+    }
+
+    /// Create a modified copy with edited arguments (REQ-HITL-017).
+    ///
+    /// For RunCommand: the edited string replaces the command.
+    /// For McpTool: the edited string replaces the JSON arguments.
+    /// For WriteFile: the edited string replaces the content.
+    /// Returns None for tool types that don't support editing.
+    pub fn with_edited_args(&self, edited: &str) -> Option<Self> {
+        match self {
+            Self::RunCommand { timeout_secs, .. } => Some(Self::RunCommand {
+                command: edited.to_string(),
+                timeout_secs: *timeout_secs,
+            }),
+            Self::McpTool { qualified_name, .. } => {
+                let args = serde_json::from_str(edited)
+                    .unwrap_or(serde_json::Value::String(edited.to_string()));
+                Some(Self::McpTool {
+                    qualified_name: qualified_name.clone(),
+                    arguments: args,
+                })
+            }
+            Self::WriteFile { path, .. } => Some(Self::WriteFile {
+                path: path.clone(),
+                content: edited.to_string(),
+            }),
+            // Read-only tools don't go through HITL
+            Self::ReadFile { .. } | Self::ListDir { .. } | Self::Grep { .. } => None,
+        }
+    }
 }
 
 /// The result of executing a tool call.
@@ -312,9 +353,19 @@ impl ToolCall {
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ToolResult {
-    Success { output: String },
-    Error { message: String },
-    PermissionDenied { reason: String },
+    Success {
+        output: String,
+    },
+    Error {
+        message: String,
+    },
+    PermissionDenied {
+        reason: String,
+    },
+    /// Tool was skipped by user but session continues (REQ-HITL-018).
+    Skipped {
+        tool_name: String,
+    },
 }
 
 /// HITL approval decision.
@@ -335,6 +386,39 @@ pub enum ApprovalDecision {
     Skipped,
     /// Auto-denied because the HITL timeout expired (REQ-HITL-003).
     TimedOut,
+}
+
+/// HITL approval response with optional edited arguments (REQ-HITL-017).
+///
+/// Wraps an `ApprovalDecision` with optional modified tool arguments
+/// when the user chooses to edit before approving.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApprovalResponse {
+    pub decision: ApprovalDecision,
+    /// Modified tool arguments (JSON or command string) when decision is Edited.
+    pub edited_args: Option<String>,
+}
+
+impl ApprovalResponse {
+    pub fn simple(decision: ApprovalDecision) -> Self {
+        Self {
+            decision,
+            edited_args: None,
+        }
+    }
+
+    pub fn edited(args: String) -> Self {
+        Self {
+            decision: ApprovalDecision::Edited,
+            edited_args: Some(args),
+        }
+    }
+}
+
+impl From<ApprovalDecision> for ApprovalResponse {
+    fn from(decision: ApprovalDecision) -> Self {
+        Self::simple(decision)
+    }
 }
 
 // ---------------------------------------------------------------------------

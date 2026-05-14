@@ -2,7 +2,7 @@
 
 use aegis_domain::error::DomainError;
 use aegis_domain::ports::ApprovalGate;
-use aegis_domain::types::{ApprovalDecision, ToolCall, ToolRisk};
+use aegis_domain::types::{ApprovalDecision, ApprovalResponse, ToolCall, ToolRisk};
 use async_trait::async_trait;
 
 /// Matches tool calls by variant name, path prefix, or risk level.
@@ -83,13 +83,13 @@ impl ApprovalGate for ConditionalMockGate {
     async fn request_approval(
         &self,
         tool_call: &ToolCall,
-    ) -> Result<ApprovalDecision, DomainError> {
+    ) -> Result<ApprovalResponse, DomainError> {
         for (matcher, decision) in &self.rules {
             if matcher.matches(tool_call) {
-                return Ok(*decision);
+                return Ok(ApprovalResponse::simple(*decision));
             }
         }
-        Ok(self.default)
+        Ok(ApprovalResponse::simple(self.default))
     }
 }
 
@@ -124,11 +124,11 @@ mod tests {
         };
 
         assert_eq!(
-            gate.request_approval(&read).await.unwrap(),
+            gate.request_approval(&read).await.unwrap().decision,
             ApprovalDecision::Approved
         );
         assert_eq!(
-            gate.request_approval(&write).await.unwrap(),
+            gate.request_approval(&write).await.unwrap().decision,
             ApprovalDecision::Denied
         );
     }
@@ -160,11 +160,11 @@ mod tests {
         };
 
         assert_eq!(
-            gate.request_approval(&write_src).await.unwrap(),
+            gate.request_approval(&write_src).await.unwrap().decision,
             ApprovalDecision::Approved
         );
         assert_eq!(
-            gate.request_approval(&write_etc).await.unwrap(),
+            gate.request_approval(&write_etc).await.unwrap().decision,
             ApprovalDecision::Denied
         );
     }
@@ -186,7 +186,7 @@ mod tests {
         };
 
         assert_eq!(
-            gate.request_approval(&cmd).await.unwrap(),
+            gate.request_approval(&cmd).await.unwrap().decision,
             ApprovalDecision::Denied
         );
     }
@@ -215,7 +215,7 @@ mod tests {
         };
 
         assert_eq!(
-            gate.request_approval(&write).await.unwrap(),
+            gate.request_approval(&write).await.unwrap().decision,
             ApprovalDecision::Approved
         );
 
@@ -227,7 +227,7 @@ mod tests {
         };
 
         assert_eq!(
-            gate.request_approval(&cmd).await.unwrap(),
+            gate.request_approval(&cmd).await.unwrap().decision,
             ApprovalDecision::Denied
         );
     }
@@ -263,7 +263,7 @@ mod tests {
 
         for call in &calls {
             assert_eq!(
-                gate.request_approval(call).await.unwrap(),
+                gate.request_approval(call).await.unwrap().decision,
                 ApprovalDecision::Approved,
                 "AnyTool should match {:?}",
                 call

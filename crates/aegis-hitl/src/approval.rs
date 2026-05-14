@@ -15,11 +15,17 @@ use tokio::sync::{mpsc, oneshot};
 pub struct ApprovalRequest {
     pub tool_call: ToolCall,
     pub description: String,
-    pub response_tx: oneshot::Sender<ApprovalDecision>,
+    pub response_tx: oneshot::Sender<ApprovalResponse>,
 }
 
 /// Default HITL approval timeout (REQ-HITL-003).
 pub const DEFAULT_APPROVAL_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Default approval queue depth (REQ-HITL-020).
+///
+/// When the queue is full, `request_approval` blocks the agent loop
+/// until the TUI drains at least one pending approval.
+pub const DEFAULT_APPROVAL_QUEUE_DEPTH: usize = 32;
 
 /// Create a linked approval gate and request receiver.
 ///
@@ -67,7 +73,7 @@ impl ApprovalGate for ChannelApprovalGate {
     async fn request_approval(
         &self,
         tool_call: &ToolCall,
-    ) -> Result<ApprovalDecision, DomainError> {
+    ) -> Result<ApprovalResponse, DomainError> {
         let (response_tx, response_rx) = oneshot::channel();
         let description = describe_tool_call(tool_call);
 
@@ -85,10 +91,10 @@ impl ApprovalGate for ChannelApprovalGate {
             .await
             .map_err(|_| DomainError::PermissionDenied)?;
 
-        let decision = match tokio::time::timeout(self.timeout, response_rx).await {
-            Ok(Ok(d)) => {
-                tracing::info!(?d, "HITL decision received");
-                d
+        let response = match tokio::time::timeout(self.timeout, response_rx).await {
+            Ok(Ok(r)) => {
+                tracing::info!(?r.decision, "HITL decision received");
+                r
             }
             Ok(Err(_)) => {
                 return Err(DomainError::Other("Approval channel closed".to_string()));
@@ -98,11 +104,11 @@ impl ApprovalGate for ChannelApprovalGate {
                     timeout_secs = self.timeout.as_secs(),
                     "HITL approval timed out -- auto-denying (REQ-HITL-003)"
                 );
-                ApprovalDecision::TimedOut
+                ApprovalResponse::simple(ApprovalDecision::TimedOut)
             }
         };
 
-        Ok(decision)
+        Ok(response)
     }
 }
 
@@ -211,11 +217,11 @@ mod tests {
         assert!(request.description.contains("Write to"));
         request
             .response_tx
-            .send(ApprovalDecision::Approved)
+            .send(ApprovalResponse::simple(ApprovalDecision::Approved))
             .unwrap();
 
         let decision = gate_handle.await.unwrap().unwrap();
-        assert_eq!(decision, ApprovalDecision::Approved);
+        assert_eq!(decision.decision, ApprovalDecision::Approved);
     }
 
     // rtmx:req REQ-HITL-001
@@ -233,10 +239,13 @@ mod tests {
 
         let request = rx.recv().await.unwrap();
         assert!(request.description.contains("rm -rf"));
-        request.response_tx.send(ApprovalDecision::Denied).unwrap();
+        request
+            .response_tx
+            .send(ApprovalResponse::simple(ApprovalDecision::Denied))
+            .unwrap();
 
         let decision = gate_handle.await.unwrap().unwrap();
-        assert_eq!(decision, ApprovalDecision::Denied);
+        assert_eq!(decision.decision, ApprovalDecision::Denied);
     }
 
     // rtmx:req REQ-HITL-001
@@ -306,11 +315,11 @@ mod tests {
         let request = rx.recv().await.unwrap();
         request
             .response_tx
-            .send(ApprovalDecision::Approved)
+            .send(ApprovalResponse::simple(ApprovalDecision::Approved))
             .unwrap();
 
         let decision = gate_handle.await.unwrap().unwrap();
-        assert_eq!(decision, ApprovalDecision::Approved);
+        assert_eq!(decision.decision, ApprovalDecision::Approved);
     }
 
     // rtmx:req REQ-HITL-003
@@ -336,12 +345,58 @@ mod tests {
         tokio::time::advance(Duration::from_millis(200)).await;
 
         let decision = gate_handle.await.unwrap().unwrap();
-        assert_eq!(decision, ApprovalDecision::TimedOut);
+        assert_eq!(decision.decision, ApprovalDecision::TimedOut);
     }
 
     // rtmx:req REQ-HITL-003
     #[test]
     fn timed_out_is_distinct_from_denied() {
         assert_ne!(ApprovalDecision::TimedOut, ApprovalDecision::Denied);
+    }
+
+    // rtmx:req REQ-HITL-020
+    #[test]
+    fn test_bounded_queue_capacity() {
+        // Default queue depth should be 32
+        assert_eq!(DEFAULT_APPROVAL_QUEUE_DEPTH, 32);
+    }
+
+    // rtmx:req REQ-HITL-020
+    #[tokio::test]
+    async fn test_bounded_queue_blocks_when_full() {
+        // Create a channel with capacity 1
+        let (gate, _rx) = create_approval_channel(1);
+
+        // First send should succeed (fills the buffer)
+        let gate_clone = gate.clone();
+        let handle1 = tokio::spawn(async move {
+            let call = ToolCall::WriteFile {
+                path: FilePath::new_unchecked("a.rs"),
+                content: "x".to_string(),
+            };
+            gate_clone.request_approval(&call).await
+        });
+
+        // Give first send time to fill the buffer
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Second send should block because buffer is full
+        let gate_clone2 = gate.clone();
+        let handle2 = tokio::spawn(async move {
+            let call = ToolCall::WriteFile {
+                path: FilePath::new_unchecked("b.rs"),
+                content: "y".to_string(),
+            };
+            // This will block until the first is drained
+            gate_clone2.request_approval(&call).await
+        });
+
+        // Verify second handle is NOT resolved yet (it's blocked)
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!handle2.is_finished(), "Second send should be blocked");
+
+        // Clean up by dropping the gate handles
+        handle1.abort();
+        handle2.abort();
     }
 }

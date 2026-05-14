@@ -5,7 +5,7 @@ mod update;
 
 use aegis_domain::error::DomainError;
 use aegis_domain::ports::{ApprovalGate, StreamEvent};
-use aegis_domain::types::{ApprovalDecision, ToolCall};
+use aegis_domain::types::{ApprovalDecision, ApprovalResponse, ToolCall};
 use aegis_tui::app::{Action, App};
 use aegis_tui::event::{ApprovalRequestHandle, TuiEvent};
 use async_trait::async_trait;
@@ -52,8 +52,8 @@ impl ApprovalGate for HeadlessApprovalGate {
     async fn request_approval(
         &self,
         _tool_call: &ToolCall,
-    ) -> Result<ApprovalDecision, DomainError> {
-        Ok(ApprovalDecision::Approved)
+    ) -> Result<ApprovalResponse, DomainError> {
+        Ok(ApprovalResponse::simple(ApprovalDecision::Approved))
     }
 }
 
@@ -1252,7 +1252,9 @@ async fn run_interactive_chat(
     let (agent_input_tx, mut agent_input_rx) = mpsc::unbounded_channel::<String>();
 
     // 4. Create HITL approval channel
-    let (approval_gate, mut approval_rx) = aegis_hitl::approval::create_approval_channel(4);
+    let (approval_gate, mut approval_rx) = aegis_hitl::approval::create_approval_channel(
+        aegis_hitl::approval::DEFAULT_APPROVAL_QUEUE_DEPTH,
+    );
 
     // 5. Spawn crossterm event reader on a dedicated OS thread
     let event_tx_term = event_tx.clone();

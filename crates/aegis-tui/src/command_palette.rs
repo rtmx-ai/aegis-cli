@@ -146,6 +146,11 @@ impl CommandPalette {
         self.injected_options.remove(slot_name);
     }
 
+    /// Returns true if the current slot has no options to display.
+    pub fn current_slot_is_empty(&self) -> bool {
+        self.filtered.is_empty()
+    }
+
     /// Re-run build_slot_entries for the current slot to refresh the filtered list.
     /// Called when injected options arrive mid-palette-session.
     pub fn refresh_current_slot(&mut self) {

@@ -9,7 +9,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use aegis_domain::types::ApprovalDecision;
+use aegis_domain::types::{ApprovalDecision, ApprovalResponse};
 
 use crate::approval::ApprovalRequest;
 
@@ -63,7 +63,9 @@ pub async fn flush_pending_approvals(
 ) -> usize {
     let mut count = 0;
     while let Ok(request) = receiver.try_recv() {
-        let _ = request.response_tx.send(ApprovalDecision::Denied);
+        let _ = request
+            .response_tx
+            .send(ApprovalResponse::simple(ApprovalDecision::Denied));
         tracing::info!(
             tool = %request.description,
             "Flushed pending approval as Denied (REQ-HITL-012)"
@@ -117,7 +119,7 @@ mod tests {
     /// Helper to create a pending approval request in a channel.
     fn make_pending_request(
         tx: &mpsc::Sender<ApprovalRequest>,
-    ) -> oneshot::Receiver<ApprovalDecision> {
+    ) -> oneshot::Receiver<ApprovalResponse> {
         let (resp_tx, resp_rx) = oneshot::channel();
         let req = ApprovalRequest {
             tool_call: ToolCall::WriteFile {
@@ -142,8 +144,8 @@ mod tests {
         flush_pending_approvals(&mut rx).await;
 
         // Both requests should have been denied.
-        assert_eq!(resp1.await.unwrap(), ApprovalDecision::Denied);
-        assert_eq!(resp2.await.unwrap(), ApprovalDecision::Denied);
+        assert_eq!(resp1.await.unwrap().decision, ApprovalDecision::Denied);
+        assert_eq!(resp2.await.unwrap().decision, ApprovalDecision::Denied);
     }
 
     // rtmx:req REQ-HITL-012
@@ -183,7 +185,7 @@ mod tests {
         // Flush should deny all pending
         let count = flush_pending_approvals(&mut rx).await;
         assert_eq!(count, 1);
-        assert_eq!(resp.await.unwrap(), ApprovalDecision::Denied);
+        assert_eq!(resp.await.unwrap().decision, ApprovalDecision::Denied);
     }
 
     // rtmx:req REQ-HITL-014
@@ -203,8 +205,8 @@ mod tests {
 
         let count = flush_pending_approvals(&mut rx).await;
         assert_eq!(count, 3, "all three pending approvals should be flushed");
-        assert_eq!(resp1.await.unwrap(), ApprovalDecision::Denied);
-        assert_eq!(resp2.await.unwrap(), ApprovalDecision::Denied);
-        assert_eq!(resp3.await.unwrap(), ApprovalDecision::Denied);
+        assert_eq!(resp1.await.unwrap().decision, ApprovalDecision::Denied);
+        assert_eq!(resp2.await.unwrap().decision, ApprovalDecision::Denied);
+        assert_eq!(resp3.await.unwrap().decision, ApprovalDecision::Denied);
     }
 }

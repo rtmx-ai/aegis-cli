@@ -484,6 +484,9 @@ where
                     ToolResult::PermissionDenied { reason } => {
                         format!("Permission denied: {reason}")
                     }
+                    ToolResult::Skipped { tool_name } => {
+                        format!("Tool '{tool_name}' was skipped by user")
+                    }
                 };
 
                 // REQ-AGENT-027: Track files from this tool call.
@@ -569,22 +572,15 @@ where
     /// as `ToolResult::Error` so the LLM can decide what to do, rather than
     /// halting the loop.
     async fn execute_tool(&self, call: &ToolCall) -> ToolResult {
-        let tool_name = match call {
-            ToolCall::ReadFile { .. } => "read_file",
-            ToolCall::WriteFile { .. } => "write_file",
-            ToolCall::RunCommand { .. } => "run_command",
-            ToolCall::ListDir { .. } => "list_dir",
-            ToolCall::Grep { .. } => "grep",
-            ToolCall::McpTool { qualified_name, .. } => qualified_name.as_str(),
-        };
+        let tool_name = call.tool_name();
         let risk = call.risk();
         debug!(tool_name, ?risk, "executing tool");
 
         if risk == ToolRisk::StateMutating {
             // HITL gate for mutating tools
             info!(tool_name, "requesting HITL approval");
-            let decision = match self.gate.request_approval(call).await {
-                Ok(d) => d,
+            let response = match self.gate.request_approval(call).await {
+                Ok(r) => r,
                 Err(e) => {
                     warn!(tool_name, %e, "approval gate error");
                     return ToolResult::Error {
@@ -592,14 +588,25 @@ where
                     };
                 }
             };
-            info!(tool_name, ?decision, "HITL decision received");
-            match decision {
+            info!(tool_name, ?response.decision, "HITL decision received");
+
+            // REQ-HITL-017: Apply edited args if user modified them.
+            let effective_call = if let Some(ref edited) = response.edited_args {
+                match call.with_edited_args(edited) {
+                    Some(modified) => modified,
+                    None => call.clone(),
+                }
+            } else {
+                call.clone()
+            };
+
+            match response.decision {
                 ApprovalDecision::Approved | ApprovalDecision::Edited => {
                     // REQ-AGENT-014: Route MCP tools to McpManager.
                     if let ToolCall::McpTool {
                         qualified_name,
                         arguments,
-                    } = call
+                    } = &effective_call
                     {
                         if let Some(ref mgr) = self.mcp_manager {
                             match mgr
@@ -623,18 +630,19 @@ where
                             };
                         }
                     }
-                    match self.executor.execute(call).await {
+                    match self.executor.execute(&effective_call).await {
                         Ok(r) => r,
                         Err(e) => ToolResult::Error {
                             message: format!("Tool execution failed: {e}"),
                         },
                     }
                 }
-                ApprovalDecision::Denied | ApprovalDecision::Skipped => {
-                    ToolResult::PermissionDenied {
-                        reason: "User denied tool execution".to_string(),
-                    }
-                }
+                ApprovalDecision::Denied => ToolResult::PermissionDenied {
+                    reason: "User denied tool execution".to_string(),
+                },
+                ApprovalDecision::Skipped => ToolResult::Skipped {
+                    tool_name: tool_name.to_string(),
+                },
                 ApprovalDecision::TimedOut => ToolResult::PermissionDenied {
                     reason: "HITL approval timed out".to_string(),
                 },
@@ -868,6 +876,44 @@ mod tests {
 
         let result = agent.run("Write bad code").await.unwrap();
         assert_eq!(result.response, "Understood, skipping.");
+    }
+
+    // rtmx:req REQ-HITL-018
+    #[tokio::test]
+    async fn test_skip_returns_empty_result_not_denied() {
+        let provider = MockLlmProvider::new();
+
+        // LLM proposes a write, then completes
+        provider.queue_response(vec![
+            StreamEvent::ToolUse(ToolCall::WriteFile {
+                path: FilePath::new_unchecked("optional.rs"),
+                content: "optional change".to_string(),
+            }),
+            StreamEvent::Done {
+                input_tokens: 10,
+                output_tokens: 5,
+            },
+        ]);
+        provider.queue_response(vec![
+            StreamEvent::Token("OK, I skipped that.".to_string()),
+            StreamEvent::Done {
+                input_tokens: 20,
+                output_tokens: 4,
+            },
+        ]);
+
+        let agent = AgentLoop::new(
+            provider,
+            MockApprovalGate::always_skip(),
+            MockToolExecutor::new(),
+            MockAuditLedger::new(),
+            MockSecurityFilter,
+            AgentConfig::default(),
+        );
+
+        let result = agent.run("Make an optional change").await.unwrap();
+        // Skip should NOT abort -- the agent continues and produces a response
+        assert_eq!(result.response, "OK, I skipped that.");
     }
 
     // rtmx:req REQ-AGENT-001
@@ -1556,5 +1602,59 @@ mod tests {
         }
 
         assert_eq!(processed, 2, "Should stop after kill signal");
+    }
+
+    // rtmx:req REQ-HITL-017
+    #[tokio::test]
+    async fn test_edit_replaces_tool_args_before_execution() {
+        use aegis_test_support::mock_executor::SharedMockExecutor;
+
+        let provider = MockLlmProvider::new();
+
+        // LLM proposes writing "original content", then completes
+        provider.queue_response(vec![
+            StreamEvent::ToolUse(ToolCall::WriteFile {
+                path: FilePath::new_unchecked("output.rs"),
+                content: "original content".to_string(),
+            }),
+            StreamEvent::Done {
+                input_tokens: 10,
+                output_tokens: 5,
+            },
+        ]);
+        provider.queue_response(vec![
+            StreamEvent::Token("Written.".to_string()),
+            StreamEvent::Done {
+                input_tokens: 20,
+                output_tokens: 1,
+            },
+        ]);
+
+        // Gate returns Edited with replacement content
+        let gate = MockApprovalGate::approve_with_edit("edited content");
+        let (executor, inspector) = SharedMockExecutor::new();
+
+        let agent = AgentLoop::new(
+            provider,
+            gate,
+            executor,
+            MockAuditLedger::new(),
+            MockSecurityFilter,
+            AgentConfig::default(),
+        );
+
+        let result = agent.run("Write something").await.unwrap();
+        assert_eq!(result.response, "Written.");
+
+        // Verify the executor received the EDITED content, not the original
+        let calls = inspector.recorded_calls();
+        assert_eq!(calls.len(), 1);
+        match &calls[0] {
+            ToolCall::WriteFile { content, path, .. } => {
+                assert_eq!(content, "edited content");
+                assert_eq!(path.to_string(), "output.rs");
+            }
+            other => panic!("Expected WriteFile, got {:?}", other),
+        }
     }
 }

@@ -14,6 +14,8 @@ pub enum AppPhase {
     ToolExecuting,
     /// HITL modal is displayed; waiting for A/D/E/S keypress.
     AwaitingApproval,
+    /// Editing tool arguments before approval (REQ-HITL-017).
+    EditingApproval,
 }
 
 /// What the event loop should do after handling an event.

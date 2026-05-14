@@ -142,12 +142,18 @@ fn test_models_ready_event_populates_dropdown() {
     };
     app.handle_event(event, &tx);
 
-    // Verify dropdown populated
+    // Verify dropdown populated. The ModelsReady handler merges
+    // discovery results with the provider catalog (default: "local"
+    // which has Llama 3, Code Llama, Mistral). Discovery returned 2
+    // models; the catalog adds Mistral for a total of 3.
     let view = app.command_palette.view();
     assert!(view.is_some());
     let v = view.unwrap();
-    assert_eq!(v.entries.len(), 2);
-    assert!(v.entries.iter().any(|e| e.name == "llama3"));
+    assert_eq!(v.entries.len(), 3);
+    // Entry names use the label (e.g. "Llama 3"), not the value ("llama3")
+    assert!(v.entries.iter().any(|e| e.name == "Llama 3"));
+    assert!(v.entries.iter().any(|e| e.name == "Code Llama"));
+    assert!(v.entries.iter().any(|e| e.name == "Mistral"));
 }
 
 // rtmx:req REQ-TUI-090
@@ -244,16 +250,21 @@ fn test_model_picker_current_model_highlighted() {
     };
     app.handle_event(event, &tx);
 
-    // Current model should have "(current)" in description
+    // Current model should have "(current)" in description.
+    // Entry names use the catalog label, not the raw model ID.
     let view = app.command_palette.view().unwrap();
-    let current = view.entries.iter().find(|e| e.name == "llama3").unwrap();
+    let current = view.entries.iter().find(|e| e.name == "Llama 3").unwrap();
     assert!(
         current.description.contains("(current)"),
         "current model must be marked: {}",
         current.description
     );
     // Non-current model should not have "(current)"
-    let other = view.entries.iter().find(|e| e.name == "codellama").unwrap();
+    let other = view
+        .entries
+        .iter()
+        .find(|e| e.name == "Code Llama")
+        .unwrap();
     assert!(
         !other.description.contains("(current)"),
         "non-current model must not be marked: {}",

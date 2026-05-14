@@ -228,6 +228,7 @@ fn render_status_line(frame: &mut Frame, area: ratatui::layout::Rect, state: &Ap
         AppPhase::Streaming => ("STREAMING", theme.streaming),
         AppPhase::ToolExecuting => ("TOOL", theme.warning),
         AppPhase::AwaitingApproval => ("APPROVE?", theme.approval_pending),
+        AppPhase::EditingApproval => ("EDITING", theme.approval_pending),
     };
 
     // Right section: cost + tokens (only if non-zero)

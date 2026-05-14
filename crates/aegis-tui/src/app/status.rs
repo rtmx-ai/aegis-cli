@@ -77,6 +77,7 @@ impl App {
                 }
             }
             AppPhase::AwaitingApproval => "[A/D/E/S]".to_string(),
+            AppPhase::EditingApproval => "Edit args, Enter to confirm, Esc to cancel".to_string(),
             _ => String::new(),
         };
         crate::layout::StatusInfo {
@@ -106,6 +107,7 @@ impl App {
             AppPhase::Streaming => format!(" | {}", self.thinking.current_text()),
             AppPhase::ToolExecuting => " | executing tool...".to_string(),
             AppPhase::AwaitingApproval => " | APPROVE? [A/D/E/S]".to_string(),
+            AppPhase::EditingApproval => " | EDITING args (Enter/Esc)".to_string(),
         };
         let tokens = if info.input_tokens > 0 || info.output_tokens > 0 {
             format!(

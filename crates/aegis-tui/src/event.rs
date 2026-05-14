@@ -64,7 +64,7 @@ pub enum TuiEvent {
 pub struct ApprovalRequestHandle {
     pub tool_call: ToolCall,
     pub description: String,
-    pub response_tx: tokio::sync::oneshot::Sender<aegis_domain::types::ApprovalDecision>,
+    pub response_tx: tokio::sync::oneshot::Sender<aegis_domain::types::ApprovalResponse>,
 }
 
 // Manual Debug impl because oneshot::Sender doesn't implement Debug.

@@ -38,6 +38,7 @@ impl App {
                 return Action::Continue;
             }
             AppPhase::AwaitingApproval => return self.handle_approval_key(key),
+            AppPhase::EditingApproval => return self.handle_editing_approval_key(key),
             AppPhase::Streaming | AppPhase::ToolExecuting => {
                 // Ctrl+C cancels and clears prompt queue (REQ-TUI-094)
                 if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL)
@@ -143,6 +144,19 @@ impl App {
                             self.input.ghost_text = self.command_palette.stage_hint();
                             // REQ-TUI-090: trigger async model discovery
                             if cmd_name == "/model" {
+                                // Pre-populate with provider catalog so
+                                // all models show immediately, not just
+                                // discovered ones.
+                                if let Some(ref info) = self.current_provider_info {
+                                    let catalog = crate::command_palette::options_for_provider(
+                                        &info.provider,
+                                        "model",
+                                    );
+                                    if !catalog.is_empty() {
+                                        self.command_palette.inject_options("model", catalog);
+                                        self.command_palette.refresh_current_slot();
+                                    }
+                                }
                                 self.pending_model_discovery = true;
                             }
                             return Action::Continue;

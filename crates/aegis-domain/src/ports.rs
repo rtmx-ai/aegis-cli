@@ -237,7 +237,7 @@ pub trait ApprovalGate: Send + Sync {
     async fn request_approval(
         &self,
         tool_call: &ToolCall,
-    ) -> Result<ApprovalDecision, DomainError>;
+    ) -> Result<ApprovalResponse, DomainError>;
 }
 
 /// Outgoing port: audit ledger.

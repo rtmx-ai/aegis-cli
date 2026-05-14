@@ -134,6 +134,9 @@ pub struct App {
 
     /// Active color theme (REQ-TUI-096).
     pub theme: Theme,
+
+    /// When editing approval args, holds the original args text (REQ-HITL-017).
+    pub editing_approval_args: Option<String>,
 }
 
 /// Number of lines to scroll per PageUp/PageDown press.
@@ -179,6 +182,7 @@ impl App {
             auth_provider_name: None,
             auth_ttl_secs: None,
             theme: DARK_THEME,
+            editing_approval_args: None,
         }
     }
 
@@ -369,27 +373,62 @@ impl App {
                 )));
                 Action::Continue
             }
-            // REQ-TUI-090: Model discovery completed.
+            // REQ-TUI-090: Model discovery completed -- merge with catalog.
             TuiEvent::ModelsReady { models } => {
-                use crate::command_palette::TokenOption;
+                use crate::command_palette::{TokenOption, options_for_provider};
                 let current = self.model_name.clone();
                 self.discovered_models = models.clone();
-                let options: Vec<TokenOption> = models
+
+                // Start from provider catalog so all models show.
+                let provider = self
+                    .current_provider_info
+                    .as_ref()
+                    .map(|p| p.provider.as_str())
+                    .unwrap_or("local");
+                let catalog = options_for_provider(provider, "model");
+
+                let mut options: Vec<TokenOption> = catalog
                     .into_iter()
-                    .map(|(id, status)| {
-                        let is_current = id == current;
-                        let desc = if is_current {
-                            format!("{status} (current)")
+                    .map(|opt| {
+                        let is_current = opt.value == current;
+                        let status = if let Some((_, s)) =
+                            models.iter().find(|(id, _)| *id == opt.value)
+                        {
+                            if is_current {
+                                format!("{s} (current)")
+                            } else {
+                                s.clone()
+                            }
+                        } else if is_current {
+                            "current".to_string()
                         } else {
-                            status
+                            opt.description
                         };
                         TokenOption {
-                            value: id.clone(),
-                            label: id,
-                            description: desc,
+                            value: opt.value,
+                            label: opt.label,
+                            description: status,
                         }
                     })
                     .collect();
+
+                // Append discovered models not in catalog.
+                for (id, status) in &models {
+                    if !options.iter().any(|o| o.value == *id) {
+                        let is_current = *id == current;
+                        let desc = if is_current {
+                            format!("{status} (current)")
+                        } else {
+                            status.clone()
+                        };
+                        options.push(TokenOption {
+                            value: id.clone(),
+                            label: id.clone(),
+                            description: desc,
+                        });
+                    }
+                }
+
                 self.command_palette.inject_options("model", options);
                 self.command_palette.refresh_current_slot();
                 Action::Continue
@@ -398,16 +437,20 @@ impl App {
                 self.messages.push(ChatMessage::system(format!(
                     "Model discovery failed: {message}"
                 )));
+                // Keep catalog options (already pre-populated); only
+                // inject manual entry if palette is still empty.
                 use crate::command_palette::TokenOption;
-                self.command_palette.inject_options(
-                    "model",
-                    vec![TokenOption {
-                        value: "__manual__".into(),
-                        label: "Type model name manually...".into(),
-                        description: message,
-                    }],
-                );
-                self.command_palette.refresh_current_slot();
+                if self.command_palette.current_slot_is_empty() {
+                    self.command_palette.inject_options(
+                        "model",
+                        vec![TokenOption {
+                            value: "__manual__".into(),
+                            label: "Type model name manually...".into(),
+                            description: message,
+                        }],
+                    );
+                    self.command_palette.refresh_current_slot();
+                }
                 Action::Continue
             }
             TuiEvent::Tick => {
@@ -805,7 +848,10 @@ mod tests {
         assert_eq!(app.phase, AppPhase::ToolExecuting);
         assert!(app.pending_approval.is_none());
         // The decision should have been sent
-        assert_eq!(resp_rx.blocking_recv().unwrap(), ApprovalDecision::Approved);
+        assert_eq!(
+            resp_rx.blocking_recv().unwrap().decision,
+            ApprovalDecision::Approved,
+        );
     }
 
     // rtmx:req REQ-HITL-001
@@ -829,7 +875,10 @@ mod tests {
         app.handle_key(key, &tx);
 
         assert_eq!(app.phase, AppPhase::Streaming);
-        assert_eq!(resp_rx.blocking_recv().unwrap(), ApprovalDecision::Denied);
+        assert_eq!(
+            resp_rx.blocking_recv().unwrap().decision,
+            ApprovalDecision::Denied,
+        );
     }
 
     // rtmx:req REQ-TUI-001

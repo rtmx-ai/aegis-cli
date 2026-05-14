@@ -104,14 +104,7 @@ impl Default for BatchApprovalManager {
 
 /// Extract the canonical tool name from a ToolCall variant.
 fn tool_name(tool_call: &ToolCall) -> &str {
-    match tool_call {
-        ToolCall::ReadFile { .. } => "read_file",
-        ToolCall::WriteFile { .. } => "write_file",
-        ToolCall::RunCommand { .. } => "run_command",
-        ToolCall::ListDir { .. } => "list_dir",
-        ToolCall::Grep { .. } => "grep",
-        ToolCall::McpTool { qualified_name, .. } => qualified_name.as_str(),
-    }
+    tool_call.tool_name()
 }
 
 /// Extract the file path from a ToolCall, if applicable.
