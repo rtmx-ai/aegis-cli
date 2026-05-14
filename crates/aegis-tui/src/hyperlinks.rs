@@ -7,7 +7,8 @@
 //!
 //! Format: `\x1b]8;;<url>\x07<link text>\x1b]8;;\x07`
 
-use ratatui::style::{Color, Style};
+use crate::theme::Theme;
+use ratatui::style::Style;
 use ratatui::text::Span;
 
 /// OSC 8 escape sequence to open a hyperlink.
@@ -28,7 +29,7 @@ pub fn osc8_wrap(url: &str) -> String {
 /// default-styled spans; URLs become cyan underlined spans with OSC 8.
 ///
 /// Returns a `Vec<Span>` suitable for inclusion in a ratatui `Line`.
-pub fn render_with_hyperlinks(text: &str) -> Vec<Span<'static>> {
+pub fn render_with_hyperlinks(text: &str, theme: &Theme) -> Vec<Span<'static>> {
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut remaining = text;
 
@@ -50,7 +51,7 @@ pub fn render_with_hyperlinks(text: &str) -> Vec<Span<'static>> {
         spans.push(Span::styled(
             wrapped,
             Style::default()
-                .fg(Color::Cyan)
+                .fg(theme.accent)
                 .add_modifier(ratatui::style::Modifier::UNDERLINED),
         ));
 
@@ -119,12 +120,15 @@ pub fn enrich_auth_guidance(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::theme::DARK_THEME;
 
     // rtmx:req REQ-TUI-073
     #[test]
     fn test_osc8_hyperlink_wraps_url() {
-        let spans =
-            render_with_hyperlinks("Visit https://cloud.google.com/sdk/docs/install for details");
+        let spans = render_with_hyperlinks(
+            "Visit https://cloud.google.com/sdk/docs/install for details",
+            &DARK_THEME,
+        );
         // Should have 3 spans: prefix text, wrapped URL, suffix text
         assert_eq!(
             spans.len(),
@@ -148,8 +152,12 @@ mod tests {
             "URL span should contain OSC 8 close sequence: {content:?}"
         );
 
-        // The URL span should be styled cyan + underlined
-        assert_eq!(url_span.style.fg, Some(Color::Cyan), "URL should be cyan");
+        // The URL span should be styled with theme accent + underlined
+        assert_eq!(
+            url_span.style.fg,
+            Some(DARK_THEME.accent),
+            "URL should use theme accent color"
+        );
         assert!(
             url_span
                 .style
@@ -162,7 +170,7 @@ mod tests {
     // rtmx:req REQ-TUI-073
     #[test]
     fn test_plain_text_has_no_hyperlinks() {
-        let spans = render_with_hyperlinks("No URLs here, just plain text.");
+        let spans = render_with_hyperlinks("No URLs here, just plain text.", &DARK_THEME);
         assert_eq!(spans.len(), 1, "plain text should produce one span");
         assert_eq!(spans[0].content.as_ref(), "No URLs here, just plain text.");
         // Should not contain any OSC 8 sequences
@@ -176,7 +184,7 @@ mod tests {
     #[test]
     fn test_multiple_urls_all_wrapped() {
         let text = "See https://example.com/a and https://example.com/b for info";
-        let spans = render_with_hyperlinks(text);
+        let spans = render_with_hyperlinks(text, &DARK_THEME);
         // Expected: "See ", url1, " and ", url2, " for info"
         assert_eq!(
             spans.len(),
@@ -212,7 +220,7 @@ mod tests {
         // The guidance text itself may not have URLs, but the enriched
         // version (with URLs added) should. Test the enrichment function.
         let enriched = enrich_auth_guidance(vertex_msg, &ConnectProvider::Vertex);
-        let spans = render_with_hyperlinks(&enriched);
+        let spans = render_with_hyperlinks(&enriched, &DARK_THEME);
         let has_osc8 = spans.iter().any(|s| s.content.contains("\x1b]8;;"));
         assert!(
             has_osc8,
@@ -222,7 +230,7 @@ mod tests {
         // Bedrock guidance
         let bedrock_msg = auth_guidance(&ConnectProvider::Bedrock);
         let enriched = enrich_auth_guidance(bedrock_msg, &ConnectProvider::Bedrock);
-        let spans = render_with_hyperlinks(&enriched);
+        let spans = render_with_hyperlinks(&enriched, &DARK_THEME);
         let has_osc8 = spans.iter().any(|s| s.content.contains("\x1b]8;;"));
         assert!(
             has_osc8,
@@ -232,7 +240,7 @@ mod tests {
         // Azure guidance
         let azure_msg = auth_guidance(&ConnectProvider::Azure);
         let enriched = enrich_auth_guidance(azure_msg, &ConnectProvider::Azure);
-        let spans = render_with_hyperlinks(&enriched);
+        let spans = render_with_hyperlinks(&enriched, &DARK_THEME);
         let has_osc8 = spans.iter().any(|s| s.content.contains("\x1b]8;;"));
         assert!(
             has_osc8,
@@ -254,7 +262,7 @@ mod tests {
     // rtmx:req REQ-TUI-073
     #[test]
     fn test_url_at_end_of_string() {
-        let spans = render_with_hyperlinks("Go to https://example.com");
+        let spans = render_with_hyperlinks("Go to https://example.com", &DARK_THEME);
         assert_eq!(spans.len(), 2, "URL at end should produce 2 spans");
         assert_eq!(spans[0].content.as_ref(), "Go to ");
         assert!(spans[1].content.contains("https://example.com"));
@@ -263,7 +271,7 @@ mod tests {
     // rtmx:req REQ-TUI-073
     #[test]
     fn test_url_at_start_of_string() {
-        let spans = render_with_hyperlinks("https://example.com is the site");
+        let spans = render_with_hyperlinks("https://example.com is the site", &DARK_THEME);
         assert_eq!(spans.len(), 2, "URL at start should produce 2 spans");
         assert!(spans[0].content.contains("https://example.com"));
         assert_eq!(spans[1].content.as_ref(), " is the site");
@@ -272,7 +280,7 @@ mod tests {
     // rtmx:req REQ-TUI-073
     #[test]
     fn test_empty_string() {
-        let spans = render_with_hyperlinks("");
+        let spans = render_with_hyperlinks("", &DARK_THEME);
         assert!(spans.is_empty(), "empty string should produce no spans");
     }
 

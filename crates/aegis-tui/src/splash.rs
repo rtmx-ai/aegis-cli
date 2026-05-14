@@ -5,9 +5,10 @@
 //! configurable timeout (default 1.5 s).
 
 use crate::brand;
+use crate::theme::Theme;
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
@@ -15,7 +16,7 @@ use ratatui::widgets::Paragraph;
 pub const SPLASH_TIMEOUT_TICKS: u16 = 10;
 
 /// Render the splash screen centered in the given area.
-pub fn render_splash(frame: &mut Frame, area: Rect) {
+pub fn render_splash(frame: &mut Frame, area: Rect, theme: &Theme) {
     // Build the logo + text block
     let mut lines: Vec<Line> = Vec::new();
 
@@ -27,7 +28,7 @@ pub fn render_splash(frame: &mut Frame, area: Rect) {
         lines.push(Line::from(Span::styled(
             logo_line.to_string(),
             Style::default()
-                .fg(Color::Cyan)
+                .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         )));
     }
@@ -38,14 +39,14 @@ pub fn render_splash(frame: &mut Frame, area: Rect) {
     // Version
     lines.push(Line::from(Span::styled(
         format!("v{}", brand::VERSION),
-        Style::default().fg(Color::White),
+        Style::default().fg(theme.fg),
     )));
 
     // Brand promise
     lines.push(Line::from(Span::styled(
         brand::BRAND_PROMISE.to_string(),
         Style::default()
-            .fg(Color::DarkGray)
+            .fg(theme.border)
             .add_modifier(Modifier::ITALIC),
     )));
 
@@ -55,7 +56,7 @@ pub fn render_splash(frame: &mut Frame, area: Rect) {
     // Dismiss hint
     lines.push(Line::from(Span::styled(
         "Press any key to continue",
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(theme.border),
     )));
 
     let total_height = lines.len() as u16;
@@ -81,10 +82,11 @@ mod tests {
     use ratatui::backend::TestBackend;
 
     fn render_splash_to_string(width: u16, height: u16) -> String {
+        use crate::theme::DARK_THEME;
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal
-            .draw(|frame| render_splash(frame, frame.area()))
+            .draw(|frame| render_splash(frame, frame.area(), &DARK_THEME))
             .unwrap();
         terminal.backend().to_string()
     }
@@ -149,5 +151,34 @@ mod tests {
     fn splash_timeout_ticks_is_reasonable() {
         // 10 ticks at 150ms = 1.5s
         assert_eq!(SPLASH_TIMEOUT_TICKS, 10);
+    }
+
+    // rtmx:req REQ-TUI-100
+    #[test]
+    fn test_splash_uses_theme_accent() {
+        use crate::theme::{DARK_THEME, LIGHT_THEME};
+        // Both themes should render without panic, confirming theme
+        // parameterization works for both built-in themes.
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render_splash(frame, frame.area(), &DARK_THEME))
+            .unwrap();
+        let dark_output = terminal.backend().to_string();
+        assert!(
+            dark_output.contains("###"),
+            "dark theme splash should render logo: {dark_output}"
+        );
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render_splash(frame, frame.area(), &LIGHT_THEME))
+            .unwrap();
+        let light_output = terminal.backend().to_string();
+        assert!(
+            light_output.contains("###"),
+            "light theme splash should render logo: {light_output}"
+        );
     }
 }
