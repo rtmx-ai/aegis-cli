@@ -24,6 +24,7 @@ use crate::command_palette::CommandPalette;
 use crate::event::{ApprovalRequestHandle, TuiEvent};
 use crate::input::InputState;
 use crate::messages::ChatMessage;
+use crate::theme::{DARK_THEME, Theme};
 use crate::thinking::ThinkingAnimation;
 use aegis_domain::types::ToolCall;
 use aegis_hitl::rollback::RollbackJournal;
@@ -130,6 +131,9 @@ pub struct App {
     pub auth_provider_name: Option<String>,
     /// Auth token time-to-live in seconds for status bar display.
     pub auth_ttl_secs: Option<u64>,
+
+    /// Active color theme (REQ-TUI-096).
+    pub theme: Theme,
 }
 
 /// Number of lines to scroll per PageUp/PageDown press.
@@ -174,6 +178,7 @@ impl App {
             rollback_journal: RollbackJournal::new(50),
             auth_provider_name: None,
             auth_ttl_secs: None,
+            theme: DARK_THEME,
         }
     }
 

@@ -13,6 +13,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
 use crate::command_palette::CommandPaletteView;
 use crate::command_palette_render::render_command_palette;
+use crate::theme::{DARK_THEME, Theme};
 
 /// Structured status line information.
 ///
@@ -91,6 +92,8 @@ pub struct AppState {
     /// Inline waiting indicator text, e.g. "Thinking (5s)". Rendered in
     /// the chat area when the LLM has not yet produced its first token.
     pub waiting_text: Option<String>,
+    /// Active color theme for all rendering (REQ-TUI-096).
+    pub theme: Theme,
 }
 
 /// View data for the file picker dropdown.
@@ -128,6 +131,7 @@ impl Default for AppState {
             command_palette: None,
             ghost_text: None,
             waiting_text: None,
+            theme: DARK_THEME,
         }
     }
 }

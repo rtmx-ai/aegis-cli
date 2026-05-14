@@ -25,6 +25,25 @@ pub struct Theme {
     pub code_bg: Color,
     pub border: Color,
     pub status_bg: Color,
+    // -- Semantic slots (REQ-TUI-095) --
+    /// Positive indicators: auth healthy, cost display, diff added, input prompt.
+    pub success: Color,
+    /// Streaming phase indicator.
+    pub streaming: Color,
+    /// Awaiting approval phase indicator.
+    pub approval_pending: Color,
+    /// User message borders and prefix.
+    pub message_user: Color,
+    /// Assistant message borders.
+    pub message_assistant: Color,
+    /// System message text.
+    pub message_system: Color,
+    /// Secondary metric display (output tokens).
+    pub metric_secondary: Color,
+    /// Directory entries in file picker.
+    pub directory: Color,
+    /// Diff hunk header lines.
+    pub diff_hunk: Color,
 }
 
 pub const DARK_THEME: Theme = Theme {
@@ -37,6 +56,15 @@ pub const DARK_THEME: Theme = Theme {
     code_bg: Color::Rgb(49, 50, 68),
     border: Color::Rgb(88, 91, 112),
     status_bg: Color::Rgb(49, 50, 68),
+    success: Color::Rgb(166, 227, 161),
+    streaming: Color::Rgb(137, 180, 250),
+    approval_pending: Color::Rgb(249, 226, 175),
+    message_user: Color::Rgb(148, 226, 213),
+    message_assistant: Color::Rgb(137, 180, 250),
+    message_system: Color::Rgb(116, 199, 236),
+    metric_secondary: Color::Rgb(180, 190, 254),
+    directory: Color::Rgb(137, 180, 250),
+    diff_hunk: Color::Rgb(116, 199, 236),
 };
 
 pub const LIGHT_THEME: Theme = Theme {
@@ -49,6 +77,15 @@ pub const LIGHT_THEME: Theme = Theme {
     code_bg: Color::Rgb(204, 208, 218),
     border: Color::Rgb(156, 160, 176),
     status_bg: Color::Rgb(204, 208, 218),
+    success: Color::Rgb(64, 160, 43),
+    streaming: Color::Rgb(30, 102, 245),
+    approval_pending: Color::Rgb(223, 142, 29),
+    message_user: Color::Rgb(23, 146, 153),
+    message_assistant: Color::Rgb(30, 102, 245),
+    message_system: Color::Rgb(32, 159, 181),
+    metric_secondary: Color::Rgb(114, 135, 253),
+    directory: Color::Rgb(30, 102, 245),
+    diff_hunk: Color::Rgb(32, 159, 181),
 };
 
 /// Map an RGB color to the nearest xterm-256 color index (6x6x6 cube, indices 16-231).
@@ -105,6 +142,15 @@ pub fn downgrade_theme(theme: &Theme) -> Theme {
         code_bg: downgrade_color(theme.code_bg),
         border: downgrade_color(theme.border),
         status_bg: downgrade_color(theme.status_bg),
+        success: downgrade_color(theme.success),
+        streaming: downgrade_color(theme.streaming),
+        approval_pending: downgrade_color(theme.approval_pending),
+        message_user: downgrade_color(theme.message_user),
+        message_assistant: downgrade_color(theme.message_assistant),
+        message_system: downgrade_color(theme.message_system),
+        metric_secondary: downgrade_color(theme.metric_secondary),
+        directory: downgrade_color(theme.directory),
+        diff_hunk: downgrade_color(theme.diff_hunk),
     }
 }
 
@@ -135,7 +181,7 @@ mod tests {
     // rtmx:req REQ-TUI-077
     #[test]
     fn test_theme_has_all_slots() {
-        // Verify all 8 named color slots are non-default (not Color::Reset).
+        // Verify all 17 named color slots are non-default (not Color::Reset).
         let default_color = Color::Reset;
         for theme in [&DARK_THEME, &LIGHT_THEME] {
             assert_ne!(theme.bg, default_color, "{} bg", theme.name);
@@ -146,6 +192,58 @@ mod tests {
             assert_ne!(theme.code_bg, default_color, "{} code_bg", theme.name);
             assert_ne!(theme.border, default_color, "{} border", theme.name);
             assert_ne!(theme.status_bg, default_color, "{} status_bg", theme.name);
+            assert_ne!(theme.success, default_color, "{} success", theme.name);
+            assert_ne!(theme.streaming, default_color, "{} streaming", theme.name);
+            assert_ne!(
+                theme.approval_pending, default_color,
+                "{} approval_pending",
+                theme.name
+            );
+            assert_ne!(
+                theme.message_user, default_color,
+                "{} message_user",
+                theme.name
+            );
+            assert_ne!(
+                theme.message_assistant, default_color,
+                "{} message_assistant",
+                theme.name
+            );
+            assert_ne!(
+                theme.message_system, default_color,
+                "{} message_system",
+                theme.name
+            );
+            assert_ne!(
+                theme.metric_secondary, default_color,
+                "{} metric_secondary",
+                theme.name
+            );
+            assert_ne!(theme.directory, default_color, "{} directory", theme.name);
+            assert_ne!(theme.diff_hunk, default_color, "{} diff_hunk", theme.name);
+        }
+    }
+
+    // rtmx:req REQ-TUI-095
+    #[test]
+    fn test_extended_theme_has_all_17_slots() {
+        // Verify the 9 new semantic slots exist and are distinct from Reset.
+        let d = Color::Reset;
+        for theme in [&DARK_THEME, &LIGHT_THEME] {
+            let slots = [
+                ("success", theme.success),
+                ("streaming", theme.streaming),
+                ("approval_pending", theme.approval_pending),
+                ("message_user", theme.message_user),
+                ("message_assistant", theme.message_assistant),
+                ("message_system", theme.message_system),
+                ("metric_secondary", theme.metric_secondary),
+                ("directory", theme.directory),
+                ("diff_hunk", theme.diff_hunk),
+            ];
+            for (name, color) in &slots {
+                assert_ne!(*color, d, "{} {} must not be Reset", theme.name, name);
+            }
         }
     }
 
@@ -198,6 +296,15 @@ mod tests {
             downgraded.code_bg,
             downgraded.border,
             downgraded.status_bg,
+            downgraded.success,
+            downgraded.streaming,
+            downgraded.approval_pending,
+            downgraded.message_user,
+            downgraded.message_assistant,
+            downgraded.message_system,
+            downgraded.metric_secondary,
+            downgraded.directory,
+            downgraded.diff_hunk,
         ];
         for color in &colors {
             assert!(

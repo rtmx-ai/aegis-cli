@@ -1420,6 +1420,7 @@ async fn run_interactive_chat(
                                 preview_extension: fp.selected_extension(),
                             }
                         }),
+                        theme: app.theme.clone(),
                     };
                     aegis_tui::layout::render(frame, &view);
                 }
