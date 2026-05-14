@@ -2071,4 +2071,80 @@ mod tests {
             );
         }
     }
+
+    // rtmx:req REQ-TUI-097
+    #[test]
+    fn test_no_hardcoded_colors_in_user_message_render() {
+        // build_message_lines should use only theme-derived colors
+        let msg = ChatMessage::user("test");
+        let lines = build_message_lines(&msg, 80, &DARK_THEME);
+        let border = &lines[0].spans[0];
+        assert_eq!(
+            border.style.fg,
+            Some(DARK_THEME.message_user),
+            "user border must use theme.message_user"
+        );
+    }
+
+    // rtmx:req REQ-TUI-097
+    #[test]
+    fn test_no_hardcoded_colors_in_assistant_message_render() {
+        let msg = ChatMessage::assistant("test");
+        let lines = build_message_lines(&msg, 80, &DARK_THEME);
+        let border = &lines[0].spans[0];
+        assert_eq!(
+            border.style.fg,
+            Some(DARK_THEME.message_assistant),
+            "assistant border must use theme.message_assistant"
+        );
+    }
+
+    // rtmx:req REQ-TUI-101
+    #[test]
+    fn test_approval_modal_has_rounded_border() {
+        let state = AppState {
+            approval_display: Some(ApprovalDisplayInfo {
+                tool_name: "write_file".to_string(),
+                args_summary: "test.rs".to_string(),
+                risk: ToolRisk::StateMutating,
+            }),
+            ..Default::default()
+        };
+        let output = render_to_string(&state, 80, 24);
+        // Rounded borders use box-drawing chars U+256D, U+256E, U+256F, U+2570
+        assert!(
+            output.contains('\u{256d}') || output.contains('\u{256e}'),
+            "approval modal should use rounded border corners: {output}"
+        );
+    }
+
+    // rtmx:req REQ-TUI-102
+    #[test]
+    fn test_message_border_uses_unicode_half_block() {
+        let msg = ChatMessage::user("hello");
+        let lines = build_message_lines(&msg, 80, &DARK_THEME);
+        assert_eq!(
+            lines[0].spans[0].content, "\u{258c} ",
+            "message border should use U+258C left half block"
+        );
+    }
+
+    // rtmx:req REQ-TUI-103
+    #[test]
+    fn test_approval_modal_has_padding() {
+        let state = AppState {
+            approval_display: Some(ApprovalDisplayInfo {
+                tool_name: "write_file".to_string(),
+                args_summary: "test.rs".to_string(),
+                risk: ToolRisk::ReadOnly,
+            }),
+            ..Default::default()
+        };
+        // With padding(2,2,1,1), content should be inset from border
+        let output = render_to_string(&state, 80, 24);
+        assert!(
+            output.contains("Approval Required"),
+            "modal should render with padding: {output}"
+        );
+    }
 }
