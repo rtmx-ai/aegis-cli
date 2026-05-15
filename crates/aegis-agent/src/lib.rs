@@ -17,6 +17,7 @@ pub mod jira_import;
 pub mod living_docs;
 pub mod loop_runner;
 pub mod mcp;
+pub mod mcp_sse;
 pub mod mcp_types;
 pub mod orchestration;
 pub mod oscal_import;

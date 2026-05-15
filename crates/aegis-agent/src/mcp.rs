@@ -10,6 +10,7 @@
 //! - HITL enforcement for MCP tools (REQ-AGENT-024)
 //! - Output truncation (REQ-AGENT-025)
 
+use crate::mcp_sse::SseTransport;
 use crate::mcp_types::{JsonRpcRequest, JsonRpcResponse};
 use crate::truncation::truncate_output;
 use aegis_domain::error::DomainError;
@@ -79,116 +80,125 @@ enum ActiveTransport {
         stdout: BufReader<tokio::process::ChildStdout>,
         next_id: u64,
     },
+    Sse(SseTransport),
 }
 
 impl McpConnection {
-    /// Send a JSON-RPC request and receive a response (stdio transport).
+    /// Send a JSON-RPC request and receive a response.
     async fn send_request(
         &mut self,
         method: &str,
         params: Option<serde_json::Value>,
     ) -> Result<JsonRpcResponse, DomainError> {
-        let ActiveTransport::Stdio {
-            ref mut stdin,
-            ref mut stdout,
-            ref mut next_id,
-            ..
-        } = self.transport;
+        match self.transport {
+            ActiveTransport::Stdio {
+                ref mut stdin,
+                ref mut stdout,
+                ref mut next_id,
+                ..
+            } => {
+                let id = *next_id;
+                *next_id += 1;
 
-        let id = *next_id;
-        *next_id += 1;
+                let request = if let Some(p) = params {
+                    JsonRpcRequest::with_params(id, method, p)
+                } else {
+                    JsonRpcRequest::new(id, method)
+                };
 
-        let request = if let Some(p) = params {
-            JsonRpcRequest::with_params(id, method, p)
-        } else {
-            JsonRpcRequest::new(id, method)
-        };
+                let serialized = serde_json::to_string(&request).map_err(|e| {
+                    DomainError::Other(format!("Failed to serialize JSON-RPC request: {e}"))
+                })?;
 
-        let serialized = serde_json::to_string(&request).map_err(|e| {
-            DomainError::Other(format!("Failed to serialize JSON-RPC request: {e}"))
-        })?;
+                debug!(
+                    server = %self.server_name,
+                    method,
+                    id,
+                    "sending MCP request"
+                );
 
-        debug!(
-            server = %self.server_name,
-            method,
-            id,
-            "sending MCP request"
-        );
+                // Write request as a single line (NDJSON)
+                stdin.write_all(serialized.as_bytes()).await.map_err(|e| {
+                    DomainError::Other(format!(
+                        "Failed to write to MCP server '{}': {e}",
+                        self.server_name
+                    ))
+                })?;
+                stdin.write_all(b"\n").await.map_err(|e| {
+                    DomainError::Other(format!(
+                        "Failed to write newline to MCP server '{}': {e}",
+                        self.server_name
+                    ))
+                })?;
+                stdin.flush().await.map_err(|e| {
+                    DomainError::Other(format!(
+                        "Failed to flush MCP server '{}': {e}",
+                        self.server_name
+                    ))
+                })?;
 
-        // Write request as a single line (NDJSON)
-        stdin.write_all(serialized.as_bytes()).await.map_err(|e| {
-            DomainError::Other(format!(
-                "Failed to write to MCP server '{}': {e}",
-                self.server_name
-            ))
-        })?;
-        stdin.write_all(b"\n").await.map_err(|e| {
-            DomainError::Other(format!(
-                "Failed to write newline to MCP server '{}': {e}",
-                self.server_name
-            ))
-        })?;
-        stdin.flush().await.map_err(|e| {
-            DomainError::Other(format!(
-                "Failed to flush MCP server '{}': {e}",
-                self.server_name
-            ))
-        })?;
+                // Read response line
+                let mut line = String::new();
+                stdout.read_line(&mut line).await.map_err(|e| {
+                    DomainError::Other(format!(
+                        "Failed to read from MCP server '{}': {e}",
+                        self.server_name
+                    ))
+                })?;
 
-        // Read response line
-        let mut line = String::new();
-        stdout.read_line(&mut line).await.map_err(|e| {
-            DomainError::Other(format!(
-                "Failed to read from MCP server '{}': {e}",
-                self.server_name
-            ))
-        })?;
+                if line.is_empty() {
+                    return Err(DomainError::Other(format!(
+                        "MCP server '{}' closed connection unexpectedly",
+                        self.server_name
+                    )));
+                }
 
-        if line.is_empty() {
-            return Err(DomainError::Other(format!(
-                "MCP server '{}' closed connection unexpectedly",
-                self.server_name
-            )));
+                let response: JsonRpcResponse =
+                    serde_json::from_str(line.trim()).map_err(|e| {
+                        DomainError::Other(format!(
+                            "Failed to parse JSON-RPC response from '{}': {e}",
+                            self.server_name
+                        ))
+                    })?;
+
+                Ok(response)
+            }
+            ActiveTransport::Sse(ref mut sse) => sse.send_request(method, params).await,
         }
-
-        let response: JsonRpcResponse = serde_json::from_str(line.trim()).map_err(|e| {
-            DomainError::Other(format!(
-                "Failed to parse JSON-RPC response from '{}': {e}",
-                self.server_name
-            ))
-        })?;
-
-        Ok(response)
     }
 
     /// Send a JSON-RPC notification (no response expected).
     async fn send_notification(&mut self, method: &str) -> Result<(), DomainError> {
-        let ActiveTransport::Stdio { ref mut stdin, .. } = self.transport;
+        match self.transport {
+            ActiveTransport::Stdio { ref mut stdin, .. } => {
+                let notif = JsonRpcRequest::notification(method);
+                let serialized = serde_json::to_string(&notif).map_err(|e| {
+                    DomainError::Other(format!("Failed to serialize notification: {e}"))
+                })?;
 
-        let notif = JsonRpcRequest::notification(method);
-        let serialized = serde_json::to_string(&notif)
-            .map_err(|e| DomainError::Other(format!("Failed to serialize notification: {e}")))?;
+                stdin.write_all(serialized.as_bytes()).await.map_err(|e| {
+                    DomainError::Other(format!(
+                        "Failed to write notification to '{}': {e}",
+                        self.server_name
+                    ))
+                })?;
+                stdin.write_all(b"\n").await.map_err(|e| {
+                    DomainError::Other(format!(
+                        "Failed to write newline to '{}': {e}",
+                        self.server_name
+                    ))
+                })?;
+                stdin.flush().await.map_err(|e| {
+                    DomainError::Other(format!(
+                        "Failed to flush notification to '{}': {e}",
+                        self.server_name
+                    ))
+                })?;
 
-        stdin.write_all(serialized.as_bytes()).await.map_err(|e| {
-            DomainError::Other(format!(
-                "Failed to write notification to '{}': {e}",
-                self.server_name
-            ))
-        })?;
-        stdin.write_all(b"\n").await.map_err(|e| {
-            DomainError::Other(format!(
-                "Failed to write newline to '{}': {e}",
-                self.server_name
-            ))
-        })?;
-        stdin.flush().await.map_err(|e| {
-            DomainError::Other(format!(
-                "Failed to flush notification to '{}': {e}",
-                self.server_name
-            ))
-        })?;
-
-        Ok(())
+                Ok(())
+            }
+            ActiveTransport::Sse(ref mut sse) => sse.send_notification(method).await,
+        }
     }
 
     /// Perform the MCP initialize handshake.
@@ -329,9 +339,16 @@ impl McpConnection {
 
     /// Shut down the connection, killing the child process if stdio.
     async fn shutdown(&mut self) {
-        let ActiveTransport::Stdio { ref mut child, .. } = self.transport;
-        let _ = child.kill().await;
-        info!(server = %self.server_name, "MCP server process terminated");
+        match self.transport {
+            ActiveTransport::Stdio { ref mut child, .. } => {
+                let _ = child.kill().await;
+                info!(server = %self.server_name, "MCP server process terminated");
+            }
+            ActiveTransport::Sse(_) => {
+                // SSE connections are stateless HTTP; no process to kill.
+                info!(server = %self.server_name, "MCP SSE connection closed");
+            }
+        }
     }
 }
 
@@ -378,9 +395,9 @@ impl McpManager {
                 self.connect_stdio(&config.name, &command, &args, &env)
                     .await
             }
-            McpTransport::Sse { .. } => Err(DomainError::Other(
-                "SSE transport is not yet implemented".to_string(),
-            )),
+            McpTransport::Sse { url, headers } => {
+                self.connect_sse(&config.name, &url, &headers).await
+            }
         }
     }
 
@@ -422,6 +439,34 @@ impl McpManager {
                 stdout: BufReader::new(stdout),
                 next_id: 1,
             },
+            tools: Vec::new(),
+        };
+
+        // Perform MCP handshake
+        conn.initialize().await?;
+
+        // Discover tools
+        let tools = conn.discover_tools().await?;
+
+        self.connections.push(conn);
+        Ok(tools)
+    }
+
+    /// Connect via SSE transport (REQ-AGENT-057).
+    async fn connect_sse(
+        &mut self,
+        name: &str,
+        url: &str,
+        headers: &HashMap<String, String>,
+    ) -> Result<Vec<McpTool>, DomainError> {
+        info!(server = %name, url, "connecting to MCP SSE server");
+
+        let mut sse = SseTransport::new(url.to_string(), headers.clone());
+        sse.connect().await?;
+
+        let mut conn = McpConnection {
+            server_name: name.to_string(),
+            transport: ActiveTransport::Sse(sse),
             tools: Vec::new(),
         };
 
@@ -563,24 +608,30 @@ mod tests {
         assert_eq!(mgr.connection_count(), 0);
     }
 
-    // rtmx:req REQ-AGENT-014
+    // rtmx:req REQ-AGENT-057
     #[tokio::test]
-    async fn sse_transport_returns_not_implemented() {
+    async fn sse_transport_connect_attempts_http() {
         let mut mgr = McpManager::new();
+        // Use a port that is not listening to verify SSE connect attempts
+        // a real HTTP connection (not just returning "not implemented").
         let config = McpServerConfig {
             name: "sse-server".to_string(),
             transport: McpTransport::Sse {
-                url: "http://localhost:8080".to_string(),
+                url: "http://127.0.0.1:19999".to_string(),
                 headers: HashMap::new(),
             },
         };
         let result = mgr.connect(config).await;
         assert!(result.is_err());
+        // Should be a connection error, not "not yet implemented".
+        let err = result.unwrap_err().to_string();
         assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("not yet implemented")
+            !err.contains("not yet implemented"),
+            "SSE transport should be implemented, got: {err}"
+        );
+        assert!(
+            err.contains("SSE connection failed"),
+            "Expected connection error, got: {err}"
         );
     }
 
