@@ -156,6 +156,165 @@ impl EmbeddingProvider for HashEmbeddingProvider {
 }
 
 // ---------------------------------------------------------------------------
+// REQ-AGENT-052: Ollama Embedding Provider
+// ---------------------------------------------------------------------------
+
+/// Configuration for the Ollama embedding provider.
+#[derive(Debug, Clone)]
+pub struct OllamaEmbeddingConfig {
+    /// Base URL for Ollama API (default: http://localhost:11434).
+    pub base_url: String,
+    /// Model name (default: nomic-embed-text).
+    pub model: String,
+    /// Expected embedding dimensions for the chosen model.
+    pub dimensions: usize,
+}
+
+impl Default for OllamaEmbeddingConfig {
+    fn default() -> Self {
+        Self {
+            base_url: "http://localhost:11434".to_string(),
+            model: "nomic-embed-text".to_string(),
+            dimensions: 768,
+        }
+    }
+}
+
+/// Embedding provider that calls the Ollama `/api/embed` endpoint.
+pub struct OllamaEmbeddingProvider {
+    config: OllamaEmbeddingConfig,
+    client: reqwest::Client,
+}
+
+impl OllamaEmbeddingProvider {
+    /// Create a new Ollama embedding provider with the given config.
+    pub fn new(config: OllamaEmbeddingConfig) -> Self {
+        Self {
+            config,
+            client: reqwest::Client::new(),
+        }
+    }
+
+    /// Create with a custom reqwest client (for testing with mock servers).
+    pub fn with_client(config: OllamaEmbeddingConfig, client: reqwest::Client) -> Self {
+        Self { config, client }
+    }
+}
+
+#[async_trait::async_trait]
+impl EmbeddingProvider for OllamaEmbeddingProvider {
+    async fn embed(&self, text: &str) -> Result<EmbeddingVec, String> {
+        let url = format!("{}/api/embed", self.config.base_url);
+
+        let body = serde_json::json!({
+            "model": self.config.model,
+            "input": text,
+        });
+
+        let resp = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Ollama request failed: {e}"))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("Ollama returned {status}: {body}"));
+        }
+
+        let json: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse Ollama response: {e}"))?;
+
+        // Ollama /api/embed returns { "embeddings": [[...]] }
+        let embeddings = json
+            .get("embeddings")
+            .and_then(|v| v.as_array())
+            .ok_or("Missing 'embeddings' field in response")?;
+
+        let first = embeddings
+            .first()
+            .and_then(|v| v.as_array())
+            .ok_or("Empty embeddings array")?;
+
+        let vec: EmbeddingVec = first
+            .iter()
+            .filter_map(|v| v.as_f64().map(|f| f as f32))
+            .collect();
+
+        if vec.len() != self.config.dimensions {
+            return Err(format!(
+                "Expected {} dimensions, got {}",
+                self.config.dimensions,
+                vec.len()
+            ));
+        }
+
+        Ok(vec)
+    }
+
+    async fn embed_batch(&self, texts: &[String]) -> Result<Vec<EmbeddingVec>, String> {
+        let url = format!("{}/api/embed", self.config.base_url);
+
+        let body = serde_json::json!({
+            "model": self.config.model,
+            "input": texts,
+        });
+
+        let resp = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Ollama batch request failed: {e}"))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("Ollama returned {status}: {body}"));
+        }
+
+        let json: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse Ollama batch response: {e}"))?;
+
+        let embeddings = json
+            .get("embeddings")
+            .and_then(|v| v.as_array())
+            .ok_or("Missing 'embeddings' field in batch response")?;
+
+        let mut results = Vec::with_capacity(texts.len());
+        for emb in embeddings {
+            let arr = emb.as_array().ok_or("Non-array element in embeddings")?;
+            let vec: EmbeddingVec = arr
+                .iter()
+                .filter_map(|v| v.as_f64().map(|f| f as f32))
+                .collect();
+            if vec.len() != self.config.dimensions {
+                return Err(format!(
+                    "Expected {} dimensions, got {}",
+                    self.config.dimensions,
+                    vec.len()
+                ));
+            }
+            results.push(vec);
+        }
+
+        Ok(results)
+    }
+
+    fn dimensions(&self) -> usize {
+        self.config.dimensions
+    }
+}
+
+// ---------------------------------------------------------------------------
 // REQ-AGENT-047: Vector index with cosine similarity search
 // ---------------------------------------------------------------------------
 
@@ -647,5 +806,156 @@ mod tests {
         let context = format_context_injection(&results);
         assert!(context.contains("<retrieved_context>"));
         assert!(!context.is_empty());
+    }
+
+    // --- REQ-AGENT-052: Ollama Embedding Provider ---
+
+    // rtmx:req REQ-AGENT-052
+    #[tokio::test]
+    async fn test_ollama_embed_single() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        // Simulate Ollama /api/embed response with 4-dimensional vector.
+        let response_body = serde_json::json!({
+            "embeddings": [[0.1, 0.2, 0.3, 0.4]]
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/api/embed"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&response_body))
+            .mount(&mock_server)
+            .await;
+
+        let config = OllamaEmbeddingConfig {
+            base_url: mock_server.uri(),
+            model: "nomic-embed-text".to_string(),
+            dimensions: 4,
+        };
+        let provider = OllamaEmbeddingProvider::new(config);
+
+        let result = provider.embed("hello world").await.unwrap();
+        assert_eq!(result.len(), 4);
+        assert!((result[0] - 0.1).abs() < 1e-6);
+        assert!((result[3] - 0.4).abs() < 1e-6);
+    }
+
+    // rtmx:req REQ-AGENT-052
+    #[tokio::test]
+    async fn test_ollama_embed_batch() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        let response_body = serde_json::json!({
+            "embeddings": [
+                [0.1, 0.2, 0.3],
+                [0.4, 0.5, 0.6],
+            ]
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/api/embed"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&response_body))
+            .mount(&mock_server)
+            .await;
+
+        let config = OllamaEmbeddingConfig {
+            base_url: mock_server.uri(),
+            model: "test-model".to_string(),
+            dimensions: 3,
+        };
+        let provider = OllamaEmbeddingProvider::new(config);
+
+        let texts = vec!["hello".to_string(), "world".to_string()];
+        let results = provider.embed_batch(&texts).await.unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].len(), 3);
+        assert_eq!(results[1].len(), 3);
+        assert!((results[1][0] - 0.4).abs() < 1e-6);
+    }
+
+    // rtmx:req REQ-AGENT-052
+    #[tokio::test]
+    async fn test_ollama_embed_dimension_mismatch_returns_error() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        // Server returns 3 dims but config expects 4.
+        let response_body = serde_json::json!({
+            "embeddings": [[0.1, 0.2, 0.3]]
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/api/embed"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&response_body))
+            .mount(&mock_server)
+            .await;
+
+        let config = OllamaEmbeddingConfig {
+            base_url: mock_server.uri(),
+            model: "test-model".to_string(),
+            dimensions: 4,
+        };
+        let provider = OllamaEmbeddingProvider::new(config);
+
+        let result = provider.embed("test").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Expected 4 dimensions, got 3"));
+    }
+
+    // rtmx:req REQ-AGENT-052
+    #[tokio::test]
+    async fn test_ollama_embed_server_error() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/api/embed"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("internal error"))
+            .mount(&mock_server)
+            .await;
+
+        let config = OllamaEmbeddingConfig {
+            base_url: mock_server.uri(),
+            model: "test-model".to_string(),
+            dimensions: 4,
+        };
+        let provider = OllamaEmbeddingProvider::new(config);
+
+        let result = provider.embed("test").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("500"));
+    }
+
+    // rtmx:req REQ-AGENT-052
+    #[tokio::test]
+    async fn test_ollama_embed_connection_refused() {
+        let config = OllamaEmbeddingConfig {
+            base_url: "http://127.0.0.1:1".to_string(), // nothing listening
+            model: "test-model".to_string(),
+            dimensions: 4,
+        };
+        let provider = OllamaEmbeddingProvider::new(config);
+
+        let result = provider.embed("test").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("request failed"));
+    }
+
+    // rtmx:req REQ-AGENT-052
+    #[tokio::test]
+    async fn test_ollama_config_default_values() {
+        let config = OllamaEmbeddingConfig::default();
+        assert_eq!(config.base_url, "http://localhost:11434");
+        assert_eq!(config.model, "nomic-embed-text");
+        assert_eq!(config.dimensions, 768);
     }
 }

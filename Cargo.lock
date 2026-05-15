@@ -19,6 +19,7 @@ dependencies = [
  "chrono",
  "indexmap",
  "mockall",
+ "reqwest",
  "rstest",
  "serde",
  "serde_json",
@@ -26,6 +27,7 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]
