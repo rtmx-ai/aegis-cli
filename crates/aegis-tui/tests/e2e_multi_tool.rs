@@ -107,6 +107,7 @@ async fn test_multi_tool_chat_e2e() {
             max_iterations: 10,
             system_prompt: "You are a test assistant.".to_string(),
             is_local_provider: false,
+            context_injection: aegis_agent::loop_runner::ContextInjectionConfig::default(),
         },
     )
     .with_event_sink(event_tx);

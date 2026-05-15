@@ -37,6 +37,16 @@ impl CancellationToken {
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Acquire)
     }
+
+    /// Returns a future that resolves when cancellation is signalled.
+    ///
+    /// Polls every 50ms. Suitable for use in `tokio::select!` to make
+    /// sleep/wait operations interruptible by cancellation.
+    pub async fn cancelled(&self) {
+        while !self.is_cancelled() {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    }
 }
 
 #[cfg(test)]

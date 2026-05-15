@@ -541,6 +541,117 @@ impl Default for VectorIndex {
     }
 }
 
+// ---------------------------------------------------------------------------
+// REQ-AGENT-055: Background index refresh with debounce
+// ---------------------------------------------------------------------------
+
+/// Default debounce duration for background index refresh.
+pub const REFRESH_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Configuration for background index refresh.
+pub struct BackgroundRefreshConfig {
+    pub root: std::path::PathBuf,
+    pub index: std::sync::Arc<tokio::sync::Mutex<VectorIndex>>,
+    pub provider: std::sync::Arc<dyn EmbeddingProvider>,
+    pub cancel: crate::cancellation::CancellationToken,
+    pub chunk_size: usize,
+    pub overlap: usize,
+    pub poll_interval: std::time::Duration,
+    pub debounce: std::time::Duration,
+}
+
+/// Spawn a background task that watches a directory for file changes and
+/// re-indexes them with debounce.
+///
+/// The task runs until the `cancel` token is triggered. It polls
+/// `root` every `poll_interval` for file changes using `FileChangeTracker`,
+/// then waits `debounce` after the last change before re-indexing.
+///
+/// Returns a `JoinHandle` that resolves when the task exits.
+pub fn spawn_background_refresh(cfg: BackgroundRefreshConfig) -> tokio::task::JoinHandle<()> {
+    let BackgroundRefreshConfig {
+        root,
+        index,
+        provider,
+        cancel,
+        chunk_size,
+        overlap,
+        poll_interval,
+        debounce,
+    } = cfg;
+    tokio::spawn(async move {
+        let mut tracker = FileChangeTracker::new();
+        tracing::info!(root = %root.display(), "background index refresh started");
+
+        loop {
+            // Check for cancellation.
+            if cancel.is_cancelled() {
+                tracing::info!("background index refresh cancelled");
+                break;
+            }
+
+            // Sleep for poll interval (interruptible by cancellation).
+            tokio::select! {
+                _ = tokio::time::sleep(poll_interval) => {}
+                _ = cancel.cancelled() => {
+                    tracing::info!("background index refresh cancelled during sleep");
+                    break;
+                }
+            }
+
+            // Scan for changed files.
+            let files = match collect_source_files(&root) {
+                Ok(f) => f,
+                Err(e) => {
+                    tracing::warn!(%e, "background refresh: scan failed");
+                    continue;
+                }
+            };
+
+            let current_times: Vec<(PathBuf, SystemTime)> = files
+                .iter()
+                .filter_map(|p| {
+                    std::fs::metadata(p)
+                        .and_then(|m| m.modified())
+                        .ok()
+                        .map(|t| (p.clone(), t))
+                })
+                .collect();
+
+            let changed = tracker.changed_files(&current_times);
+            if changed.is_empty() {
+                continue;
+            }
+
+            tracing::debug!(changed = changed.len(), "detected file changes, debouncing");
+
+            // Debounce: wait before re-indexing.
+            tokio::select! {
+                _ = tokio::time::sleep(debounce) => {}
+                _ = cancel.cancelled() => {
+                    tracing::info!("background index refresh cancelled during debounce");
+                    break;
+                }
+            }
+
+            // Re-index changed files.
+            let mut idx = index.lock().await;
+            match idx
+                .reindex_changed(&changed, chunk_size, overlap, provider.as_ref())
+                .await
+            {
+                Ok(()) => {
+                    tracker.update_batch(&current_times);
+                    tracing::info!(reindexed = changed.len(), "background re-index complete");
+                }
+                Err(e) => {
+                    tracing::warn!(%e, "background re-index failed");
+                }
+            }
+        }
+    })
+}
+
 /// Cosine similarity between two vectors.
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() {
@@ -1267,5 +1378,91 @@ mod tests {
         assert!(!is_source_file(Path::new("image.png")));
         assert!(!is_source_file(Path::new("binary.exe")));
         assert!(!is_source_file(Path::new("noext")));
+    }
+
+    // --- REQ-AGENT-055: Background index refresh ---
+
+    // rtmx:req REQ-AGENT-055
+    #[test]
+    fn test_refresh_debounce_constant() {
+        assert_eq!(REFRESH_DEBOUNCE, std::time::Duration::from_secs(2));
+    }
+
+    // rtmx:req REQ-AGENT-055
+    #[tokio::test]
+    async fn test_background_refresh_cancellation() {
+        use crate::cancellation::CancellationToken;
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "fn a() {}").unwrap();
+
+        let provider = std::sync::Arc::new(HashEmbeddingProvider::new(8));
+        let index = std::sync::Arc::new(tokio::sync::Mutex::new(VectorIndex::new()));
+        let cancel = CancellationToken::new();
+
+        let handle = spawn_background_refresh(BackgroundRefreshConfig {
+            root: dir.path().to_path_buf(),
+            index: std::sync::Arc::clone(&index),
+            provider,
+            cancel: cancel.clone(),
+            chunk_size: 10,
+            overlap: 2,
+            poll_interval: std::time::Duration::from_millis(50),
+            debounce: std::time::Duration::from_millis(10),
+        });
+
+        // Let it run briefly.
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        // Cancel and wait for exit.
+        cancel.cancel();
+        let result = tokio::time::timeout(std::time::Duration::from_secs(2), handle).await;
+        assert!(result.is_ok(), "background task should exit on cancel");
+    }
+
+    // rtmx:req REQ-AGENT-055
+    #[tokio::test]
+    async fn test_background_refresh_indexes_new_file() {
+        use crate::cancellation::CancellationToken;
+
+        let dir = tempfile::tempdir().unwrap();
+        // Start with one file.
+        std::fs::write(dir.path().join("existing.rs"), "fn existing() {}").unwrap();
+
+        let provider: std::sync::Arc<dyn EmbeddingProvider> =
+            std::sync::Arc::new(HashEmbeddingProvider::new(8));
+        let index = std::sync::Arc::new(tokio::sync::Mutex::new(VectorIndex::new()));
+        let cancel = CancellationToken::new();
+
+        let handle = spawn_background_refresh(BackgroundRefreshConfig {
+            root: dir.path().to_path_buf(),
+            index: std::sync::Arc::clone(&index),
+            provider: std::sync::Arc::clone(&provider),
+            cancel: cancel.clone(),
+            chunk_size: 10,
+            overlap: 2,
+            poll_interval: std::time::Duration::from_millis(50),
+            debounce: std::time::Duration::from_millis(10),
+        });
+
+        // Wait for first scan + index.
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+        // Add a new file.
+        std::fs::write(dir.path().join("new_file.rs"), "fn new_code() {}").unwrap();
+
+        // Wait for rescan + debounce + reindex.
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+        let idx = index.lock().await;
+        assert!(
+            idx.len() >= 2,
+            "index should contain entries from both files, got {}",
+            idx.len()
+        );
+        drop(idx);
+
+        cancel.cancel();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), handle).await;
     }
 }

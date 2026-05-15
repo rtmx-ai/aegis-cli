@@ -63,6 +63,7 @@ async fn test_interactive_chat_with_streaming() {
             max_iterations: 10,
             system_prompt: "You are a test assistant.".to_string(),
             is_local_provider: false,
+            context_injection: aegis_agent::loop_runner::ContextInjectionConfig::default(),
         },
     )
     .with_event_sink(event_tx);
@@ -186,6 +187,7 @@ async fn test_hitl_approval_approve_path() {
             max_iterations: 10,
             system_prompt: "You are a test assistant.".to_string(),
             is_local_provider: false,
+            context_injection: aegis_agent::loop_runner::ContextInjectionConfig::default(),
         },
     )
     .with_event_sink(event_tx);
@@ -317,6 +319,7 @@ async fn test_hitl_approval_deny_path() {
             max_iterations: 10,
             system_prompt: "You are a test assistant.".to_string(),
             is_local_provider: false,
+            context_injection: aegis_agent::loop_runner::ContextInjectionConfig::default(),
         },
     )
     .with_event_sink(event_tx);

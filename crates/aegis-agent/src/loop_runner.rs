@@ -4,6 +4,7 @@ use crate::adversary_bridge::{AdversaryReviewer, ReviewDecision, ReviewMode};
 use crate::banned_commands;
 use crate::cancellation::CancellationToken;
 use crate::compaction::{self, CompactionConfig};
+use crate::embedding::{EmbeddingProvider, VectorIndex, format_context_injection};
 use crate::mcp::McpManager;
 use crate::truncation::truncate_output;
 use crate::working_memory::{self, WorkingMemory};
@@ -37,6 +38,27 @@ pub struct ProviderInfo {
     pub region: Option<String>,
 }
 
+/// Configuration for semantic context injection (REQ-AGENT-054).
+#[derive(Debug, Clone)]
+pub struct ContextInjectionConfig {
+    /// Enable context injection from vector index.
+    pub enabled: bool,
+    /// Number of top-k chunks to inject.
+    pub top_k: usize,
+    /// Minimum cosine similarity threshold for inclusion.
+    pub similarity_threshold: f32,
+}
+
+impl Default for ContextInjectionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            top_k: 5,
+            similarity_threshold: 0.3,
+        }
+    }
+}
+
 /// Configuration for the agent loop.
 pub struct AgentConfig {
     pub max_iterations: usize,
@@ -44,6 +66,8 @@ pub struct AgentConfig {
     /// When true, disables prompt caching (local providers do not support it).
     /// Defaults to false (caching enabled for cloud providers).
     pub is_local_provider: bool,
+    /// Context injection configuration (REQ-AGENT-054).
+    pub context_injection: ContextInjectionConfig,
 }
 
 impl Default for AgentConfig {
@@ -52,6 +76,7 @@ impl Default for AgentConfig {
             max_iterations: 100,
             system_prompt: "You are a helpful coding assistant.".to_string(),
             is_local_provider: false,
+            context_injection: ContextInjectionConfig::default(),
         }
     }
 }
@@ -194,6 +219,10 @@ where
     adversary_mode: ReviewMode,
     /// Provider attribution for cost tracking (REQ-AUDIT-025).
     provider_info: ProviderInfo,
+    /// Optional vector index for semantic context injection (REQ-AGENT-054).
+    vector_index: Option<Arc<Mutex<VectorIndex>>>,
+    /// Optional embedding provider for query embedding (REQ-AGENT-054).
+    embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
 }
 
 impl<P, G, E, A, S> AgentLoop<P, G, E, A, S>
@@ -225,6 +254,8 @@ where
             adversary: None,
             adversary_mode: ReviewMode::Off,
             provider_info: ProviderInfo::default(),
+            vector_index: None,
+            embedding_provider: None,
         }
     }
 
@@ -251,6 +282,8 @@ where
             adversary: None,
             adversary_mode: ReviewMode::Off,
             provider_info: ProviderInfo::default(),
+            vector_index: None,
+            embedding_provider: None,
         }
     }
 
@@ -285,6 +318,17 @@ where
     ) -> Self {
         self.adversary = Some(reviewer);
         self.adversary_mode = mode;
+        self
+    }
+
+    /// Attach a vector index and embedding provider for context injection (REQ-AGENT-054).
+    pub fn with_vector_index(
+        mut self,
+        index: Arc<Mutex<VectorIndex>>,
+        provider: Arc<dyn EmbeddingProvider>,
+    ) -> Self {
+        self.vector_index = Some(index);
+        self.embedding_provider = Some(provider);
         self
     }
 
@@ -349,6 +393,48 @@ where
 
             // REQ-AGENT-027: Update working memory before LLM call.
             working_memory::upsert_memory(&mut history, &working_mem);
+
+            // REQ-AGENT-054: Inject semantic context from vector index.
+            if self.config.context_injection.enabled
+                && let (Some(idx), Some(emb_provider)) =
+                    (&self.vector_index, &self.embedding_provider)
+            {
+                // Use the most recent user message as the query.
+                let query_text = history
+                    .iter()
+                    .rev()
+                    .find(|m| m.role == Role::User)
+                    .map(|m| m.content.as_str())
+                    .unwrap_or(prompt);
+
+                match emb_provider.embed(query_text).await {
+                    Ok(query_emb) => {
+                        let index = idx.lock().await;
+                        let results =
+                            index.search(&query_emb, self.config.context_injection.top_k);
+                        // Filter by similarity threshold.
+                        let filtered: Vec<_> = results
+                            .into_iter()
+                            .filter(|(score, _)| {
+                                *score >= self.config.context_injection.similarity_threshold
+                            })
+                            .collect();
+                        if !filtered.is_empty() {
+                            let context = format_context_injection(&filtered);
+                            debug!(chunks = filtered.len(), "injecting semantic context");
+                            // Insert as a system message before the LLM call.
+                            history.push(Message {
+                                role: Role::System,
+                                content: context,
+                                cache_control: None,
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        warn!(%e, "context injection embedding failed, skipping");
+                    }
+                }
+            }
 
             info!(
                 iteration,
@@ -1656,5 +1742,81 @@ mod tests {
             }
             other => panic!("Expected WriteFile, got {:?}", other),
         }
+    }
+
+    // --- REQ-AGENT-054: Context injection in REA loop ---
+
+    // rtmx:req REQ-AGENT-054
+    #[tokio::test]
+    async fn test_context_injection_adds_system_message() {
+        use crate::embedding::{HashEmbeddingProvider, VectorIndex, chunk_file};
+        use std::path::Path;
+
+        let llm_provider = MockLlmProvider::new();
+        llm_provider.queue_response(vec![
+            StreamEvent::Token("I see the code context.".to_string()),
+            StreamEvent::Done {
+                input_tokens: 50,
+                output_tokens: 5,
+            },
+        ]);
+
+        // Build a small vector index.
+        let emb_provider = Arc::new(HashEmbeddingProvider::new(8));
+        let mut index = VectorIndex::new();
+        let chunks = chunk_file(
+            Path::new("src/main.rs"),
+            "fn main() {\n    println!(\"hello world\");\n}",
+            10,
+            2,
+        );
+        let texts: Vec<String> = chunks.iter().map(|c| c.content.clone()).collect();
+        let embeddings = emb_provider.embed_batch(&texts).await.unwrap();
+        for (chunk, emb) in chunks.into_iter().zip(embeddings) {
+            index.insert(chunk, emb);
+        }
+
+        let config = AgentConfig {
+            context_injection: ContextInjectionConfig {
+                enabled: true,
+                top_k: 3,
+                similarity_threshold: 0.0, // Accept all for testing.
+            },
+            ..Default::default()
+        };
+
+        let agent = AgentLoop::new(
+            llm_provider,
+            MockApprovalGate::always_approve(),
+            MockToolExecutor::new(),
+            MockAuditLedger::new(),
+            MockSecurityFilter,
+            config,
+        )
+        .with_vector_index(
+            Arc::new(Mutex::new(index)),
+            emb_provider as Arc<dyn EmbeddingProvider>,
+        );
+
+        let result = agent.run("Explain main function").await.unwrap();
+        assert_eq!(result.response, "I see the code context.");
+    }
+
+    // rtmx:req REQ-AGENT-054
+    #[tokio::test]
+    async fn test_context_injection_disabled_by_default() {
+        let provider = MockLlmProvider::new();
+        provider.queue_response(vec![
+            StreamEvent::Token("No context.".to_string()),
+            StreamEvent::Done {
+                input_tokens: 10,
+                output_tokens: 2,
+            },
+        ]);
+
+        // Default config has context_injection.enabled = false.
+        let agent = make_agent(provider);
+        let result = agent.run("Hi").await.unwrap();
+        assert_eq!(result.response, "No context.");
     }
 }
