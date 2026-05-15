@@ -19,7 +19,7 @@ use std::time::SystemTime;
 // ---------------------------------------------------------------------------
 
 /// A chunk of source code with line range metadata.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Chunk {
     /// File path this chunk came from.
     pub file_path: PathBuf,
@@ -319,7 +319,7 @@ impl EmbeddingProvider for OllamaEmbeddingProvider {
 // ---------------------------------------------------------------------------
 
 /// An indexed chunk with its embedding vector.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct IndexedChunk {
     chunk: Chunk,
     embedding: EmbeddingVec,
@@ -375,6 +375,164 @@ impl VectorIndex {
         self.entries
             .retain(|entry| entry.chunk.file_path != file_path);
     }
+
+    // -----------------------------------------------------------------------
+    // REQ-AGENT-053: Index lifecycle management
+    // -----------------------------------------------------------------------
+
+    /// Build an index from all supported files in a directory tree.
+    ///
+    /// Walks `root` recursively, skipping hidden directories and non-text
+    /// files, then chunks and embeds each file.
+    pub async fn build_from_directory(
+        root: &Path,
+        chunk_size: usize,
+        overlap: usize,
+        provider: &dyn EmbeddingProvider,
+    ) -> Result<(Self, FileChangeTracker), String> {
+        let files = collect_source_files(root)?;
+        let mut index = Self::new();
+        let mut tracker = FileChangeTracker::new();
+
+        for file_path in &files {
+            let content = std::fs::read_to_string(file_path)
+                .map_err(|e| format!("Failed to read {}: {e}", file_path.display()))?;
+            let mod_time = std::fs::metadata(file_path)
+                .and_then(|m| m.modified())
+                .unwrap_or(SystemTime::UNIX_EPOCH);
+            tracker.record(file_path, mod_time);
+
+            let chunks = chunk_file(file_path, &content, chunk_size, overlap);
+            let texts: Vec<String> = chunks.iter().map(|c| c.content.clone()).collect();
+            if texts.is_empty() {
+                continue;
+            }
+            let embeddings = provider.embed_batch(&texts).await?;
+            for (chunk, emb) in chunks.into_iter().zip(embeddings) {
+                index.insert(chunk, emb);
+            }
+        }
+
+        Ok((index, tracker))
+    }
+
+    /// Re-index only the files that have changed since last build.
+    pub async fn reindex_changed(
+        &mut self,
+        changed_files: &[PathBuf],
+        chunk_size: usize,
+        overlap: usize,
+        provider: &dyn EmbeddingProvider,
+    ) -> Result<(), String> {
+        for file_path in changed_files {
+            self.remove_file(file_path);
+
+            if !file_path.exists() {
+                continue; // file was deleted
+            }
+
+            let content = std::fs::read_to_string(file_path)
+                .map_err(|e| format!("Failed to read {}: {e}", file_path.display()))?;
+            let chunks = chunk_file(file_path, &content, chunk_size, overlap);
+            let texts: Vec<String> = chunks.iter().map(|c| c.content.clone()).collect();
+            if texts.is_empty() {
+                continue;
+            }
+            let embeddings = provider.embed_batch(&texts).await?;
+            for (chunk, emb) in chunks.into_iter().zip(embeddings) {
+                self.insert(chunk, emb);
+            }
+        }
+        Ok(())
+    }
+
+    /// Save the index to a file (binary JSON).
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create index directory: {e}"))?;
+        }
+        let data =
+            serde_json::to_vec(&self.entries).map_err(|e| format!("Serialization error: {e}"))?;
+        std::fs::write(path, data).map_err(|e| format!("Failed to write index: {e}"))
+    }
+
+    /// Load an index from a file.
+    pub fn load(path: &Path) -> Result<Self, String> {
+        let data = std::fs::read(path).map_err(|e| format!("Failed to read index: {e}"))?;
+        let entries: Vec<IndexedChunk> =
+            serde_json::from_slice(&data).map_err(|e| format!("Deserialization error: {e}"))?;
+        Ok(Self { entries })
+    }
+}
+
+/// Collect source files from a directory tree, skipping hidden dirs and
+/// non-text file extensions.
+fn collect_source_files(root: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut files = Vec::new();
+    collect_recursive(root, &mut files)?;
+    files.sort();
+    Ok(files)
+}
+
+fn collect_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    let entries =
+        std::fs::read_dir(dir).map_err(|e| format!("Cannot read {}: {e}", dir.display()))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Dir entry error: {e}"))?;
+        let path = entry.path();
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+
+        // Skip hidden directories and files.
+        if name_str.starts_with('.') {
+            continue;
+        }
+
+        if path.is_dir() {
+            // Skip common non-source directories.
+            if matches!(
+                name_str.as_ref(),
+                "target" | "node_modules" | "vendor" | ".git"
+            ) {
+                continue;
+            }
+            collect_recursive(&path, out)?;
+        } else if is_source_file(&path) {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// Heuristic: file extension suggests source code or text.
+fn is_source_file(path: &Path) -> bool {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    matches!(
+        ext,
+        "rs" | "py"
+            | "js"
+            | "ts"
+            | "tsx"
+            | "jsx"
+            | "go"
+            | "java"
+            | "c"
+            | "cpp"
+            | "h"
+            | "hpp"
+            | "rb"
+            | "toml"
+            | "yaml"
+            | "yml"
+            | "json"
+            | "md"
+            | "txt"
+            | "sh"
+            | "bash"
+            | "zsh"
+    )
 }
 
 impl Default for VectorIndex {
@@ -957,5 +1115,157 @@ mod tests {
         assert_eq!(config.base_url, "http://localhost:11434");
         assert_eq!(config.model, "nomic-embed-text");
         assert_eq!(config.dimensions, 768);
+    }
+
+    // --- REQ-AGENT-053: Index lifecycle management ---
+
+    // rtmx:req REQ-AGENT-053
+    #[tokio::test]
+    async fn test_index_save_load_roundtrip() {
+        let provider = HashEmbeddingProvider::new(8);
+        let mut index = VectorIndex::new();
+
+        let chunks = chunk_file(
+            Path::new("src/main.rs"),
+            "fn main() {\n    println!(\"hi\");\n}",
+            10,
+            2,
+        );
+        let texts: Vec<String> = chunks.iter().map(|c| c.content.clone()).collect();
+        let embeddings = provider.embed_batch(&texts).await.unwrap();
+        for (chunk, emb) in chunks.into_iter().zip(embeddings) {
+            index.insert(chunk, emb);
+        }
+
+        assert!(!index.is_empty());
+        let original_len = index.len();
+
+        let dir = tempfile::tempdir().unwrap();
+        let index_path = dir.path().join("test.index");
+
+        index.save(&index_path).unwrap();
+        assert!(index_path.exists());
+
+        let loaded = VectorIndex::load(&index_path).unwrap();
+        assert_eq!(loaded.len(), original_len);
+
+        // Search should work on loaded index.
+        let query = provider.embed("main function").await.unwrap();
+        let results = loaded.search(&query, 1);
+        assert!(!results.is_empty());
+    }
+
+    // rtmx:req REQ-AGENT-053
+    #[tokio::test]
+    async fn test_build_from_directory() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Create some source files.
+        std::fs::write(dir.path().join("main.rs"), "fn main() {}\n").unwrap();
+        std::fs::write(
+            dir.path().join("lib.rs"),
+            "pub fn add(a: i32, b: i32) -> i32 { a + b }\n",
+        )
+        .unwrap();
+        // Non-source file should be skipped.
+        std::fs::write(dir.path().join("readme.bin"), "binary data").unwrap();
+
+        let provider = HashEmbeddingProvider::new(8);
+        let (index, tracker) = VectorIndex::build_from_directory(dir.path(), 10, 2, &provider)
+            .await
+            .unwrap();
+
+        // Should have indexed the two .rs files.
+        assert!(index.len() >= 2);
+        // Tracker should have entries.
+        assert!(
+            !tracker.has_changed(
+                &dir.path().join("main.rs"),
+                std::fs::metadata(dir.path().join("main.rs"))
+                    .unwrap()
+                    .modified()
+                    .unwrap()
+            )
+        );
+    }
+
+    // rtmx:req REQ-AGENT-053
+    #[tokio::test]
+    async fn test_reindex_changed_updates_modified_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("code.rs");
+        std::fs::write(&file_path, "fn original() {}").unwrap();
+
+        let provider = HashEmbeddingProvider::new(8);
+        let (mut index, _tracker) =
+            VectorIndex::build_from_directory(dir.path(), 10, 2, &provider)
+                .await
+                .unwrap();
+
+        let original_len = index.len();
+        assert!(original_len > 0);
+
+        // Modify the file.
+        std::fs::write(&file_path, "fn modified() {}\nfn second() {}").unwrap();
+
+        // Re-index the changed file.
+        index
+            .reindex_changed(std::slice::from_ref(&file_path), 10, 2, &provider)
+            .await
+            .unwrap();
+
+        // Index should still have entries (replaced).
+        assert!(!index.is_empty());
+    }
+
+    // rtmx:req REQ-AGENT-053
+    #[tokio::test]
+    async fn test_reindex_handles_deleted_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("temp.rs");
+        std::fs::write(&file_path, "fn temp() {}").unwrap();
+
+        let provider = HashEmbeddingProvider::new(8);
+        let (mut index, _) = VectorIndex::build_from_directory(dir.path(), 10, 2, &provider)
+            .await
+            .unwrap();
+
+        assert!(!index.is_empty());
+
+        // Delete the file.
+        std::fs::remove_file(&file_path).unwrap();
+
+        // Re-index -- should remove entries without error.
+        index
+            .reindex_changed(std::slice::from_ref(&file_path), 10, 2, &provider)
+            .await
+            .unwrap();
+        assert_eq!(index.len(), 0);
+    }
+
+    // rtmx:req REQ-AGENT-053
+    #[test]
+    fn test_collect_source_files_skips_hidden_and_target() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("main.rs"), "fn main(){}").unwrap();
+        std::fs::create_dir(dir.path().join(".hidden")).unwrap();
+        std::fs::write(dir.path().join(".hidden/secret.rs"), "secret").unwrap();
+        std::fs::create_dir(dir.path().join("target")).unwrap();
+        std::fs::write(dir.path().join("target/build.rs"), "build").unwrap();
+
+        let files = collect_source_files(dir.path()).unwrap();
+        assert_eq!(files.len(), 1);
+        assert!(files[0].ends_with("main.rs"));
+    }
+
+    // rtmx:req REQ-AGENT-053
+    #[test]
+    fn test_is_source_file_classification() {
+        assert!(is_source_file(Path::new("foo.rs")));
+        assert!(is_source_file(Path::new("bar.py")));
+        assert!(is_source_file(Path::new("baz.toml")));
+        assert!(!is_source_file(Path::new("image.png")));
+        assert!(!is_source_file(Path::new("binary.exe")));
+        assert!(!is_source_file(Path::new("noext")));
     }
 }
