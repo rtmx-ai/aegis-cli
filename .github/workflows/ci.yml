@@ -224,9 +224,14 @@ jobs:
           restore-keys: benchmark-baseline-
       - name: Run benchmarks
         run: cargo bench --package aegis-bench 2>&1 | tee bench-output.txt
-      - name: Check for regressions (>10% threshold)
+      - name: Check for regressions (>25% threshold)
         run: |
-          THRESHOLD=10.0
+          # I/O-bound benchmarks (audit_ledger_append) swing 20-30% on shared
+          # runners due to disk contention and hardware heterogeneity. A 10%
+          # threshold triggered false positives when a lucky fast run set the
+          # baseline and a normal run followed. 25% catches real regressions
+          # while tolerating I/O jitter.
+          THRESHOLD=25.0
           # Extract regression percentages: criterion prints "change: [lo% mid% hi%]"
           # on the line before "Performance has regressed." Parse the middle estimate.
           SEVERE=0
