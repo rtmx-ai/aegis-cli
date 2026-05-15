@@ -10,7 +10,10 @@
 
 use aegis_domain::rtmx::RequirementsDb;
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
+use std::pin::Pin;
 use std::process::Command;
+use tracing::{info, warn};
 
 /// A workstream is a group of requirements that can be implemented
 /// together in a single git worktree without file conflicts against
@@ -200,6 +203,364 @@ pub fn cleanup_worktree(worktree_path: &str, branch: &str, force: bool) -> Clean
             error: Some(format!("worktree removal error: {e}")),
         },
     }
+}
+
+// ---------------------------------------------------------------------------
+// REQ-AGENT-059: WorktreeManager port trait
+// ---------------------------------------------------------------------------
+
+/// Result of a worktree operation.
+#[derive(Debug, Clone)]
+pub struct WorktreeInfo {
+    /// Absolute path to the worktree directory.
+    pub path: String,
+    /// Branch name associated with this worktree.
+    pub branch: String,
+}
+
+/// Port trait for git worktree operations (REQ-AGENT-059).
+///
+/// Abstracts worktree create/remove/list behind a trait so that
+/// orchestration logic can be tested with a mock implementation.
+pub trait WorktreeManager: Send + Sync {
+    /// Create a new worktree at `path` on branch `branch`.
+    ///
+    /// Equivalent to `git worktree add <path> -b <branch>`.
+    fn create(
+        &self,
+        path: &str,
+        branch: &str,
+    ) -> impl Future<Output = Result<WorktreeInfo, String>> + Send;
+
+    /// Remove a worktree at `path`.
+    ///
+    /// Equivalent to `git worktree remove <path>`.
+    fn remove(&self, path: &str) -> impl Future<Output = Result<(), String>> + Send;
+
+    /// List all active worktrees.
+    fn list(&self) -> impl Future<Output = Result<Vec<WorktreeInfo>, String>> + Send;
+}
+
+/// Default implementation that shells out to `git worktree` commands.
+pub struct GitWorktreeManager {
+    /// Path to the repository root.
+    repo_root: String,
+}
+
+impl GitWorktreeManager {
+    /// Create a new manager for the given repository root.
+    pub fn new(repo_root: String) -> Self {
+        Self { repo_root }
+    }
+}
+
+impl WorktreeManager for GitWorktreeManager {
+    async fn create(&self, path: &str, branch: &str) -> Result<WorktreeInfo, String> {
+        let output = Command::new("git")
+            .args(["worktree", "add", path, "-b", branch])
+            .current_dir(&self.repo_root)
+            .output()
+            .map_err(|e| format!("Failed to run git worktree add: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("git worktree add failed: {}", stderr.trim()));
+        }
+
+        Ok(WorktreeInfo {
+            path: path.to_string(),
+            branch: branch.to_string(),
+        })
+    }
+
+    async fn remove(&self, path: &str) -> Result<(), String> {
+        let output = Command::new("git")
+            .args(["worktree", "remove", path, "--force"])
+            .current_dir(&self.repo_root)
+            .output()
+            .map_err(|e| format!("Failed to run git worktree remove: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("git worktree remove failed: {}", stderr.trim()));
+        }
+
+        Ok(())
+    }
+
+    async fn list(&self) -> Result<Vec<WorktreeInfo>, String> {
+        let output = Command::new("git")
+            .args(["worktree", "list", "--porcelain"])
+            .current_dir(&self.repo_root)
+            .output()
+            .map_err(|e| format!("Failed to run git worktree list: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("git worktree list failed: {}", stderr.trim()));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut worktrees = Vec::new();
+        let mut current_path = None;
+        let mut current_branch = None;
+
+        for line in stdout.lines() {
+            if let Some(p) = line.strip_prefix("worktree ") {
+                current_path = Some(p.to_string());
+            } else if let Some(b) = line.strip_prefix("branch refs/heads/") {
+                current_branch = Some(b.to_string());
+            } else if line.is_empty() {
+                if let (Some(path), Some(branch)) = (current_path.take(), current_branch.take()) {
+                    worktrees.push(WorktreeInfo { path, branch });
+                }
+                current_path = None;
+                current_branch = None;
+            }
+        }
+        // Handle trailing entry without final blank line.
+        if let (Some(path), Some(branch)) = (current_path, current_branch) {
+            worktrees.push(WorktreeInfo { path, branch });
+        }
+
+        Ok(worktrees)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// REQ-AGENT-060: Wave driver
+// REQ-AGENT-061: Failure recovery
+// ---------------------------------------------------------------------------
+
+/// Result of executing a single workstream within a wave.
+#[derive(Debug, Clone)]
+pub struct WorkstreamResult {
+    /// Name of the workstream.
+    pub name: String,
+    /// Requirement IDs in this workstream.
+    pub requirements: Vec<String>,
+    /// Whether execution succeeded.
+    pub success: bool,
+    /// Error message if execution failed.
+    pub error: Option<String>,
+    /// Number of retry attempts used.
+    pub attempts: u32,
+}
+
+/// Result of executing an entire wave.
+#[derive(Debug, Clone)]
+pub struct WaveResult {
+    /// Zero-based wave index.
+    pub wave_index: usize,
+    /// Results for each workstream in the wave.
+    pub workstream_results: Vec<WorkstreamResult>,
+}
+
+impl WaveResult {
+    /// Whether all workstreams in this wave succeeded.
+    pub fn all_succeeded(&self) -> bool {
+        self.workstream_results.iter().all(|r| r.success)
+    }
+
+    /// Requirement IDs from failed workstreams.
+    pub fn failed_requirements(&self) -> Vec<String> {
+        self.workstream_results
+            .iter()
+            .filter(|r| !r.success)
+            .flat_map(|r| r.requirements.clone())
+            .collect()
+    }
+
+    /// Requirement IDs from successful workstreams.
+    pub fn succeeded_requirements(&self) -> Vec<String> {
+        self.workstream_results
+            .iter()
+            .filter(|r| r.success)
+            .flat_map(|r| r.requirements.clone())
+            .collect()
+    }
+}
+
+/// Type alias for the agent callback used by the wave driver.
+///
+/// The callback receives (worktree_path, workstream_name, requirements)
+/// and returns Ok(()) on success or Err(error_message) on failure.
+pub type AgentCallback = Box<
+    dyn Fn(
+            String,
+            String,
+            Vec<String>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// Execute a single wave: create worktrees, run agents, collect results.
+///
+/// For each workstream in the wave:
+/// 1. Create a git worktree via `WorktreeManager`.
+/// 2. Run the agent callback.
+/// 3. On failure, retry once (REQ-AGENT-061).
+/// 4. Clean up the worktree.
+///
+/// All workstreams in a wave run sequentially (the caller can parallelize
+/// by spawning multiple `drive_wave` calls, but within a wave the driver
+/// serializes to keep resource usage predictable).
+pub async fn drive_wave<W: WorktreeManager>(
+    wm: &W,
+    wave: &Wave,
+    agent_fn: &AgentCallback,
+    worktree_base: &str,
+) -> WaveResult {
+    let mut results = Vec::new();
+
+    for ws in &wave.workstreams {
+        let worktree_path = format!("{}/{}", worktree_base, ws.name);
+        let branch = format!("agent/{}", ws.name);
+
+        info!(
+            wave = wave.index,
+            workstream = %ws.name,
+            "starting workstream execution"
+        );
+
+        // Create worktree.
+        let create_result = wm.create(&worktree_path, &branch).await;
+        if let Err(e) = create_result {
+            warn!(
+                workstream = %ws.name,
+                error = %e,
+                "failed to create worktree"
+            );
+            results.push(WorkstreamResult {
+                name: ws.name.clone(),
+                requirements: ws.requirements.clone(),
+                success: false,
+                error: Some(format!("worktree creation failed: {e}")),
+                attempts: 0,
+            });
+            continue;
+        }
+
+        // Run agent with retry (REQ-AGENT-061).
+        let mut last_error = None;
+        let mut attempts = 0;
+        let max_attempts = 2; // 1 initial + 1 retry
+
+        for attempt in 0..max_attempts {
+            attempts = attempt + 1;
+            let result = agent_fn(
+                worktree_path.clone(),
+                ws.name.clone(),
+                ws.requirements.clone(),
+            )
+            .await;
+
+            match result {
+                Ok(()) => {
+                    info!(
+                        workstream = %ws.name,
+                        attempt = attempts,
+                        "workstream completed successfully"
+                    );
+                    last_error = None;
+                    break;
+                }
+                Err(e) => {
+                    warn!(
+                        workstream = %ws.name,
+                        attempt = attempts,
+                        error = %e,
+                        "workstream execution failed"
+                    );
+                    last_error = Some(e);
+                    if attempt + 1 < max_attempts {
+                        info!(
+                            workstream = %ws.name,
+                            "retrying workstream"
+                        );
+                    }
+                }
+            }
+        }
+
+        let success = last_error.is_none();
+        results.push(WorkstreamResult {
+            name: ws.name.clone(),
+            requirements: ws.requirements.clone(),
+            success,
+            error: last_error,
+            attempts,
+        });
+
+        // Clean up worktree regardless of success.
+        if let Err(e) = wm.remove(&worktree_path).await {
+            warn!(
+                workstream = %ws.name,
+                error = %e,
+                "failed to remove worktree (non-fatal)"
+            );
+        }
+    }
+
+    WaveResult {
+        wave_index: wave.index,
+        workstream_results: results,
+    }
+}
+
+/// Execute all waves in sequence, skipping requirements blocked by failures.
+///
+/// After each wave, failed requirements are tracked. Subsequent waves
+/// skip workstreams whose requirements depend on failed ones (REQ-AGENT-061),
+/// but independent workstreams proceed normally.
+pub async fn drive_all_waves<W: WorktreeManager>(
+    wm: &W,
+    waves: &[Wave],
+    agent_fn: &AgentCallback,
+    worktree_base: &str,
+) -> Vec<WaveResult> {
+    let mut results = Vec::new();
+    let mut failed_reqs: HashSet<String> = HashSet::new();
+
+    for wave in waves {
+        // Filter workstreams: skip those blocked by previously failed reqs.
+        let eligible_workstreams: Vec<Workstream> = wave
+            .workstreams
+            .iter()
+            .filter(|ws| {
+                // A workstream is blocked if ANY of its requirements appear
+                // in the failed set. This is a conservative check -- in a
+                // full implementation we'd check the dependency graph.
+                !ws.requirements.iter().any(|r| failed_reqs.contains(r))
+            })
+            .cloned()
+            .collect();
+
+        if eligible_workstreams.is_empty() {
+            info!(
+                wave = wave.index,
+                "skipping wave: all workstreams blocked by prior failures"
+            );
+            continue;
+        }
+
+        let eligible_wave = Wave {
+            index: wave.index,
+            workstreams: eligible_workstreams,
+        };
+
+        let wave_result = drive_wave(wm, &eligible_wave, agent_fn, worktree_base).await;
+
+        // Track failed requirements for subsequent wave filtering.
+        for req in wave_result.failed_requirements() {
+            failed_reqs.insert(req);
+        }
+
+        results.push(wave_result);
+    }
+
+    results
 }
 
 /// Directed acyclic graph of requirement dependencies.
@@ -1212,5 +1573,428 @@ mod tests {
                 }
             }
         }
+    }
+
+    // --- REQ-AGENT-059: WorktreeManager trait ---
+
+    /// Mock worktree manager for testing.
+    struct MockWorktreeManager {
+        created: std::sync::Mutex<Vec<(String, String)>>,
+        removed: std::sync::Mutex<Vec<String>>,
+        fail_create: std::sync::Mutex<Option<String>>,
+    }
+
+    impl MockWorktreeManager {
+        fn new() -> Self {
+            Self {
+                created: std::sync::Mutex::new(Vec::new()),
+                removed: std::sync::Mutex::new(Vec::new()),
+                fail_create: std::sync::Mutex::new(None),
+            }
+        }
+
+        fn fail_on_create(&self, error: &str) {
+            *self.fail_create.lock().unwrap() = Some(error.to_string());
+        }
+
+        fn created_worktrees(&self) -> Vec<(String, String)> {
+            self.created.lock().unwrap().clone()
+        }
+
+        fn removed_worktrees(&self) -> Vec<String> {
+            self.removed.lock().unwrap().clone()
+        }
+    }
+
+    impl WorktreeManager for MockWorktreeManager {
+        async fn create(&self, path: &str, branch: &str) -> Result<WorktreeInfo, String> {
+            if let Some(err) = self.fail_create.lock().unwrap().as_ref() {
+                return Err(err.clone());
+            }
+            self.created
+                .lock()
+                .unwrap()
+                .push((path.to_string(), branch.to_string()));
+            Ok(WorktreeInfo {
+                path: path.to_string(),
+                branch: branch.to_string(),
+            })
+        }
+
+        async fn remove(&self, path: &str) -> Result<(), String> {
+            self.removed.lock().unwrap().push(path.to_string());
+            Ok(())
+        }
+
+        async fn list(&self) -> Result<Vec<WorktreeInfo>, String> {
+            Ok(self
+                .created
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(p, b)| WorktreeInfo {
+                    path: p.clone(),
+                    branch: b.clone(),
+                })
+                .collect())
+        }
+    }
+
+    // rtmx:req REQ-AGENT-059
+    #[tokio::test]
+    async fn test_worktree_manager_create_remove_lifecycle() {
+        let wm = MockWorktreeManager::new();
+
+        let info = wm.create("/tmp/wt-1", "agent/ws-1").await.unwrap();
+        assert_eq!(info.path, "/tmp/wt-1");
+        assert_eq!(info.branch, "agent/ws-1");
+
+        let list = wm.list().await.unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].path, "/tmp/wt-1");
+
+        wm.remove("/tmp/wt-1").await.unwrap();
+        assert_eq!(wm.removed_worktrees(), vec!["/tmp/wt-1"]);
+    }
+
+    // rtmx:req REQ-AGENT-059
+    #[tokio::test]
+    async fn test_worktree_manager_create_failure() {
+        let wm = MockWorktreeManager::new();
+        wm.fail_on_create("branch already exists");
+
+        let result = wm.create("/tmp/wt-fail", "existing-branch").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("branch already exists"));
+    }
+
+    // rtmx:req REQ-AGENT-059
+    #[tokio::test]
+    async fn test_worktree_manager_multiple_worktrees() {
+        let wm = MockWorktreeManager::new();
+
+        wm.create("/tmp/wt-a", "agent/a").await.unwrap();
+        wm.create("/tmp/wt-b", "agent/b").await.unwrap();
+        wm.create("/tmp/wt-c", "agent/c").await.unwrap();
+
+        let list = wm.list().await.unwrap();
+        assert_eq!(list.len(), 3);
+
+        let created = wm.created_worktrees();
+        assert_eq!(created.len(), 3);
+    }
+
+    // --- REQ-AGENT-060: Wave driver ---
+
+    fn make_success_callback() -> AgentCallback {
+        Box::new(|_path, _name, _reqs| Box::pin(async { Ok(()) }))
+    }
+
+    fn make_failing_callback(error: &str) -> AgentCallback {
+        let err = error.to_string();
+        Box::new(move |_path, _name, _reqs| {
+            let e = err.clone();
+            Box::pin(async move { Err(e) })
+        })
+    }
+
+    fn make_fail_then_succeed_callback() -> AgentCallback {
+        let attempt = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        Box::new(move |_path, _name, _reqs| {
+            let a = attempt.clone();
+            Box::pin(async move {
+                let n = a.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if n == 0 {
+                    Err("transient failure".to_string())
+                } else {
+                    Ok(())
+                }
+            })
+        })
+    }
+
+    fn test_wave() -> Wave {
+        Wave {
+            index: 0,
+            workstreams: vec![
+                Workstream {
+                    name: "ws-alpha".to_string(),
+                    requirements: vec!["REQ-A".to_string()],
+                    estimated_files: vec!["a.rs".to_string()],
+                },
+                Workstream {
+                    name: "ws-beta".to_string(),
+                    requirements: vec!["REQ-B".to_string()],
+                    estimated_files: vec!["b.rs".to_string()],
+                },
+            ],
+        }
+    }
+
+    // rtmx:req REQ-AGENT-060
+    #[tokio::test]
+    async fn test_wave_driver_executes_in_order() {
+        let wm = MockWorktreeManager::new();
+        let callback = make_success_callback();
+
+        let result = drive_wave(&wm, &test_wave(), &callback, "/tmp/base").await;
+
+        assert_eq!(result.wave_index, 0);
+        assert_eq!(result.workstream_results.len(), 2);
+        assert!(result.all_succeeded());
+
+        // Verify worktrees were created and removed.
+        let created = wm.created_worktrees();
+        assert_eq!(created.len(), 2);
+        assert_eq!(created[0].0, "/tmp/base/ws-alpha");
+        assert_eq!(created[1].0, "/tmp/base/ws-beta");
+
+        let removed = wm.removed_worktrees();
+        assert_eq!(removed.len(), 2);
+    }
+
+    // rtmx:req REQ-AGENT-060
+    #[tokio::test]
+    async fn test_wave_driver_creates_correct_branches() {
+        let wm = MockWorktreeManager::new();
+        let callback = make_success_callback();
+
+        drive_wave(&wm, &test_wave(), &callback, "/tmp/wt").await;
+
+        let created = wm.created_worktrees();
+        assert_eq!(created[0].1, "agent/ws-alpha");
+        assert_eq!(created[1].1, "agent/ws-beta");
+    }
+
+    // rtmx:req REQ-AGENT-060
+    #[tokio::test]
+    async fn test_wave_driver_worktree_create_failure_skips_agent() {
+        let wm = MockWorktreeManager::new();
+        wm.fail_on_create("disk full");
+        let callback = make_success_callback();
+
+        let result = drive_wave(&wm, &test_wave(), &callback, "/tmp/base").await;
+
+        assert!(!result.all_succeeded());
+        // Both should fail at worktree creation.
+        for r in &result.workstream_results {
+            assert!(!r.success);
+            assert!(r.error.as_ref().unwrap().contains("disk full"));
+        }
+    }
+
+    // rtmx:req REQ-AGENT-060
+    #[tokio::test]
+    async fn test_wave_result_accessors() {
+        let result = WaveResult {
+            wave_index: 0,
+            workstream_results: vec![
+                WorkstreamResult {
+                    name: "a".to_string(),
+                    requirements: vec!["REQ-1".to_string()],
+                    success: true,
+                    error: None,
+                    attempts: 1,
+                },
+                WorkstreamResult {
+                    name: "b".to_string(),
+                    requirements: vec!["REQ-2".to_string()],
+                    success: false,
+                    error: Some("fail".to_string()),
+                    attempts: 2,
+                },
+            ],
+        };
+
+        assert!(!result.all_succeeded());
+        assert_eq!(result.failed_requirements(), vec!["REQ-2"]);
+        assert_eq!(result.succeeded_requirements(), vec!["REQ-1"]);
+    }
+
+    // --- REQ-AGENT-061: Failure recovery ---
+
+    // rtmx:req REQ-AGENT-061
+    #[tokio::test]
+    async fn test_failure_recovery_retries_once() {
+        let wm = MockWorktreeManager::new();
+        let callback = make_fail_then_succeed_callback();
+
+        let wave = Wave {
+            index: 0,
+            workstreams: vec![Workstream {
+                name: "retry-ws".to_string(),
+                requirements: vec!["REQ-R".to_string()],
+                estimated_files: vec!["r.rs".to_string()],
+            }],
+        };
+
+        let result = drive_wave(&wm, &wave, &callback, "/tmp/retry").await;
+
+        assert!(result.all_succeeded());
+        assert_eq!(result.workstream_results[0].attempts, 2);
+    }
+
+    // rtmx:req REQ-AGENT-061
+    #[tokio::test]
+    async fn test_failure_recovery_gives_up_after_two_attempts() {
+        let wm = MockWorktreeManager::new();
+        let callback = make_failing_callback("persistent error");
+
+        let wave = Wave {
+            index: 0,
+            workstreams: vec![Workstream {
+                name: "fail-ws".to_string(),
+                requirements: vec!["REQ-F".to_string()],
+                estimated_files: vec!["f.rs".to_string()],
+            }],
+        };
+
+        let result = drive_wave(&wm, &wave, &callback, "/tmp/fail").await;
+
+        assert!(!result.all_succeeded());
+        assert_eq!(result.workstream_results[0].attempts, 2);
+        assert!(
+            result.workstream_results[0]
+                .error
+                .as_ref()
+                .unwrap()
+                .contains("persistent error")
+        );
+    }
+
+    // rtmx:req REQ-AGENT-061
+    #[tokio::test]
+    async fn test_failure_does_not_block_siblings_in_same_wave() {
+        let wm = MockWorktreeManager::new();
+        let call_count = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let cc = call_count.clone();
+
+        // First workstream always fails, second always succeeds.
+        let callback: AgentCallback = Box::new(move |_path, name, _reqs| {
+            let c = cc.clone();
+            let n = name.clone();
+            Box::pin(async move {
+                c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if n == "fail-ws" {
+                    Err("agent crashed".to_string())
+                } else {
+                    Ok(())
+                }
+            })
+        });
+
+        let wave = Wave {
+            index: 0,
+            workstreams: vec![
+                Workstream {
+                    name: "fail-ws".to_string(),
+                    requirements: vec!["REQ-FAIL".to_string()],
+                    estimated_files: vec!["fail.rs".to_string()],
+                },
+                Workstream {
+                    name: "ok-ws".to_string(),
+                    requirements: vec!["REQ-OK".to_string()],
+                    estimated_files: vec!["ok.rs".to_string()],
+                },
+            ],
+        };
+
+        let result = drive_wave(&wm, &wave, &callback, "/tmp/mixed").await;
+
+        // fail-ws should fail, ok-ws should succeed.
+        assert!(!result.all_succeeded());
+        assert!(!result.workstream_results[0].success);
+        assert!(result.workstream_results[1].success);
+
+        // Both workstreams ran (fail-ws got 2 attempts, ok-ws got 1).
+        assert!(call_count.load(std::sync::atomic::Ordering::SeqCst) >= 3);
+    }
+
+    // rtmx:req REQ-AGENT-061
+    #[tokio::test]
+    async fn test_drive_all_waves_skips_blocked_by_failure() {
+        let wm = MockWorktreeManager::new();
+        let callback = make_failing_callback("wave0 failure");
+
+        let waves = vec![
+            Wave {
+                index: 0,
+                workstreams: vec![Workstream {
+                    name: "ws-0".to_string(),
+                    requirements: vec!["REQ-BASE".to_string()],
+                    estimated_files: vec!["base.rs".to_string()],
+                }],
+            },
+            Wave {
+                index: 1,
+                workstreams: vec![Workstream {
+                    name: "ws-1".to_string(),
+                    requirements: vec!["REQ-BASE".to_string()],
+                    estimated_files: vec!["dep.rs".to_string()],
+                }],
+            },
+        ];
+
+        let results = drive_all_waves(&wm, &waves, &callback, "/tmp/skip").await;
+
+        // Wave 0 ran and failed.
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].all_succeeded());
+        // Wave 1 was skipped because REQ-BASE failed in wave 0.
+    }
+
+    // rtmx:req REQ-AGENT-061
+    #[tokio::test]
+    async fn test_drive_all_waves_independent_waves_proceed() {
+        let wm = MockWorktreeManager::new();
+        let callback = make_success_callback();
+
+        let waves = vec![
+            Wave {
+                index: 0,
+                workstreams: vec![Workstream {
+                    name: "ws-0".to_string(),
+                    requirements: vec!["REQ-A".to_string()],
+                    estimated_files: vec!["a.rs".to_string()],
+                }],
+            },
+            Wave {
+                index: 1,
+                workstreams: vec![Workstream {
+                    name: "ws-1".to_string(),
+                    requirements: vec!["REQ-B".to_string()],
+                    estimated_files: vec!["b.rs".to_string()],
+                }],
+            },
+        ];
+
+        let results = drive_all_waves(&wm, &waves, &callback, "/tmp/ok").await;
+
+        assert_eq!(results.len(), 2);
+        assert!(results[0].all_succeeded());
+        assert!(results[1].all_succeeded());
+    }
+
+    // rtmx:req REQ-AGENT-060
+    #[tokio::test]
+    async fn test_wave_driver_cleans_up_on_failure() {
+        let wm = MockWorktreeManager::new();
+        let callback = make_failing_callback("boom");
+
+        let wave = Wave {
+            index: 0,
+            workstreams: vec![Workstream {
+                name: "cleanup-ws".to_string(),
+                requirements: vec!["REQ-C".to_string()],
+                estimated_files: vec!["c.rs".to_string()],
+            }],
+        };
+
+        drive_wave(&wm, &wave, &callback, "/tmp/clean").await;
+
+        // Worktree should still be cleaned up even though agent failed.
+        let removed = wm.removed_worktrees();
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0], "/tmp/clean/cleanup-ws");
     }
 }
