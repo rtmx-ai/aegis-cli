@@ -539,7 +539,28 @@ where
 
             // ACT: Execute each tool call
             info!(tool_count = tool_calls.len(), "executing tool calls");
+            let mut batch_aborted = false;
             for call in &tool_calls {
+                // REQ-AGENT-062: Check cancellation inside tool batch.
+                if self.cancel_token.is_cancelled() {
+                    info!("cancellation detected mid-batch, returning partial results");
+                    break;
+                }
+
+                // REQ-AGENT-063: If a previous tool was denied, abort rest.
+                if batch_aborted {
+                    let skip_text = format!(
+                        "Tool '{}' skipped: batch aborted by denial",
+                        call.tool_name()
+                    );
+                    history.push(Message {
+                        role: Role::Tool,
+                        content: skip_text,
+                        cache_control: None,
+                    });
+                    continue;
+                }
+
                 // REQ-AGENT-013: Check banned commands before HITL gate
                 let result = if let ToolCall::RunCommand { command, .. } = call {
                     if banned_commands::is_banned(command) {
@@ -560,6 +581,11 @@ where
                         None => self.execute_tool(call).await,
                     }
                 };
+
+                // REQ-AGENT-063: Denial aborts remaining tools in batch.
+                if matches!(result, ToolResult::PermissionDenied { .. }) {
+                    batch_aborted = true;
+                }
 
                 // REQ-AGENT-012: Truncate large tool outputs
                 let result_text = match &result {
@@ -1818,5 +1844,198 @@ mod tests {
         let agent = make_agent(provider);
         let result = agent.run("Hi").await.unwrap();
         assert_eq!(result.response, "No context.");
+    }
+
+    // --- REQ-AGENT-062: Intra-batch cancellation check ---
+
+    // rtmx:req REQ-AGENT-062
+    #[tokio::test]
+    async fn test_cancel_mid_batch_returns_partial_results() {
+        use aegis_test_support::mock_executor::SharedMockExecutor;
+
+        let provider = MockLlmProvider::new();
+
+        // LLM proposes 3 tool calls in one batch.
+        provider.queue_response(vec![
+            StreamEvent::ToolUse(ToolCall::ReadFile {
+                path: FilePath::new_unchecked("a.rs"),
+            }),
+            StreamEvent::ToolUse(ToolCall::ReadFile {
+                path: FilePath::new_unchecked("b.rs"),
+            }),
+            StreamEvent::ToolUse(ToolCall::ReadFile {
+                path: FilePath::new_unchecked("c.rs"),
+            }),
+            StreamEvent::Done {
+                input_tokens: 10,
+                output_tokens: 5,
+            },
+        ]);
+        // No second LLM response needed -- cancel prevents next iteration.
+
+        let token = CancellationToken::new();
+        let token_clone = token.clone();
+
+        // Executor that cancels the token after the first call.
+        let (executor, inspector) = SharedMockExecutor::new();
+        // We need a custom executor that triggers cancellation.
+        // Instead, use a simpler approach: cancel before running.
+        // Actually, let's cancel after first tool via a wrapper.
+        drop(executor);
+        drop(inspector);
+
+        // Use a counting executor that cancels after first execution.
+        let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let call_count_clone = Arc::clone(&call_count);
+        let token_for_exec = token_clone.clone();
+
+        struct CancellingExecutor {
+            count: Arc<std::sync::atomic::AtomicUsize>,
+            cancel_after: usize,
+            token: CancellationToken,
+        }
+
+        #[async_trait::async_trait]
+        impl ToolExecutor for CancellingExecutor {
+            async fn execute(&self, _tool_call: &ToolCall) -> Result<ToolResult, DomainError> {
+                let n = self.count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if n >= self.cancel_after {
+                    self.token.cancel();
+                }
+                Ok(ToolResult::Success {
+                    output: format!("result {n}"),
+                })
+            }
+        }
+
+        let executor = CancellingExecutor {
+            count: call_count_clone,
+            cancel_after: 1, // Cancel after 2nd tool (index 1)
+            token: token_for_exec,
+        };
+
+        let agent = AgentLoop::with_cancel_token(
+            provider,
+            MockApprovalGate::always_approve(),
+            executor,
+            MockAuditLedger::new(),
+            MockSecurityFilter,
+            AgentConfig::default(),
+            token,
+        );
+
+        // The loop executes partial batch, then on next iteration the
+        // pre-iteration cancel check fires, returning Err(Cancelled).
+        let err = agent.run("Read files").await.unwrap_err();
+        assert!(
+            format!("{err:?}").contains("Cancelled"),
+            "Expected Cancelled error, got: {err:?}"
+        );
+
+        // Only 2 of 3 tools should have executed (cancel fires after 2nd).
+        let count = call_count.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(count, 2, "Should execute only 2 of 3 tools before cancel");
+    }
+
+    // --- REQ-AGENT-063: Deny-abort-rest ---
+
+    // rtmx:req REQ-AGENT-063
+    #[tokio::test]
+    async fn test_deny_aborts_remaining_tools_in_batch() {
+        let provider = MockLlmProvider::new();
+
+        // LLM proposes 3 tool calls in one batch.
+        provider.queue_response(vec![
+            StreamEvent::ToolUse(ToolCall::WriteFile {
+                path: FilePath::new_unchecked("a.rs"),
+                content: "aaa".to_string(),
+            }),
+            StreamEvent::ToolUse(ToolCall::WriteFile {
+                path: FilePath::new_unchecked("b.rs"),
+                content: "bbb".to_string(),
+            }),
+            StreamEvent::ToolUse(ToolCall::WriteFile {
+                path: FilePath::new_unchecked("c.rs"),
+                content: "ccc".to_string(),
+            }),
+            StreamEvent::Done {
+                input_tokens: 10,
+                output_tokens: 5,
+            },
+        ]);
+        // LLM responds after seeing denial + skips.
+        provider.queue_response(vec![
+            StreamEvent::Token("Acknowledged denial.".to_string()),
+            StreamEvent::Done {
+                input_tokens: 20,
+                output_tokens: 2,
+            },
+        ]);
+
+        // Gate denies all tools (first denial triggers abort of rest).
+        let agent = AgentLoop::new(
+            provider,
+            MockApprovalGate::always_deny(),
+            MockToolExecutor::new(),
+            MockAuditLedger::new(),
+            MockSecurityFilter,
+            AgentConfig::default(),
+        );
+
+        let result = agent.run("Write files").await.unwrap();
+        assert_eq!(result.response, "Acknowledged denial.");
+    }
+
+    // rtmx:req REQ-AGENT-063
+    #[tokio::test]
+    async fn test_deny_first_tool_skips_subsequent_with_message() {
+        use aegis_test_support::mock_executor::SharedMockExecutor;
+
+        let provider = MockLlmProvider::new();
+
+        // LLM proposes 2 tool calls.
+        provider.queue_response(vec![
+            StreamEvent::ToolUse(ToolCall::WriteFile {
+                path: FilePath::new_unchecked("secret.rs"),
+                content: "rm -rf /".to_string(),
+            }),
+            StreamEvent::ToolUse(ToolCall::ReadFile {
+                path: FilePath::new_unchecked("safe.rs"),
+            }),
+            StreamEvent::Done {
+                input_tokens: 10,
+                output_tokens: 5,
+            },
+        ]);
+        provider.queue_response(vec![
+            StreamEvent::Token("OK.".to_string()),
+            StreamEvent::Done {
+                input_tokens: 20,
+                output_tokens: 1,
+            },
+        ]);
+
+        let (executor, inspector) = SharedMockExecutor::new();
+
+        let agent = AgentLoop::new(
+            provider,
+            MockApprovalGate::always_deny(),
+            executor,
+            MockAuditLedger::new(),
+            MockSecurityFilter,
+            AgentConfig::default(),
+        );
+
+        let result = agent.run("Do things").await.unwrap();
+        assert_eq!(result.response, "OK.");
+
+        // Executor should never have been called (first tool denied,
+        // second skipped due to batch abort).
+        let calls = inspector.recorded_calls();
+        assert_eq!(
+            calls.len(),
+            0,
+            "No tools should execute when first is denied"
+        );
     }
 }

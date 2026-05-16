@@ -137,6 +137,9 @@ pub struct App {
 
     /// When editing approval args, holds the original args text (REQ-HITL-017).
     pub editing_approval_args: Option<String>,
+
+    /// REQ-AGENT-064: Timestamp of last Ctrl+C press for double-tap detection.
+    pub last_ctrl_c: Option<Instant>,
 }
 
 /// Number of lines to scroll per PageUp/PageDown press.
@@ -183,6 +186,7 @@ impl App {
             auth_ttl_secs: None,
             theme: DARK_THEME,
             editing_approval_args: None,
+            last_ctrl_c: None,
         }
     }
 

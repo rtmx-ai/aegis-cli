@@ -40,11 +40,24 @@ impl App {
             AppPhase::AwaitingApproval => return self.handle_approval_key(key),
             AppPhase::EditingApproval => return self.handle_editing_approval_key(key),
             AppPhase::Streaming | AppPhase::ToolExecuting => {
-                // Ctrl+C cancels and clears prompt queue (REQ-TUI-094)
+                // REQ-AGENT-064: Ctrl+C triggers graceful cancellation on first
+                // press. Second Ctrl+C within 2s forces immediate exit.
                 if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL)
                 {
                     self.prompt_queue.clear();
-                    return Action::Quit;
+                    let now = std::time::Instant::now();
+                    if let Some(last) = self.last_ctrl_c
+                        && now.duration_since(last).as_secs() < 2
+                    {
+                        // Second press within 2s: force quit.
+                        return Action::Quit;
+                    }
+                    // First press (or >2s since last): graceful cancellation.
+                    self.last_ctrl_c = Some(now);
+                    self.messages.push(ChatMessage::system(
+                        "Cancelling... (press Ctrl+C again within 2s to force quit)".to_string(),
+                    ));
+                    return Action::KillSwitch;
                 }
                 // REQ-TUI-093: fall through to basic input handling below.
                 // Command palette, file picker, and slash commands are
@@ -980,5 +993,55 @@ mod tests {
             Some("Type project ID and press Enter".to_string()),
             "ghost text should prompt for manual entry"
         );
+    }
+
+    // rtmx:req REQ-AGENT-064
+    #[test]
+    fn test_ctrl_c_during_streaming_triggers_kill_switch() {
+        let mut app = App::new("test-model");
+        app.phase = AppPhase::Streaming;
+        let (tx, _rx) = agent_tx();
+
+        let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let action = app.handle_key(ctrl_c, &tx);
+
+        // First Ctrl+C should trigger graceful cancellation (KillSwitch).
+        assert_eq!(action, Action::KillSwitch);
+        assert!(app.last_ctrl_c.is_some());
+        assert!(app.messages.last().unwrap().content.contains("Cancelling"));
+    }
+
+    // rtmx:req REQ-AGENT-064
+    #[test]
+    fn test_double_ctrl_c_within_2s_force_quits() {
+        let mut app = App::new("test-model");
+        app.phase = AppPhase::Streaming;
+        let (tx, _rx) = agent_tx();
+
+        // Simulate first press.
+        app.last_ctrl_c = Some(std::time::Instant::now());
+
+        // Second press immediately after (within 2s).
+        let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let action = app.handle_key(ctrl_c, &tx);
+
+        assert_eq!(action, Action::Quit);
+    }
+
+    // rtmx:req REQ-AGENT-064
+    #[test]
+    fn test_ctrl_c_after_2s_resets_to_kill_switch() {
+        let mut app = App::new("test-model");
+        app.phase = AppPhase::ToolExecuting;
+        let (tx, _rx) = agent_tx();
+
+        // Simulate first press 3s ago.
+        app.last_ctrl_c = Some(std::time::Instant::now() - std::time::Duration::from_secs(3));
+
+        // Press again -- should be treated as first press (KillSwitch).
+        let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let action = app.handle_key(ctrl_c, &tx);
+
+        assert_eq!(action, Action::KillSwitch);
     }
 }

@@ -77,11 +77,13 @@ fn test_ctrl_c_still_quits_during_streaming() {
     app.phase = AppPhase::Streaming;
     let (tx, _rx) = agent_tx();
 
+    // REQ-AGENT-064: First Ctrl+C triggers graceful cancel (KillSwitch),
+    // not immediate quit. Second Ctrl+C within 2s forces Quit.
     let action = send_key(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL, &tx);
     assert_eq!(
         action,
-        Action::Quit,
-        "Ctrl+C must still quit during streaming"
+        Action::KillSwitch,
+        "First Ctrl+C during streaming triggers graceful cancel"
     );
 }
 
