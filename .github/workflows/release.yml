@@ -377,6 +377,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [build-linux, build-linux-aarch64, build-macos, build-windows]
+    env:
+      HAS_GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY != '' }}
     steps:
       - name: Download Linux build artifacts
         uses: actions/download-artifact@v8
@@ -400,7 +402,7 @@ jobs:
           name: release-artifacts-windows
           path: artifacts
       - name: Import GPG key
-        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        if: env.HAS_GPG_KEY == 'true'
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
@@ -411,7 +413,7 @@ jobs:
           echo "${KEYID}:6:" | gpg --import-ownertrust
           echo "Imported GPG key: $KEYID"
       - name: Sign all artifacts
-        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        if: env.HAS_GPG_KEY == 'true'
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
@@ -429,7 +431,7 @@ jobs:
           echo "--- Signed artifacts ---"
           ls -la *.asc
       - name: Verify all signatures
-        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        if: env.HAS_GPG_KEY == 'true'
         run: |
           cd artifacts
           FAIL=0
@@ -447,7 +449,7 @@ jobs:
           fi
           echo "All signatures verified"
       - name: Warn if unsigned
-        if: ${{ secrets.GPG_PRIVATE_KEY == '' }}
+        if: env.HAS_GPG_KEY != 'true'
         run: |
           echo "::warning::GPG_PRIVATE_KEY secret not configured. Artifacts will not be GPG-signed."
           echo "::warning::Set GPG_PRIVATE_KEY and GPG_PASSPHRASE secrets to enable signing."
