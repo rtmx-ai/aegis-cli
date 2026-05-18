@@ -69,15 +69,15 @@ impl App {
                 } else {
                     // REQ-TUI-092: validate model against discovered models
                     if !self.discovered_models.is_empty()
-                        && let Some((_, status)) =
-                            self.discovered_models.iter().find(|(id, _)| id == &name)
+                        && let Some((_, status, _)) =
+                            self.discovered_models.iter().find(|(id, _, _)| id == &name)
                         && status != "available"
                     {
                         let available: Vec<String> = self
                             .discovered_models
                             .iter()
-                            .filter(|(_, s)| s == "available")
-                            .map(|(id, _)| format!("  {id}"))
+                            .filter(|(_, s, _)| s == "available")
+                            .map(|(id, _, _)| format!("  {id}"))
                             .collect();
                         let alt = if available.is_empty() {
                             String::new()

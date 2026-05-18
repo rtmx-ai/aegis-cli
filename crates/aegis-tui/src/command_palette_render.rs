@@ -28,15 +28,29 @@ pub fn render_command_palette(
     let items: Vec<ListItem> = entries
         .iter()
         .map(|entry| {
-            let line = Line::from(vec![
-                Span::styled(
-                    &entry.name,
+            // REQ-TUI-107: Restricted models rendered with dim style.
+            let is_restricted = entry.description.contains("restricted");
+            let (name_style, desc_style) = if is_restricted {
+                (
+                    Style::default()
+                        .fg(theme.border)
+                        .add_modifier(Modifier::DIM),
+                    Style::default()
+                        .fg(theme.border)
+                        .add_modifier(Modifier::DIM),
+                )
+            } else {
+                (
                     Style::default()
                         .fg(theme.accent)
                         .add_modifier(Modifier::BOLD),
-                ),
+                    Style::default().fg(theme.border),
+                )
+            };
+            let line = Line::from(vec![
+                Span::styled(&entry.name, name_style),
                 Span::raw("  "),
-                Span::styled(&entry.description, Style::default().fg(theme.border)),
+                Span::styled(&entry.description, desc_style),
             ]);
             ListItem::new(line)
         })

@@ -54,7 +54,8 @@ pub enum TuiEvent {
     AuthDeviceCodeFailed { provider: String, reason: String },
     /// Model discovery completed successfully (REQ-TUI-090).
     ModelsReady {
-        models: Vec<(String, String)>, // (model_id, status)
+        /// (model_id, status, origin_country)
+        models: Vec<(String, String, Option<String>)>,
     },
     /// Model discovery failed (REQ-TUI-090).
     ModelsError { message: String },

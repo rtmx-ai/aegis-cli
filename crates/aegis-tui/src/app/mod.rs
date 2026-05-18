@@ -122,7 +122,8 @@ pub struct App {
     /// Pending model discovery request for the composition root (REQ-TUI-090).
     pub pending_model_discovery: bool,
     /// Cached model discovery results for validation (REQ-TUI-092).
-    pub discovered_models: Vec<(String, String)>,
+    /// (model_id, status, origin_country)
+    pub discovered_models: Vec<(String, String, Option<String>)>,
 
     /// Rollback journal for `/undo`: captures pre-write file state.
     pub rollback_journal: RollbackJournal,
@@ -395,13 +396,19 @@ impl App {
                     .into_iter()
                     .map(|opt| {
                         let is_current = opt.value == current;
-                        let status = if let Some((_, s)) =
-                            models.iter().find(|(id, _)| *id == opt.value)
+                        // REQ-TUI-106: Include origin in description.
+                        let desc = if let Some((_, s, origin)) =
+                            models.iter().find(|(id, _, _)| *id == opt.value)
                         {
-                            if is_current {
-                                format!("{s} (current)")
+                            let origin_tag = origin
+                                .as_deref()
+                                .map(|o| format!("[{o}]"))
+                                .unwrap_or_default();
+                            let suffix = if is_current { " (current)" } else { "" };
+                            if origin_tag.is_empty() {
+                                format!("{s}{suffix}")
                             } else {
-                                s.clone()
+                                format!("{origin_tag} {s}{suffix}")
                             }
                         } else if is_current {
                             "current".to_string()
@@ -411,19 +418,24 @@ impl App {
                         TokenOption {
                             value: opt.value,
                             label: opt.label,
-                            description: status,
+                            description: desc,
                         }
                     })
                     .collect();
 
                 // Append discovered models not in catalog.
-                for (id, status) in &models {
+                for (id, status, origin) in &models {
                     if !options.iter().any(|o| o.value == *id) {
                         let is_current = *id == current;
-                        let desc = if is_current {
-                            format!("{status} (current)")
+                        let origin_tag = origin
+                            .as_deref()
+                            .map(|o| format!("[{o}]"))
+                            .unwrap_or_default();
+                        let suffix = if is_current { " (current)" } else { "" };
+                        let desc = if origin_tag.is_empty() {
+                            format!("{status}{suffix}")
                         } else {
-                            status.clone()
+                            format!("{origin_tag} {status}{suffix}")
                         };
                         options.push(TokenOption {
                             value: id.clone(),

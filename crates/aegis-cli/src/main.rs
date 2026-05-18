@@ -1536,10 +1536,15 @@ async fn run_interactive_chat(
             let event_tx_models = event_tx.clone();
             tokio::spawn(async move {
                 match aegis_llm::providers::list_models(kind, &endpoint).await {
-                    Ok(models) => {
-                        let pairs: Vec<(String, String)> =
-                            models.into_iter().map(|m| (m.model_id, m.status)).collect();
-                        let _ = event_tx_models.send(TuiEvent::ModelsReady { models: pairs });
+                    Ok(mut models) => {
+                        // REQ-LLM-045: Apply origin policy before surfacing.
+                        let policy = aegis_llm::model_origin::ModelOriginPolicy::default();
+                        aegis_llm::providers::apply_origin_policy(&mut models, &policy);
+                        let triples: Vec<(String, String, Option<String>)> = models
+                            .into_iter()
+                            .map(|m| (m.model_id, m.status, m.origin))
+                            .collect();
+                        let _ = event_tx_models.send(TuiEvent::ModelsReady { models: triples });
                     }
                     Err(e) => {
                         let _ = event_tx_models.send(TuiEvent::ModelsError { message: e });

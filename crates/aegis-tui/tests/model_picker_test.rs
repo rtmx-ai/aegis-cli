@@ -136,8 +136,8 @@ fn test_models_ready_event_populates_dropdown() {
     // Simulate ModelsReady event
     let event = TuiEvent::ModelsReady {
         models: vec![
-            ("llama3".into(), "available".into()),
-            ("codellama".into(), "available".into()),
+            ("llama3".into(), "available".into(), Some("US".into())),
+            ("codellama".into(), "available".into(), Some("US".into())),
         ],
     };
     app.handle_event(event, &tx);
@@ -244,8 +244,8 @@ fn test_model_picker_current_model_highlighted() {
     // Simulate ModelsReady with current model
     let event = TuiEvent::ModelsReady {
         models: vec![
-            ("llama3".into(), "available".into()),
-            ("codellama".into(), "available".into()),
+            ("llama3".into(), "available".into(), Some("US".into())),
+            ("codellama".into(), "available".into(), Some("US".into())),
         ],
     };
     app.handle_event(event, &tx);
@@ -309,8 +309,8 @@ fn test_model_picker_validates_before_switch() {
 
     // Set discovered models with one unavailable
     app.discovered_models = vec![
-        ("llama3".into(), "available".into()),
-        ("badmodel".into(), "unauthorized".into()),
+        ("llama3".into(), "available".into(), Some("US".into())),
+        ("badmodel".into(), "unauthorized".into(), None),
     ];
 
     // Execute /model badmodel directly
@@ -349,8 +349,8 @@ fn test_model_picker_switches_on_valid_selection() {
 
     // Set discovered models
     app.discovered_models = vec![
-        ("llama3".into(), "available".into()),
-        ("codellama".into(), "available".into()),
+        ("llama3".into(), "available".into(), Some("US".into())),
+        ("codellama".into(), "available".into(), Some("US".into())),
     ];
 
     // Execute /model codellama directly
@@ -379,5 +379,153 @@ fn test_model_picker_skips_validation_without_discovery() {
     assert_eq!(
         app.model_name, "newmodel",
         "model switch must work without discovery"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// REQ-TUI-106: Model picker shows origin country and policy tier
+// ---------------------------------------------------------------------------
+
+// rtmx:req REQ-TUI-106
+#[test]
+fn test_model_picker_shows_origin_column() {
+    let mut app = App::new("llama3");
+    app.phase = AppPhase::Idle;
+    let (tx, _rx) = agent_tx();
+
+    // Enter /model token stage
+    type_str(&mut app, "/model", &tx);
+    press_tab(&mut app, &tx);
+
+    // Simulate ModelsReady with origin info
+    let event = TuiEvent::ModelsReady {
+        models: vec![
+            ("llama3".into(), "available".into(), Some("US".into())),
+            ("mistral".into(), "available".into(), Some("France".into())),
+        ],
+    };
+    app.handle_event(event, &tx);
+
+    let view = app.command_palette.view().unwrap();
+
+    // Llama3 should show [US] in description
+    let llama = view.entries.iter().find(|e| e.name == "Llama 3").unwrap();
+    assert!(
+        llama.description.contains("[US]"),
+        "US origin must appear: {}",
+        llama.description
+    );
+
+    // Mistral should show [France] in description
+    let mistral = view.entries.iter().find(|e| e.name == "Mistral").unwrap();
+    assert!(
+        mistral.description.contains("[France]"),
+        "France origin must appear: {}",
+        mistral.description
+    );
+}
+
+// rtmx:req REQ-TUI-106
+#[test]
+fn test_model_picker_origin_with_current_marker() {
+    let mut app = App::new("llama3");
+    app.phase = AppPhase::Idle;
+    let (tx, _rx) = agent_tx();
+
+    type_str(&mut app, "/model", &tx);
+    press_tab(&mut app, &tx);
+
+    let event = TuiEvent::ModelsReady {
+        models: vec![("llama3".into(), "available".into(), Some("US".into()))],
+    };
+    app.handle_event(event, &tx);
+
+    let view = app.command_palette.view().unwrap();
+    let llama = view.entries.iter().find(|e| e.name == "Llama 3").unwrap();
+    assert!(
+        llama.description.contains("[US]") && llama.description.contains("(current)"),
+        "origin and current marker must both appear: {}",
+        llama.description
+    );
+}
+
+// ---------------------------------------------------------------------------
+// REQ-TUI-107: Restricted models shown grayed with denial reason
+// ---------------------------------------------------------------------------
+
+// rtmx:req REQ-TUI-107
+#[test]
+fn test_restricted_model_grayed_with_reason() {
+    let mut app = App::new("llama3");
+    app.phase = AppPhase::Idle;
+    let (tx, _rx) = agent_tx();
+
+    type_str(&mut app, "/model", &tx);
+    press_tab(&mut app, &tx);
+
+    // Simulate a restricted model from origin policy
+    let event = TuiEvent::ModelsReady {
+        models: vec![
+            ("llama3".into(), "available".into(), Some("US".into())),
+            ("qwen".into(), "restricted".into(), Some("China".into())),
+        ],
+    };
+    app.handle_event(event, &tx);
+
+    let view = app.command_palette.view().unwrap();
+
+    // Qwen should appear in the list (not hidden) with restricted status
+    let qwen = view.entries.iter().find(|e| e.name == "qwen");
+    assert!(qwen.is_some(), "restricted model must be visible in picker");
+    let qwen = qwen.unwrap();
+    assert!(
+        qwen.description.contains("restricted"),
+        "restricted status must appear: {}",
+        qwen.description
+    );
+    assert!(
+        qwen.description.contains("[China]"),
+        "origin must appear for restricted model: {}",
+        qwen.description
+    );
+}
+
+// rtmx:req REQ-TUI-107
+#[test]
+fn test_restricted_model_cannot_be_selected() {
+    use aegis_tui::slash_commands::SlashCommand;
+
+    let mut app = App::new("llama3");
+    app.phase = AppPhase::Idle;
+
+    // Set discovered models with restricted model
+    app.discovered_models = vec![
+        ("llama3".into(), "available".into(), Some("US".into())),
+        ("qwen".into(), "restricted".into(), Some("China".into())),
+    ];
+
+    // Try to switch to restricted model
+    app.execute_slash_command(SlashCommand::Model("qwen".into()));
+
+    // Model must NOT switch
+    assert_eq!(
+        app.model_name, "llama3",
+        "must not switch to restricted model"
+    );
+
+    // Error message should mention restriction
+    let errors: Vec<_> = app
+        .messages
+        .iter()
+        .filter(|m| m.kind == MessageKind::Error)
+        .collect();
+    assert!(
+        !errors.is_empty(),
+        "error message must appear for restricted model"
+    );
+    assert!(
+        errors[0].content.contains("restricted"),
+        "error must mention restricted status: {}",
+        errors[0].content
     );
 }
