@@ -12,22 +12,57 @@ Aegis is a terminal-native pair programmer built for defense and regulated envir
 
 ---
 
-## Demo
+## Demos
 
-![Hero: full REA loop with streaming response, tool calls, and HITL approval](docs/demos/gifs/01-hero.gif)
+> **Status:** Demo GIF recordings are pending. The [VHS](https://github.com/charmbracelet/vhs) tape scripts below define each demo scenario; GIFs will be rendered once the TUI has a replay/mock mode that does not require live LLM endpoints. See [`docs/demos/README.md`](docs/demos/README.md) for details.
 
-| | |
-|---|---|
-| ![HITL approval flow](docs/demos/gifs/02-hitl-approval.gif) | ![Air-gapped local model](docs/demos/gifs/03-airgapped.gif) |
-| **HITL approval** -- every mutation needs consent | **Air-gapped** -- offline with Ollama, zero egress |
-| ![Audit ledger](docs/demos/gifs/04-audit-ledger.gif) | ![Plugin provisioning](docs/demos/gifs/05-plugin-provision.gif) |
-| **Audit ledger** -- immutable metadata-only log | **IaC plugins** -- one command to IL4/IL5 |
-| ![.aegisignore](docs/demos/gifs/06-aegisignore.gif) | ![Model picker](docs/demos/gifs/07-model-picker.gif) |
-| **.aegisignore** -- secrets never reach the LLM | **Model picker** -- origin-aware provenance display |
-| ![Model download](docs/demos/gifs/08-model-download.gif) | ![Command palette](docs/demos/gifs/09-command-palette.gif) |
-| **Model download** -- pull with policy gate | **Command palette** -- slash commands with autocomplete |
+<!-- When GIFs are available, uncomment each image line. Each demo renders
+     full-width for readability -- vertical scroll is the carousel. -->
 
-> Demo GIFs are generated from [VHS](https://github.com/charmbracelet/vhs) tape scripts in [`docs/demos/tapes/`](docs/demos/tapes/). See [`docs/demos/README.md`](docs/demos/README.md) for regeneration instructions.
+### Full REA loop
+<!-- ![Hero demo](docs/demos/gifs/01-hero.gif) -->
+Ask a coding question, watch the agent read context, stream a syntax-highlighted explanation, propose an inline diff, and await HITL approval -- all in one clip.
+([tape](docs/demos/tapes/01-hero.tape))
+
+### HITL approval gate
+<!-- ![HITL approval](docs/demos/gifs/02-hitl-approval.gif) -->
+Every state-mutating tool call (file write, shell command) pauses for explicit human consent. Approve, deny, edit the args, or skip.
+([tape](docs/demos/tapes/02-hitl-approval.tape))
+
+### Air-gapped local model
+<!-- ![Air-gapped](docs/demos/gifs/03-airgapped.gif) -->
+`aegis init --local` configures Ollama on localhost. Zero network egress. Works on disconnected SIPR networks.
+([tape](docs/demos/tapes/03-airgapped.tape))
+
+### Audit ledger
+<!-- ![Audit ledger](docs/demos/gifs/04-audit-ledger.gif) -->
+Immutable JSONL log of every session, tool call, and approval decision. Metadata only -- never CUI. Hash-chain verified.
+([tape](docs/demos/tapes/04-audit-ledger.tape))
+
+### IaC plugin provisioning
+<!-- ![Plugin provisioning](docs/demos/gifs/05-plugin-provision.gif) -->
+One command provisions an IL4/IL5 cloud boundary via the aegis-infra/v1 plugin protocol. Progress events stream in real time.
+([tape](docs/demos/tapes/05-plugin-provision.tape))
+
+### .aegisignore filtering
+<!-- ![.aegisignore](docs/demos/gifs/06-aegisignore.gif) -->
+Mandatory blocklist prevents `.env`, `*.pem`, `*.key`, and credential files from entering agent context. The LLM never sees secrets.
+([tape](docs/demos/tapes/06-aegisignore.tape))
+
+### Model picker with provenance
+<!-- ![Model picker](docs/demos/gifs/07-model-picker.gif) -->
+Origin-aware model catalog shows country of origin and policy tier. Restricted models (e.g., PRC origin) are visible but non-selectable, with inline denial reason.
+([tape](docs/demos/tapes/07-model-picker.tape))
+
+### Model download with policy gate
+<!-- ![Model download](docs/demos/gifs/08-model-download.gif) -->
+`/model download` pulls from Ollama with a policy check first. Restricted origins are blocked. Progress bar with ETA in the chat area.
+([tape](docs/demos/tapes/08-model-download.tape))
+
+### Command palette
+<!-- ![Command palette](docs/demos/gifs/09-command-palette.gif) -->
+Slash commands with tab-complete: `/add`, `/drop`, `/context`, `/clear`, `/model`, `/help`. Dropdown filters as you type.
+([tape](docs/demos/tapes/09-command-palette.tape))
 
 ---
 
