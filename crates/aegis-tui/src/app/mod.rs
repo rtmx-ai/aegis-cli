@@ -146,6 +146,54 @@ pub struct App {
     pub pending_model_download: Option<String>,
     /// REQ-TUI-108: Active download model name (for progress display).
     pub active_download: Option<String>,
+    /// REQ-TUI-109: Current download progress for gauge rendering.
+    pub download_progress: Option<DownloadProgress>,
+}
+
+/// REQ-TUI-109: Download progress state for gauge rendering.
+#[derive(Debug, Clone)]
+pub struct DownloadProgress {
+    pub model: String,
+    pub status: String,
+    pub completed: u64,
+    pub total: u64,
+    pub started_at: Instant,
+}
+
+impl DownloadProgress {
+    /// Percentage complete (0..100).
+    pub fn percent(&self) -> u16 {
+        if self.total == 0 {
+            0
+        } else {
+            ((self.completed as f64 / self.total as f64) * 100.0) as u16
+        }
+    }
+
+    /// Human-readable progress line: "downloading: 500/1000 MB (50%) ~2m30s"
+    pub fn label(&self) -> String {
+        if self.total == 0 {
+            return self.status.clone();
+        }
+        let pct = self.percent();
+        let mb_done = self.completed / (1024 * 1024);
+        let mb_total = self.total / (1024 * 1024);
+        let elapsed = self.started_at.elapsed().as_secs();
+        let eta = if pct > 0 && elapsed > 2 {
+            let total_est = elapsed as f64 / (pct as f64 / 100.0);
+            let remaining = (total_est - elapsed as f64).max(0.0) as u64;
+            let mins = remaining / 60;
+            let secs = remaining % 60;
+            if mins > 0 {
+                format!(" ~{mins}m{secs:02}s")
+            } else {
+                format!(" ~{secs}s")
+            }
+        } else {
+            String::new()
+        };
+        format!("{}: {mb_done}/{mb_total} MB ({pct}%){eta}", self.status)
+    }
 }
 
 /// Number of lines to scroll per PageUp/PageDown press.
@@ -195,6 +243,7 @@ impl App {
             last_ctrl_c: None,
             pending_model_download: None,
             active_download: None,
+            download_progress: None,
         }
     }
 
@@ -476,33 +525,39 @@ impl App {
                 }
                 Action::Continue
             }
-            // REQ-TUI-108: Model download progress/completion/failure.
+            // REQ-TUI-108 + REQ-TUI-109: Model download progress.
             TuiEvent::ModelDownloadProgress {
-                model: _,
+                model,
                 status,
                 completed,
                 total,
             } => {
+                // REQ-TUI-109: Update download progress state for gauge.
+                let progress = self
+                    .download_progress
+                    .get_or_insert_with(|| DownloadProgress {
+                        model: model.clone(),
+                        status: status.clone(),
+                        completed: 0,
+                        total: 0,
+                        started_at: Instant::now(),
+                    });
+                progress.status = status;
+                progress.completed = completed;
+                progress.total = total;
+                // Also update chat message for text-only fallback.
                 use crate::messages::MessageKind;
-                if total > 0 {
-                    let pct = (completed as f64 / total as f64 * 100.0) as u64;
-                    let mb_done = completed / (1024 * 1024);
-                    let mb_total = total / (1024 * 1024);
-                    if let Some(last) = self.messages.last_mut()
-                        && last.kind == MessageKind::System
-                    {
-                        last.content = format!("{status}: {mb_done}/{mb_total} MB ({pct}%)");
-                    }
-                } else if !status.is_empty()
-                    && let Some(last) = self.messages.last_mut()
+                let label = progress.label();
+                if let Some(last) = self.messages.last_mut()
                     && last.kind == MessageKind::System
                 {
-                    last.content = status;
+                    last.content = label;
                 }
                 Action::Continue
             }
             TuiEvent::ModelDownloadComplete { model } => {
                 self.active_download = None;
+                self.download_progress = None;
                 self.messages
                     .push(ChatMessage::system(format!("Model '{model}' downloaded.")));
                 // Trigger model re-discovery so the new model appears.
@@ -511,6 +566,7 @@ impl App {
             }
             TuiEvent::ModelDownloadFailed { model, reason } => {
                 self.active_download = None;
+                self.download_progress = None;
                 self.messages.push(ChatMessage::error(format!(
                     "Download of '{model}' failed: {reason}"
                 )));

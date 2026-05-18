@@ -739,3 +739,103 @@ fn test_model_download_progress_updates_message() {
         last.content
     );
 }
+
+// ---------- REQ-TUI-109: Download progress bar tests ----------
+
+// rtmx:req REQ-TUI-109
+#[test]
+fn test_download_progress_updates_state() {
+    let mut app = App::new("llama3");
+    app.phase = AppPhase::Idle;
+    app.active_download = Some("gemma4".to_string());
+    let (tx, _rx) = agent_tx();
+
+    // First progress event should create DownloadProgress
+    app.messages.push(aegis_tui::messages::ChatMessage::system(
+        "starting...".to_string(),
+    ));
+
+    let _ = app.handle_event(
+        TuiEvent::ModelDownloadProgress {
+            model: "gemma4".to_string(),
+            status: "downloading".to_string(),
+            completed: 100_000_000,
+            total: 500_000_000,
+        },
+        &tx,
+    );
+
+    let progress = app
+        .download_progress
+        .as_ref()
+        .expect("should have progress");
+    assert_eq!(progress.model, "gemma4");
+    assert_eq!(progress.completed, 100_000_000);
+    assert_eq!(progress.total, 500_000_000);
+    assert_eq!(progress.percent(), 20);
+}
+
+// rtmx:req REQ-TUI-109
+#[test]
+fn test_download_progress_cleared_on_complete() {
+    let mut app = App::new("llama3");
+    app.phase = AppPhase::Idle;
+    app.active_download = Some("gemma4".to_string());
+    app.download_progress = Some(aegis_tui::app::DownloadProgress {
+        model: "gemma4".to_string(),
+        status: "downloading".to_string(),
+        completed: 500_000_000,
+        total: 500_000_000,
+        started_at: std::time::Instant::now(),
+    });
+    let (tx, _rx) = agent_tx();
+
+    let _ = app.handle_event(
+        TuiEvent::ModelDownloadComplete {
+            model: "gemma4".to_string(),
+        },
+        &tx,
+    );
+
+    assert!(
+        app.download_progress.is_none(),
+        "progress should be cleared"
+    );
+}
+
+// rtmx:req REQ-TUI-109
+#[test]
+fn test_download_progress_label_format() {
+    let progress = aegis_tui::app::DownloadProgress {
+        model: "gemma4".to_string(),
+        status: "downloading".to_string(),
+        completed: 524_288_000, // 500 MB
+        total: 1_048_576_000,   // 1000 MB
+        started_at: std::time::Instant::now(),
+    };
+
+    let label = progress.label();
+    assert!(label.contains("500"), "should show 500 MB done: {label}");
+    assert!(label.contains("1000"), "should show 1000 MB total: {label}");
+    assert!(label.contains("50%"), "should show 50%: {label}");
+    assert!(label.contains("downloading"), "should show status: {label}");
+}
+
+// rtmx:req REQ-TUI-109
+#[test]
+fn test_download_progress_zero_total_shows_status() {
+    let progress = aegis_tui::app::DownloadProgress {
+        model: "gemma4".to_string(),
+        status: "pulling manifest".to_string(),
+        completed: 0,
+        total: 0,
+        started_at: std::time::Instant::now(),
+    };
+
+    let label = progress.label();
+    assert_eq!(
+        label, "pulling manifest",
+        "zero total should show status only"
+    );
+    assert_eq!(progress.percent(), 0);
+}
