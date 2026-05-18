@@ -148,6 +148,8 @@ pub struct App {
     pub active_download: Option<String>,
     /// REQ-TUI-109: Current download progress for gauge rendering.
     pub download_progress: Option<DownloadProgress>,
+    /// REQ-TUI-110: Air-gapped mode disables downloads and restricts to manifest.
+    pub airgap_mode: bool,
 }
 
 /// REQ-TUI-109: Download progress state for gauge rendering.
@@ -244,6 +246,7 @@ impl App {
             pending_model_download: None,
             active_download: None,
             download_progress: None,
+            airgap_mode: false,
         }
     }
 

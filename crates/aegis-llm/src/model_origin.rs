@@ -211,6 +211,52 @@ impl ModelPolicyDecision {
     }
 }
 
+// ---- Air-gapped model manifest (REQ-TUI-110) ----
+
+/// A pre-approved model entry in an air-gapped manifest.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ManifestEntry {
+    pub name: String,
+    pub sha256: String,
+}
+
+/// Air-gapped model manifest: restricts available models to pre-loaded set.
+///
+/// In air-gapped deployments, only models listed in `~/.aegis/model_manifest.toml`
+/// are available. Each entry includes a SHA-256 hash for integrity verification.
+/// The manifest is signed by an admin during side-load preparation.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct ModelManifest {
+    #[serde(default)]
+    pub models: Vec<ManifestEntry>,
+}
+
+impl ModelManifest {
+    /// Parse a manifest from TOML text.
+    pub fn from_toml(text: &str) -> Result<Self, String> {
+        if text.trim().is_empty() {
+            return Ok(Self::default());
+        }
+        toml::from_str(text).map_err(|e| format!("manifest parse error: {e}"))
+    }
+
+    /// Load manifest from a file path, returning None if the file doesn't exist.
+    pub fn load(path: &std::path::Path) -> Option<Self> {
+        let text = std::fs::read_to_string(path).ok()?;
+        Self::from_toml(&text).ok()
+    }
+
+    /// Check if a model name is in the manifest.
+    pub fn contains(&self, model_name: &str) -> bool {
+        self.models.iter().any(|e| e.name == model_name)
+    }
+
+    /// List of model names in the manifest.
+    pub fn model_names(&self) -> Vec<&str> {
+        self.models.iter().map(|e| e.name.as_str()).collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -477,5 +523,75 @@ mod tests {
         let decision = policy.evaluate("deepseek-r1:8b");
         assert!(!decision.is_allowed());
         assert_eq!(decision.tier, OriginTier::Denied);
+    }
+
+    // ---------- REQ-TUI-110: Air-gapped model manifest ----------
+
+    // rtmx:req REQ-TUI-110
+    #[test]
+    fn test_airgap_manifest_parse() {
+        let toml = r#"
+[[models]]
+name = "llama3:8b"
+sha256 = "abc123def456"
+
+[[models]]
+name = "gemma4:2b"
+sha256 = "789012345678"
+"#;
+        let manifest = ModelManifest::from_toml(toml).unwrap();
+        assert_eq!(manifest.models.len(), 2);
+        assert_eq!(manifest.models[0].name, "llama3:8b");
+        assert_eq!(manifest.models[0].sha256, "abc123def456");
+        assert_eq!(manifest.models[1].name, "gemma4:2b");
+    }
+
+    // rtmx:req REQ-TUI-110
+    #[test]
+    fn test_airgap_manifest_contains() {
+        let manifest = ModelManifest {
+            models: vec![
+                ManifestEntry {
+                    name: "llama3:8b".to_string(),
+                    sha256: "abc".to_string(),
+                },
+                ManifestEntry {
+                    name: "gemma4:2b".to_string(),
+                    sha256: "def".to_string(),
+                },
+            ],
+        };
+        assert!(manifest.contains("llama3:8b"));
+        assert!(manifest.contains("gemma4:2b"));
+        assert!(!manifest.contains("qwen:7b"));
+    }
+
+    // rtmx:req REQ-TUI-110
+    #[test]
+    fn test_airgap_manifest_filter_models() {
+        let manifest = ModelManifest {
+            models: vec![ManifestEntry {
+                name: "llama3:8b".to_string(),
+                sha256: "abc".to_string(),
+            }],
+        };
+        let all_models = ["llama3:8b", "gemma4:2b", "qwen:7b"];
+        let filtered: Vec<&&str> = all_models.iter().filter(|m| manifest.contains(m)).collect();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(*filtered[0], "llama3:8b");
+    }
+
+    // rtmx:req REQ-TUI-110
+    #[test]
+    fn test_airgap_manifest_empty_toml() {
+        let manifest = ModelManifest::from_toml("").unwrap();
+        assert!(manifest.models.is_empty());
+    }
+
+    // rtmx:req REQ-TUI-110
+    #[test]
+    fn test_airgap_manifest_invalid_toml() {
+        let result = ModelManifest::from_toml("not valid { toml");
+        assert!(result.is_err());
     }
 }

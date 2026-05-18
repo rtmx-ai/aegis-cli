@@ -839,3 +839,36 @@ fn test_download_progress_zero_total_shows_status() {
     );
     assert_eq!(progress.percent(), 0);
 }
+
+// ---------- REQ-TUI-110: Air-gapped model manifest tests ----------
+
+// rtmx:req REQ-TUI-110
+#[test]
+fn test_airgap_mode_disables_download() {
+    let mut app = App::new("llama3");
+    app.phase = AppPhase::Idle;
+    app.airgap_mode = true;
+
+    let cmd = aegis_tui::slash_commands::parse_slash_command("/model download gemma4");
+    if let aegis_tui::slash_commands::ParseResult::Command(c) = cmd {
+        app.execute_slash_command(c);
+    } else {
+        panic!("should parse as command");
+    }
+
+    assert!(
+        app.pending_model_download.is_none(),
+        "air-gapped mode should block download"
+    );
+    let errors: Vec<_> = app
+        .messages
+        .iter()
+        .filter(|m| m.kind == MessageKind::Error)
+        .collect();
+    assert!(!errors.is_empty(), "should show error in air-gapped mode");
+    assert!(
+        errors[0].content.contains("air-gapped"),
+        "error should mention air-gapped: {}",
+        errors[0].content
+    );
+}

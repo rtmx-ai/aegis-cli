@@ -62,6 +62,15 @@ impl App {
             }
             // REQ-TUI-108: /model download <name> initiates Ollama pull.
             SlashCommand::ModelDownload(name) => {
+                // REQ-TUI-110: Air-gapped mode disables downloads.
+                if self.airgap_mode {
+                    self.messages.push(ChatMessage::error(
+                        "Model download is disabled in air-gapped mode.\n\
+                         Only pre-loaded models from the manifest are available."
+                            .to_string(),
+                    ));
+                    return Action::Continue;
+                }
                 if name.is_empty() {
                     self.messages.push(ChatMessage::error(
                         "Usage: /model download <name>\n\

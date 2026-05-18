@@ -51,6 +51,8 @@ syntect = { version = "5", default-features = false, features = ["default-fancy"
 # LLM providers
 reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
 
+toml = "0.8"
+
 # FIPS 140-2 validated crypto (REQ-SECURITY-026, CMVP #4631)
 aws-lc-rs = { version = "1" }
 rustls = { version = "0.23", features = ["aws_lc_rs"] }
