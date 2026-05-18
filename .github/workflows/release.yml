@@ -15,6 +15,13 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (build + sign but skip release creation)'
+        required: true
+        default: 'true'
+        type: boolean
 
 concurrency:
   group: release-${{ github.ref }}
@@ -507,6 +514,7 @@ jobs:
   # ---------------------------------------------------------------------------
   release:
     name: Create GitHub Release
+    if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [sign, demo-gifs]
@@ -553,6 +561,7 @@ jobs:
   # ---------------------------------------------------------------------------
   container:
     name: Container Image
+    if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [release]
