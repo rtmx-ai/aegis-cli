@@ -400,6 +400,7 @@ jobs:
           name: release-artifacts-windows
           path: artifacts
       - name: Import GPG key
+        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
@@ -410,6 +411,7 @@ jobs:
           echo "${KEYID}:6:" | gpg --import-ownertrust
           echo "Imported GPG key: $KEYID"
       - name: Sign all artifacts
+        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
@@ -427,6 +429,7 @@ jobs:
           echo "--- Signed artifacts ---"
           ls -la *.asc
       - name: Verify all signatures
+        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
         run: |
           cd artifacts
           FAIL=0
@@ -443,7 +446,12 @@ jobs:
             exit 1
           fi
           echo "All signatures verified"
-      - name: Upload signed artifacts
+      - name: Warn if unsigned
+        if: ${{ secrets.GPG_PRIVATE_KEY == '' }}
+        run: |
+          echo "::warning::GPG_PRIVATE_KEY secret not configured. Artifacts will not be GPG-signed."
+          echo "::warning::Set GPG_PRIVATE_KEY and GPG_PASSPHRASE secrets to enable signing."
+      - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: signed-artifacts
