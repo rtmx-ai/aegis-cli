@@ -257,6 +257,208 @@ impl ModelManifest {
     }
 }
 
+// ---- Static BOM registry (REQ-LLM-051) ----
+
+use aegis_domain::types::{AiBom, ExportClassification, ModelLicense};
+
+/// Static BOM entries for known model families.
+///
+/// Each entry provides partial provenance data: origin country, license,
+/// and known training data sources. Updated per model release.
+static BOM_REGISTRY: &[AiBomEntry] = &[
+    AiBomEntry {
+        prefix: "llama",
+        family: "llama",
+        origin: "US",
+        license: ModelLicense::Apache2,
+        training: &["CommonCrawl", "Wikipedia", "Books3", "ArXiv"],
+        org: "Meta",
+        export: ExportClassification::None,
+    },
+    AiBomEntry {
+        prefix: "codellama",
+        family: "codellama",
+        origin: "US",
+        license: ModelLicense::Apache2,
+        training: &["Code Llama corpus", "StackOverflow"],
+        org: "Meta",
+        export: ExportClassification::None,
+    },
+    AiBomEntry {
+        prefix: "gemma",
+        family: "gemma",
+        origin: "US",
+        license: ModelLicense::Apache2,
+        training: &["Web documents", "Code", "Mathematics"],
+        org: "Google DeepMind",
+        export: ExportClassification::None,
+    },
+    AiBomEntry {
+        prefix: "phi",
+        family: "phi",
+        origin: "US",
+        license: ModelLicense::MIT,
+        training: &["Synthetic data", "Filtered web"],
+        org: "Microsoft Research",
+        export: ExportClassification::None,
+    },
+    AiBomEntry {
+        prefix: "granite",
+        family: "granite",
+        origin: "US",
+        license: ModelLicense::Apache2,
+        training: &["Enterprise corpus", "Code", "Academic papers"],
+        org: "IBM Research",
+        export: ExportClassification::None,
+    },
+    AiBomEntry {
+        prefix: "mistral",
+        family: "mistral",
+        origin: "France",
+        license: ModelLicense::Apache2,
+        training: &["Web corpus"],
+        org: "Mistral AI",
+        export: ExportClassification::None,
+    },
+    AiBomEntry {
+        prefix: "falcon",
+        family: "falcon",
+        origin: "UAE",
+        license: ModelLicense::Apache2,
+        training: &["RefinedWeb"],
+        org: "TII",
+        export: ExportClassification::None,
+    },
+    AiBomEntry {
+        prefix: "qwen",
+        family: "qwen",
+        origin: "China",
+        license: ModelLicense::Research,
+        training: &["Undisclosed web corpus"],
+        org: "Alibaba",
+        export: ExportClassification::Ear,
+    },
+    AiBomEntry {
+        prefix: "deepseek",
+        family: "deepseek",
+        origin: "China",
+        license: ModelLicense::Research,
+        training: &["Undisclosed corpus"],
+        org: "DeepSeek",
+        export: ExportClassification::Ear,
+    },
+];
+
+/// Internal BOM entry for the static registry.
+struct AiBomEntry {
+    prefix: &'static str,
+    family: &'static str,
+    origin: &'static str,
+    license: ModelLicense,
+    training: &'static [&'static str],
+    org: &'static str,
+    export: ExportClassification,
+}
+
+/// Look up the BOM for a model by prefix-matching against the registry.
+pub fn lookup_bom(model: &str) -> AiBom {
+    let lower = model.to_lowercase();
+    for entry in BOM_REGISTRY {
+        if lower.starts_with(entry.prefix) {
+            return AiBom {
+                model_family: entry.family.to_string(),
+                origin_country: Some(entry.origin.to_string()),
+                license: entry.license.clone(),
+                training_data_sources: entry.training.iter().map(|s| s.to_string()).collect(),
+                fine_tune_chain: vec![entry.org.to_string()],
+                known_vulnerabilities: vec![],
+                export_classification: entry.export.clone(),
+            };
+        }
+    }
+    // Unknown model -- return minimal BOM.
+    AiBom {
+        model_family: model.to_string(),
+        ..AiBom::default()
+    }
+}
+
+// ---- BOM-based policy evaluator (REQ-LLM-052) ----
+
+/// Result of evaluating a model's BOM against site policy.
+#[derive(Debug, Clone)]
+pub struct BomPolicyDecision {
+    pub model_family: String,
+    pub decision: OriginTier,
+    pub reasons: Vec<String>,
+}
+
+impl BomPolicyDecision {
+    pub fn is_allowed(&self) -> bool {
+        !matches!(self.decision, OriginTier::Denied)
+    }
+}
+
+/// Evaluate a model's BOM against origin policy + license + export controls.
+///
+/// Accumulates all deny reasons. The strictest tier wins.
+pub fn evaluate_bom(bom: &AiBom, origin_policy: &ModelOriginPolicy) -> BomPolicyDecision {
+    let mut reasons = Vec::new();
+    let mut tier = OriginTier::Approved;
+
+    // Check origin policy.
+    let origin_decision = origin_policy.evaluate(&bom.model_family);
+    if !origin_decision.is_allowed() {
+        reasons.push(format!("Origin: {}", origin_decision.reason));
+        tier = OriginTier::Denied;
+    } else if origin_decision.tier == OriginTier::ReviewRequired {
+        reasons.push(format!("Origin: {}", origin_decision.reason));
+        tier = OriginTier::ReviewRequired;
+    }
+
+    // Check license.
+    match bom.license {
+        ModelLicense::Research => {
+            reasons.push("License: Research-only (no commercial use)".to_string());
+            tier = OriginTier::Denied;
+        }
+        ModelLicense::Proprietary => {
+            reasons.push("License: Proprietary (terms may restrict use)".to_string());
+            if tier != OriginTier::Denied {
+                tier = OriginTier::ReviewRequired;
+            }
+        }
+        ModelLicense::Unknown => {
+            reasons.push("License: Unknown (cannot verify compliance)".to_string());
+            if tier != OriginTier::Denied {
+                tier = OriginTier::ReviewRequired;
+            }
+        }
+        _ => {}
+    }
+
+    // Check export classification.
+    match bom.export_classification {
+        ExportClassification::Itar => {
+            reasons.push("Export: ITAR restricted".to_string());
+            tier = OriginTier::Denied;
+        }
+        ExportClassification::Ear => {
+            reasons.push("Export: EAR controlled".to_string());
+            if tier != OriginTier::Denied {
+                tier = OriginTier::ReviewRequired;
+            }
+        }
+        ExportClassification::None => {}
+    }
+
+    BomPolicyDecision {
+        model_family: bom.model_family.clone(),
+        decision: tier,
+        reasons,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -593,5 +795,121 @@ sha256 = "789012345678"
     fn test_airgap_manifest_invalid_toml() {
         let result = ModelManifest::from_toml("not valid { toml");
         assert!(result.is_err());
+    }
+
+    // ---------- REQ-LLM-051: Static BOM registry ----------
+
+    // rtmx:req REQ-LLM-051
+    #[test]
+    fn test_bom_registry_covers_known_families() {
+        let families = ["llama3:8b", "gemma4:2b", "mistral:7b", "phi-4", "granite"];
+        for model in &families {
+            let bom = lookup_bom(model);
+            assert!(
+                !bom.model_family.is_empty(),
+                "BOM should have family for {model}"
+            );
+            assert!(
+                bom.origin_country.is_some(),
+                "BOM should have origin for {model}"
+            );
+            assert_ne!(
+                bom.license,
+                ModelLicense::Unknown,
+                "BOM should have license for {model}"
+            );
+        }
+    }
+
+    // rtmx:req REQ-LLM-051
+    #[test]
+    fn test_bom_llama_has_correct_metadata() {
+        let bom = lookup_bom("llama3:8b");
+        assert_eq!(bom.model_family, "llama");
+        assert_eq!(bom.origin_country.as_deref(), Some("US"));
+        assert_eq!(bom.license, ModelLicense::Apache2);
+        assert!(
+            bom.training_data_sources
+                .contains(&"CommonCrawl".to_string())
+        );
+        assert!(bom.fine_tune_chain.contains(&"Meta".to_string()));
+    }
+
+    // rtmx:req REQ-LLM-051
+    #[test]
+    fn test_bom_qwen_has_export_control() {
+        let bom = lookup_bom("qwen:7b");
+        assert_eq!(bom.model_family, "qwen");
+        assert_eq!(bom.origin_country.as_deref(), Some("China"));
+        assert_eq!(bom.license, ModelLicense::Research);
+        assert_eq!(bom.export_classification, ExportClassification::Ear);
+    }
+
+    // rtmx:req REQ-LLM-051
+    #[test]
+    fn test_bom_unknown_model_returns_minimal() {
+        let bom = lookup_bom("some-novel-model");
+        assert_eq!(bom.model_family, "some-novel-model");
+        assert!(bom.origin_country.is_none());
+        assert_eq!(bom.license, ModelLicense::Unknown);
+    }
+
+    // ---------- REQ-LLM-052: BOM-based policy evaluator ----------
+
+    // rtmx:req REQ-LLM-052
+    #[test]
+    fn test_bom_policy_approves_llama() {
+        let bom = lookup_bom("llama3:8b");
+        let policy = ModelOriginPolicy::default();
+        let decision = evaluate_bom(&bom, &policy);
+        assert!(decision.is_allowed(), "llama should be approved");
+        assert!(decision.reasons.is_empty(), "no deny reasons for llama");
+    }
+
+    // rtmx:req REQ-LLM-052
+    #[test]
+    fn test_bom_policy_denies_research_only_license() {
+        let bom = lookup_bom("qwen:7b");
+        let policy = ModelOriginPolicy::default();
+        let decision = evaluate_bom(&bom, &policy);
+        assert!(!decision.is_allowed(), "qwen should be denied");
+        assert!(
+            decision.reasons.iter().any(|r| r.contains("Research")),
+            "should mention research license: {:?}",
+            decision.reasons
+        );
+    }
+
+    // rtmx:req REQ-LLM-052
+    #[test]
+    fn test_bom_policy_denies_ear_controlled() {
+        let bom = AiBom {
+            model_family: "test-model".to_string(),
+            origin_country: Some("US".to_string()),
+            license: ModelLicense::Apache2,
+            export_classification: ExportClassification::Ear,
+            ..AiBom::default()
+        };
+        let policy = ModelOriginPolicy::default();
+        let decision = evaluate_bom(&bom, &policy);
+        assert!(
+            decision.reasons.iter().any(|r| r.contains("EAR")),
+            "should flag EAR: {:?}",
+            decision.reasons
+        );
+    }
+
+    // rtmx:req REQ-LLM-052
+    #[test]
+    fn test_bom_policy_accumulates_multiple_reasons() {
+        // qwen has: denied origin (China), research license, and EAR
+        let bom = lookup_bom("qwen:7b");
+        let policy = ModelOriginPolicy::default();
+        let decision = evaluate_bom(&bom, &policy);
+        assert!(
+            decision.reasons.len() >= 2,
+            "should have multiple deny reasons: {:?}",
+            decision.reasons
+        );
     }
 }

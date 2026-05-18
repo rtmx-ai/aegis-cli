@@ -983,4 +983,56 @@ mod tests {
                 .contains("restricted"),
         );
     }
+
+    // rtmx:req REQ-LLM-053
+    #[tokio::test]
+    async fn test_model_selected_audit_event_includes_bom() {
+        let dir = TempDir::new().unwrap();
+        let ledger = make_ledger(dir.path()).await;
+
+        let bom_json = serde_json::json!({
+            "model_family": "llama3",
+            "origin_country": "US",
+            "license": "Apache2",
+            "training_data_sources": ["CommonCrawl", "Wikipedia"],
+            "fine_tune_chain": ["Meta"],
+            "known_vulnerabilities": [],
+            "export_classification": "None"
+        })
+        .to_string();
+
+        let event = DomainEvent::ModelSelected {
+            session_id: "sess-002".to_string(),
+            model_name: "llama3:8b".to_string(),
+            bom_snapshot: bom_json.clone(),
+            policy_decision: "Approved".to_string(),
+            policy_reasons: vec![],
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+
+        ledger.record(&event).await.unwrap();
+
+        let entries = read_log_entries(dir.path());
+        assert_eq!(entries.len(), 1, "ModelSelected event must be recorded");
+
+        let parsed: serde_json::Value = serde_json::from_str(&entries[0]).unwrap();
+        let event_val = &parsed["event"];
+        assert_eq!(
+            event_val["ModelSelected"]["model_name"].as_str(),
+            Some("llama3:8b"),
+        );
+        assert_eq!(
+            event_val["ModelSelected"]["policy_decision"].as_str(),
+            Some("Approved"),
+        );
+        // BOM snapshot should be present as a string field
+        let bom_str = event_val["ModelSelected"]["bom_snapshot"]
+            .as_str()
+            .expect("bom_snapshot should be a string");
+        assert!(
+            bom_str.contains("llama3"),
+            "BOM should contain model family"
+        );
+        assert!(bom_str.contains("Apache2"), "BOM should contain license");
+    }
 }

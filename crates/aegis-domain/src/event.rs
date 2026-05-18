@@ -124,6 +124,18 @@ pub enum DomainEvent {
         reason: String,
         timestamp: String,
     },
+    /// Model selection audit event with BOM snapshot (REQ-LLM-053).
+    ModelSelected {
+        session_id: String,
+        model_name: String,
+        /// JSON-serialized AiBom snapshot.
+        bom_snapshot: String,
+        /// BOM policy decision tier (Approved/ReviewRequired/Denied).
+        policy_decision: String,
+        /// Accumulated policy reasons.
+        policy_reasons: Vec<String>,
+        timestamp: String,
+    },
     /// Token usage for a single LLM turn, with provider attribution.
     TokensConsumed {
         session_id: String,

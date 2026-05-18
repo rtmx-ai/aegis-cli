@@ -452,6 +452,73 @@ pub enum McpTransport {
     },
 }
 
+// ---- AI Bill of Materials (REQ-LLM-050) ----
+
+/// License type for a model family.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ModelLicense {
+    Apache2,
+    MIT,
+    /// Research-only license (no commercial use).
+    Research,
+    Proprietary,
+    #[default]
+    Unknown,
+}
+
+impl fmt::Display for ModelLicense {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Apache2 => write!(f, "Apache-2.0"),
+            Self::MIT => write!(f, "MIT"),
+            Self::Research => write!(f, "Research-only"),
+            Self::Proprietary => write!(f, "Proprietary"),
+            Self::Unknown => write!(f, "Unknown"),
+        }
+    }
+}
+
+/// Export control classification for a model.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExportClassification {
+    /// Export Administration Regulations apply.
+    Ear,
+    /// International Traffic in Arms Regulations apply.
+    Itar,
+    /// No known export restrictions.
+    #[default]
+    None,
+}
+
+/// AI Bill of Materials: provenance metadata for a model family.
+///
+/// Captures training data lineage, weights origin, licensing, known
+/// vulnerabilities, and export classification. All fields are optional
+/// except `model_family`, since BOM data is often incomplete for
+/// open-weight models.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AiBom {
+    /// Model family name (e.g., "llama3", "gemma4").
+    pub model_family: String,
+    /// Country of origin for the model weights.
+    pub origin_country: Option<String>,
+    /// License governing model use.
+    #[serde(default)]
+    pub license: ModelLicense,
+    /// Known training data sources (e.g., "CommonCrawl", "Wikipedia").
+    #[serde(default)]
+    pub training_data_sources: Vec<String>,
+    /// Fine-tuning chain: list of organizations that fine-tuned the model.
+    #[serde(default)]
+    pub fine_tune_chain: Vec<String>,
+    /// Known vulnerabilities or safety concerns.
+    #[serde(default)]
+    pub known_vulnerabilities: Vec<String>,
+    /// Export control classification.
+    #[serde(default)]
+    pub export_classification: ExportClassification,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -474,5 +541,57 @@ mod tests {
         let a = SessionId::new();
         let b = SessionId::new();
         assert_ne!(a, b);
+    }
+
+    // rtmx:req REQ-LLM-050
+    #[test]
+    fn test_ai_bom_default_values() {
+        let bom = AiBom::default();
+        assert!(bom.model_family.is_empty());
+        assert!(bom.origin_country.is_none());
+        assert_eq!(bom.license, ModelLicense::Unknown);
+        assert!(bom.training_data_sources.is_empty());
+        assert!(bom.fine_tune_chain.is_empty());
+        assert!(bom.known_vulnerabilities.is_empty());
+        assert_eq!(bom.export_classification, ExportClassification::None);
+    }
+
+    // rtmx:req REQ-LLM-050
+    #[test]
+    fn test_ai_bom_serializes_to_json() {
+        let bom = AiBom {
+            model_family: "llama3".to_string(),
+            origin_country: Some("US".to_string()),
+            license: ModelLicense::Apache2,
+            training_data_sources: vec!["CommonCrawl".to_string()],
+            fine_tune_chain: vec!["Meta".to_string()],
+            known_vulnerabilities: vec![],
+            export_classification: ExportClassification::None,
+        };
+        let json = serde_json::to_string(&bom).unwrap();
+        assert!(json.contains("llama3"));
+        assert!(json.contains("Apache2"));
+        assert!(json.contains("CommonCrawl"));
+        // Deserialize round-trip
+        let parsed: AiBom = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.model_family, "llama3");
+        assert_eq!(parsed.license, ModelLicense::Apache2);
+    }
+
+    // rtmx:req REQ-LLM-050
+    #[test]
+    fn test_model_license_display() {
+        assert_eq!(ModelLicense::Apache2.to_string(), "Apache-2.0");
+        assert_eq!(ModelLicense::MIT.to_string(), "MIT");
+        assert_eq!(ModelLicense::Research.to_string(), "Research-only");
+        assert_eq!(ModelLicense::Proprietary.to_string(), "Proprietary");
+        assert_eq!(ModelLicense::Unknown.to_string(), "Unknown");
+    }
+
+    // rtmx:req REQ-LLM-050
+    #[test]
+    fn test_export_classification_default() {
+        let ec = ExportClassification::default();
+        assert_eq!(ec, ExportClassification::None);
     }
 }
