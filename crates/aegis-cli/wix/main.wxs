@@ -6,7 +6,7 @@
   Output: target/wix/aegis-cli-<version>-x86_64.msi
 
   REQ-BUILD-055: UpgradeCode GUID replaced (REQ-BUILD-056 enforces via CI test).
-  WARNING: Do NOT change the UpgradeCode after first release -- it identifies
+  WARNING: Do NOT change the UpgradeCode after first release. It identifies
   this product line for in-place upgrades across all deployed installations.
 -->
 <Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
