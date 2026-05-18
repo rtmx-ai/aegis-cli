@@ -1,9 +1,9 @@
 <?xml version='1.0' encoding='windows-1252'?>
 <!--
-  @req REQ-BUILD-047 WiX MSI installer for aegis-cli
+  WiX MSI installer for aegis-cli (REQ-BUILD-047).
 
-  Build with: cargo wix --package aegis-cli --nocapture
-  Output: target/wix/aegis-cli-<version>-x86_64.msi
+  Build:  cargo wix -p aegis-cli -nocapture
+  Output: target/wix/aegis-cli-VERSION-x86_64.msi
 
   REQ-BUILD-055: UpgradeCode GUID replaced (REQ-BUILD-056 enforces via CI test).
   WARNING: Do NOT change the UpgradeCode after first release. It identifies
