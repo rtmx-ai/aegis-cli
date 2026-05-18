@@ -59,6 +59,17 @@ pub enum TuiEvent {
     },
     /// Model discovery failed (REQ-TUI-090).
     ModelsError { message: String },
+    /// REQ-TUI-108: Model download progress from Ollama pull.
+    ModelDownloadProgress {
+        model: String,
+        status: String,
+        completed: u64,
+        total: u64,
+    },
+    /// REQ-TUI-108: Model download completed successfully.
+    ModelDownloadComplete { model: String },
+    /// REQ-TUI-108: Model download failed.
+    ModelDownloadFailed { model: String, reason: String },
 }
 
 /// A pending HITL approval request with the channel to send the decision back.

@@ -141,6 +141,11 @@ pub struct App {
 
     /// REQ-AGENT-064: Timestamp of last Ctrl+C press for double-tap detection.
     pub last_ctrl_c: Option<Instant>,
+
+    /// REQ-TUI-108: Pending model download request for main.rs to consume.
+    pub pending_model_download: Option<String>,
+    /// REQ-TUI-108: Active download model name (for progress display).
+    pub active_download: Option<String>,
 }
 
 /// Number of lines to scroll per PageUp/PageDown press.
@@ -188,6 +193,8 @@ impl App {
             theme: DARK_THEME,
             editing_approval_args: None,
             last_ctrl_c: None,
+            pending_model_download: None,
+            active_download: None,
         }
     }
 
@@ -467,6 +474,46 @@ impl App {
                     );
                     self.command_palette.refresh_current_slot();
                 }
+                Action::Continue
+            }
+            // REQ-TUI-108: Model download progress/completion/failure.
+            TuiEvent::ModelDownloadProgress {
+                model: _,
+                status,
+                completed,
+                total,
+            } => {
+                use crate::messages::MessageKind;
+                if total > 0 {
+                    let pct = (completed as f64 / total as f64 * 100.0) as u64;
+                    let mb_done = completed / (1024 * 1024);
+                    let mb_total = total / (1024 * 1024);
+                    if let Some(last) = self.messages.last_mut()
+                        && last.kind == MessageKind::System
+                    {
+                        last.content = format!("{status}: {mb_done}/{mb_total} MB ({pct}%)");
+                    }
+                } else if !status.is_empty()
+                    && let Some(last) = self.messages.last_mut()
+                    && last.kind == MessageKind::System
+                {
+                    last.content = status;
+                }
+                Action::Continue
+            }
+            TuiEvent::ModelDownloadComplete { model } => {
+                self.active_download = None;
+                self.messages
+                    .push(ChatMessage::system(format!("Model '{model}' downloaded.")));
+                // Trigger model re-discovery so the new model appears.
+                self.pending_model_discovery = true;
+                Action::Continue
+            }
+            TuiEvent::ModelDownloadFailed { model, reason } => {
+                self.active_download = None;
+                self.messages.push(ChatMessage::error(format!(
+                    "Download of '{model}' failed: {reason}"
+                )));
                 Action::Continue
             }
             TuiEvent::Tick => {

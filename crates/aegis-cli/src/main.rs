@@ -1553,6 +1553,105 @@ async fn run_interactive_chat(
             });
         }
 
+        // REQ-TUI-108: Model download via Ollama pull.
+        if let Some(model_name) = app.pending_model_download.take() {
+            // Double-check origin policy at the composition root level.
+            let policy = aegis_llm::model_origin::ModelOriginPolicy::default();
+            if let Err(reason) = aegis_llm::providers::check_model_switch(&model_name, &policy) {
+                app.active_download = None;
+                app.messages
+                    .push(aegis_tui::messages::ChatMessage::error(format!(
+                        "Cannot download '{model_name}': {reason}"
+                    )));
+            } else {
+                let event_tx_dl = event_tx.clone();
+                let cfg = shared_provider_config.read().unwrap().clone();
+                let endpoint = cfg.endpoint.clone();
+                tokio::spawn(async move {
+                    let base = endpoint.trim_end_matches("/v1").trim_end_matches('/');
+                    let url = format!("{base}/api/pull");
+                    let client = reqwest::Client::new();
+                    let resp = client
+                        .post(&url)
+                        .json(&serde_json::json!({ "name": model_name, "stream": true }))
+                        .send()
+                        .await;
+                    match resp {
+                        Err(e) => {
+                            let _ = event_tx_dl.send(TuiEvent::ModelDownloadFailed {
+                                model: model_name,
+                                reason: e.to_string(),
+                            });
+                        }
+                        Ok(response) if !response.status().is_success() => {
+                            let status = response.status();
+                            let body = response.text().await.unwrap_or_default();
+                            let _ = event_tx_dl.send(TuiEvent::ModelDownloadFailed {
+                                model: model_name,
+                                reason: format!("HTTP {status}: {body}"),
+                            });
+                        }
+                        Ok(response) => {
+                            // Stream NDJSON chunks from Ollama /api/pull.
+                            let mut buf = String::new();
+                            let mut last_status = String::new();
+                            let mut stream = response.bytes_stream();
+                            use futures::StreamExt;
+                            while let Some(chunk_result) = stream.next().await {
+                                let chunk = match chunk_result {
+                                    Ok(c) => c,
+                                    Err(e) => {
+                                        let _ = event_tx_dl.send(TuiEvent::ModelDownloadFailed {
+                                            model: model_name.clone(),
+                                            reason: e.to_string(),
+                                        });
+                                        return;
+                                    }
+                                };
+                                buf.push_str(&String::from_utf8_lossy(&chunk));
+                                // Process complete lines.
+                                while let Some(pos) = buf.find('\n') {
+                                    let line = buf[..pos].trim().to_string();
+                                    buf.drain(..=pos);
+                                    if line.is_empty() {
+                                        continue;
+                                    }
+                                    if let Ok(val) =
+                                        serde_json::from_str::<serde_json::Value>(&line)
+                                    {
+                                        let status = val
+                                            .get("status")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let completed = val
+                                            .get("completed")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        let total = val
+                                            .get("total")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        last_status = status.clone();
+                                        let _ =
+                                            event_tx_dl.send(TuiEvent::ModelDownloadProgress {
+                                                model: model_name.clone(),
+                                                status,
+                                                completed,
+                                                total,
+                                            });
+                                    }
+                                }
+                            }
+                            let _ = event_tx_dl
+                                .send(TuiEvent::ModelDownloadComplete { model: model_name });
+                            drop(last_status);
+                        }
+                    }
+                });
+            } // else: policy check passed
+        }
+
         // REQ-TUI-060: autosave after every completed assistant turn so a
         // crash right after the turn (hot reload, panic, OOM) does not lose
         // the just-finished response.

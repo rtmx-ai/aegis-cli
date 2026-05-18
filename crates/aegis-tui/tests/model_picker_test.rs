@@ -529,3 +529,213 @@ fn test_restricted_model_cannot_be_selected() {
         errors[0].content
     );
 }
+
+// ---------- REQ-TUI-108: /model download tests ----------
+
+// rtmx:req REQ-TUI-108
+#[test]
+fn test_model_download_command_sets_pending() {
+    let mut app = App::new("llama3");
+    app.phase = AppPhase::Idle;
+
+    // Parse and execute /model download gemma4
+    let cmd = aegis_tui::slash_commands::parse_slash_command("/model download gemma4");
+    if let aegis_tui::slash_commands::ParseResult::Command(c) = cmd {
+        app.execute_slash_command(c);
+    } else {
+        panic!("should parse as command");
+    }
+
+    assert_eq!(
+        app.pending_model_download.as_deref(),
+        Some("gemma4"),
+        "pending download should be set"
+    );
+    assert_eq!(
+        app.active_download.as_deref(),
+        Some("gemma4"),
+        "active download should be set"
+    );
+    // Should have a system message about downloading
+    let sys_msgs: Vec<_> = app
+        .messages
+        .iter()
+        .filter(|m| m.kind == MessageKind::System)
+        .collect();
+    assert!(
+        sys_msgs.iter().any(|m| m.content.contains("Downloading")),
+        "should show downloading message"
+    );
+}
+
+// rtmx:req REQ-TUI-108
+#[test]
+fn test_model_download_denied_model_shows_error() {
+    let mut app = App::new("llama3");
+    app.phase = AppPhase::Idle;
+
+    // Mark qwen:7b as restricted in discovered models
+    app.discovered_models = vec![(
+        "qwen:7b".to_string(),
+        "restricted".to_string(),
+        Some("China".to_string()),
+    )];
+
+    let cmd = aegis_tui::slash_commands::parse_slash_command("/model download qwen:7b");
+    if let aegis_tui::slash_commands::ParseResult::Command(c) = cmd {
+        app.execute_slash_command(c);
+    } else {
+        panic!("should parse as command");
+    }
+
+    assert!(
+        app.pending_model_download.is_none(),
+        "denied model should not trigger download"
+    );
+    let errors: Vec<_> = app
+        .messages
+        .iter()
+        .filter(|m| m.kind == MessageKind::Error)
+        .collect();
+    assert!(!errors.is_empty(), "should show error for denied model");
+    assert!(
+        errors[0].content.contains("Cannot download"),
+        "error should say cannot download: {}",
+        errors[0].content
+    );
+}
+
+// rtmx:req REQ-TUI-108
+#[test]
+fn test_model_download_no_name_shows_usage() {
+    let mut app = App::new("llama3");
+    app.phase = AppPhase::Idle;
+
+    let cmd = aegis_tui::slash_commands::parse_slash_command("/model download");
+    if let aegis_tui::slash_commands::ParseResult::Command(c) = cmd {
+        app.execute_slash_command(c);
+    } else {
+        panic!("should parse as command");
+    }
+
+    assert!(
+        app.pending_model_download.is_none(),
+        "empty name should not trigger download"
+    );
+    let errors: Vec<_> = app
+        .messages
+        .iter()
+        .filter(|m| m.kind == MessageKind::Error)
+        .collect();
+    assert!(
+        !errors.is_empty(),
+        "should show usage error for empty download name"
+    );
+    assert!(
+        errors[0].content.contains("Usage"),
+        "error should show usage: {}",
+        errors[0].content
+    );
+}
+
+// rtmx:req REQ-TUI-108
+#[test]
+fn test_model_download_complete_triggers_rediscovery() {
+    let mut app = App::new("llama3");
+    app.phase = AppPhase::Idle;
+    app.active_download = Some("gemma4".to_string());
+    let (tx, _rx) = agent_tx();
+
+    let action = app.handle_event(
+        TuiEvent::ModelDownloadComplete {
+            model: "gemma4".to_string(),
+        },
+        &tx,
+    );
+
+    assert!(matches!(action, Action::Continue));
+    assert!(app.active_download.is_none(), "download should be cleared");
+    assert!(
+        app.pending_model_discovery,
+        "should trigger model re-discovery after download"
+    );
+    let sys_msgs: Vec<_> = app
+        .messages
+        .iter()
+        .filter(|m| m.kind == MessageKind::System)
+        .collect();
+    assert!(
+        sys_msgs.iter().any(|m| m.content.contains("downloaded")),
+        "should show download complete message"
+    );
+}
+
+// rtmx:req REQ-TUI-108
+#[test]
+fn test_model_download_failed_shows_error() {
+    let mut app = App::new("llama3");
+    app.phase = AppPhase::Idle;
+    app.active_download = Some("gemma4".to_string());
+    let (tx, _rx) = agent_tx();
+
+    let action = app.handle_event(
+        TuiEvent::ModelDownloadFailed {
+            model: "gemma4".to_string(),
+            reason: "connection refused".to_string(),
+        },
+        &tx,
+    );
+
+    assert!(matches!(action, Action::Continue));
+    assert!(app.active_download.is_none(), "download should be cleared");
+    let errors: Vec<_> = app
+        .messages
+        .iter()
+        .filter(|m| m.kind == MessageKind::Error)
+        .collect();
+    assert!(!errors.is_empty(), "should show error on download failure");
+    assert!(
+        errors[0].content.contains("connection refused"),
+        "error should include reason: {}",
+        errors[0].content
+    );
+}
+
+// rtmx:req REQ-TUI-108
+#[test]
+fn test_model_download_progress_updates_message() {
+    let mut app = App::new("llama3");
+    app.phase = AppPhase::Idle;
+    app.active_download = Some("gemma4".to_string());
+    let (tx, _rx) = agent_tx();
+
+    // Add initial system message (like "Downloading model...")
+    app.messages.push(aegis_tui::messages::ChatMessage::system(
+        "Downloading model 'gemma4'...".to_string(),
+    ));
+
+    let action = app.handle_event(
+        TuiEvent::ModelDownloadProgress {
+            model: "gemma4".to_string(),
+            status: "downloading".to_string(),
+            completed: 524_288_000, // 500 MB
+            total: 1_048_576_000,   // 1000 MB
+        },
+        &tx,
+    );
+
+    assert!(matches!(action, Action::Continue));
+    // The last system message should be updated with progress
+    let last = app.messages.last().unwrap();
+    assert_eq!(last.kind, MessageKind::System);
+    assert!(
+        last.content.contains("500"),
+        "should show completed MB: {}",
+        last.content
+    );
+    assert!(
+        last.content.contains("50%"),
+        "should show percentage: {}",
+        last.content
+    );
+}

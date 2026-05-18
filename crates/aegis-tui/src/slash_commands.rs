@@ -26,6 +26,8 @@ pub enum SlashCommand {
     KeyLog,
     /// Switch or display the active LLM model.
     Model(String),
+    /// Download a model via Ollama pull: /model download <name>.
+    ModelDownload(String),
     /// Connect to an LLM endpoint: /connect <url>
     Connect(String),
     /// Revert approved writes. Accepts "--all", a numeric entry ID,
@@ -111,7 +113,19 @@ pub fn parse_slash_command(input: &str) -> ParseResult {
                 .skip(1)
                 .collect::<Vec<_>>()
                 .join(" ");
-            ParseResult::Command(SlashCommand::Model(raw_arg))
+            // REQ-TUI-108: /model download <name> initiates Ollama pull.
+            if let Some(name) = raw_arg.strip_prefix("download ") {
+                let name = name.trim();
+                if name.is_empty() {
+                    ParseResult::Command(SlashCommand::ModelDownload(String::new()))
+                } else {
+                    ParseResult::Command(SlashCommand::ModelDownload(name.to_string()))
+                }
+            } else if raw_arg == "download" {
+                ParseResult::Command(SlashCommand::ModelDownload(String::new()))
+            } else {
+                ParseResult::Command(SlashCommand::Model(raw_arg))
+            }
         }
         "/connect" => {
             let raw_arg = trimmed
@@ -450,6 +464,47 @@ mod tests {
         assert_eq!(
             parse_slash_command("  /feedback  "),
             ParseResult::Command(SlashCommand::Feedback)
+        );
+    }
+
+    // rtmx:req REQ-TUI-108
+    #[test]
+    fn test_model_download_command_parses() {
+        assert_eq!(
+            parse_slash_command("/model download gemma4"),
+            ParseResult::Command(SlashCommand::ModelDownload("gemma4".to_string()))
+        );
+    }
+
+    // rtmx:req REQ-TUI-108
+    #[test]
+    fn test_model_download_no_name_parses() {
+        assert_eq!(
+            parse_slash_command("/model download"),
+            ParseResult::Command(SlashCommand::ModelDownload(String::new()))
+        );
+    }
+
+    // rtmx:req REQ-TUI-108
+    #[test]
+    fn test_model_download_preserves_model_name_case() {
+        assert_eq!(
+            parse_slash_command("/model download Llama3:70B"),
+            ParseResult::Command(SlashCommand::ModelDownload("Llama3:70B".to_string()))
+        );
+    }
+
+    // rtmx:req REQ-TUI-108
+    #[test]
+    fn test_model_switch_still_works_after_download_addition() {
+        // Ensure /model <name> without "download" prefix still works
+        assert_eq!(
+            parse_slash_command("/model gemini-pro"),
+            ParseResult::Command(SlashCommand::Model("gemini-pro".to_string()))
+        );
+        assert_eq!(
+            parse_slash_command("/model"),
+            ParseResult::Command(SlashCommand::Model(String::new()))
         );
     }
 

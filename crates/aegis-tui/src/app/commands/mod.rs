@@ -28,6 +28,7 @@ impl App {
                      /add <path>           Add file to context\n\
                      /drop <path>          Remove file from context\n\
                      /model [name]         Show or switch active model\n\
+                     /model download <n>   Download model via Ollama\n\
                      /infra <subcmd>       Plugin ops: status, list, preview <name>\n\
                      /doctor               Run connectivity and health checks\n\
                      /context              Show current context summary\n\
@@ -57,6 +58,39 @@ impl App {
             }
             SlashCommand::Doctor => {
                 self.handle_doctor_command();
+                Action::Continue
+            }
+            // REQ-TUI-108: /model download <name> initiates Ollama pull.
+            SlashCommand::ModelDownload(name) => {
+                if name.is_empty() {
+                    self.messages.push(ChatMessage::error(
+                        "Usage: /model download <name>\n\
+                         Example: /model download gemma4"
+                            .to_string(),
+                    ));
+                    return Action::Continue;
+                }
+                // Check if model is already known as restricted.
+                if let Some((_, status, _)) =
+                    self.discovered_models.iter().find(|(id, _, _)| *id == name)
+                    && status == "restricted"
+                {
+                    self.messages.push(ChatMessage::error(format!(
+                        "Cannot download '{name}': model is restricted by origin policy"
+                    )));
+                    return Action::Continue;
+                }
+                if self.active_download.is_some() {
+                    self.messages.push(ChatMessage::error(
+                        "A model download is already in progress.".to_string(),
+                    ));
+                    return Action::Continue;
+                }
+                self.messages.push(ChatMessage::system(format!(
+                    "Downloading model '{name}'..."
+                )));
+                self.active_download = Some(name.clone());
+                self.pending_model_download = Some(name);
                 Action::Continue
             }
             SlashCommand::Model(name) => {
