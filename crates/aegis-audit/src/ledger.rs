@@ -924,4 +924,63 @@ mod tests {
             "entry should not contain req_id when None"
         );
     }
+
+    // rtmx:req REQ-SECURITY-027
+    #[tokio::test]
+    async fn test_model_policy_audit_event() {
+        let dir = TempDir::new().unwrap();
+        let ledger = make_ledger(dir.path()).await;
+
+        let event = DomainEvent::ModelPolicyDecision {
+            session_id: "sess-001".to_string(),
+            model_name: "qwen:7b".to_string(),
+            origin_country: "China".to_string(),
+            origin_tier: "denied".to_string(),
+            decision: "deny".to_string(),
+            reason: "Model 'qwen:7b' restricted: China origin (denied by model origin policy)"
+                .to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+
+        ledger.record(&event).await.unwrap();
+
+        let entries = read_log_entries(dir.path());
+        assert_eq!(
+            entries.len(),
+            1,
+            "ModelPolicyDecision event must be recorded"
+        );
+
+        let parsed: serde_json::Value = serde_json::from_str(&entries[0]).unwrap();
+
+        // Verify mandatory audit envelope fields
+        assert!(parsed.get("timestamp").is_some(), "Missing timestamp");
+        assert!(parsed.get("os_user").is_some(), "Missing os_user");
+        assert!(parsed.get("hostname").is_some(), "Missing hostname");
+
+        // Verify event payload
+        let event_val = &parsed["event"];
+        assert_eq!(
+            event_val["ModelPolicyDecision"]["model_name"].as_str(),
+            Some("qwen:7b"),
+        );
+        assert_eq!(
+            event_val["ModelPolicyDecision"]["origin_country"].as_str(),
+            Some("China"),
+        );
+        assert_eq!(
+            event_val["ModelPolicyDecision"]["origin_tier"].as_str(),
+            Some("denied"),
+        );
+        assert_eq!(
+            event_val["ModelPolicyDecision"]["decision"].as_str(),
+            Some("deny"),
+        );
+        assert!(
+            event_val["ModelPolicyDecision"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("restricted"),
+        );
+    }
 }

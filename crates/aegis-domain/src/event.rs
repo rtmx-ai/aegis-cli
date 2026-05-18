@@ -113,6 +113,17 @@ pub enum DomainEvent {
         pattern_matched: String,
         timestamp: DateTime<Utc>,
     },
+    /// Model origin policy decision logged on model switch, session
+    /// start, or download attempt (REQ-SECURITY-027).
+    ModelPolicyDecision {
+        session_id: String,
+        model_name: String,
+        origin_country: String,
+        origin_tier: String,
+        decision: String,
+        reason: String,
+        timestamp: String,
+    },
     /// Token usage for a single LLM turn, with provider attribution.
     TokensConsumed {
         session_id: String,
