@@ -17,6 +17,7 @@ pub mod dlp_gate;
 pub mod energy;
 pub mod failover;
 pub mod local;
+pub mod model_origin;
 pub mod provider;
 pub mod providers;
 pub mod rates;

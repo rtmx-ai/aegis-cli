@@ -132,12 +132,16 @@ fn default_context_window(model_id: &str) -> Option<u32> {
 pub struct ModelInfo {
     /// Provider-assigned model identifier.
     pub model_id: String,
-    /// Availability status: "available", "unauthorized", or "not_found".
+    /// Availability status: "available", "unauthorized", "restricted", or "not_found".
     pub status: String,
     /// Input token cost per million tokens (0.0 if unknown).
     pub input_rate: f64,
     /// Output token cost per million tokens (0.0 if unknown).
     pub output_rate: f64,
+    /// Country of origin (populated by origin policy filter).
+    pub origin: Option<String>,
+    /// If restricted, the reason why.
+    pub restriction_reason: Option<String>,
 }
 
 /// Result of probing a provider endpoint with a minimal completion.
@@ -190,6 +194,8 @@ pub async fn list_models(
                 status: "not_found".to_string(),
                 input_rate: 0.0,
                 output_rate: 0.0,
+                origin: None,
+                restriction_reason: None,
             }])
         }
         ProviderKind::Bedrock => {
@@ -199,6 +205,8 @@ pub async fn list_models(
                 status: "not_found".to_string(),
                 input_rate: 0.0,
                 output_rate: 0.0,
+                origin: None,
+                restriction_reason: None,
             }])
         }
         ProviderKind::Azure => {
@@ -208,6 +216,8 @@ pub async fn list_models(
                 status: "not_found".to_string(),
                 input_rate: 0.0,
                 output_rate: 0.0,
+                origin: None,
+                restriction_reason: None,
             }])
         }
     }
@@ -238,6 +248,8 @@ async fn list_models_openai_compatible(
             status: "unauthorized".to_string(),
             input_rate: 0.0,
             output_rate: 0.0,
+            origin: None,
+            restriction_reason: None,
         }]);
     }
     if !status.is_success() {
@@ -272,11 +284,49 @@ async fn list_models_openai_compatible(
                     .as_ref()
                     .map(|r| r.output_per_million)
                     .unwrap_or(0.0),
+                origin: None,
+                restriction_reason: None,
             }
         })
         .collect();
 
     Ok(results)
+}
+
+/// Apply model origin policy to a list of discovered models (REQ-LLM-045).
+///
+/// Annotates each model with its country of origin and policy tier.
+/// Models denied by policy get status changed to "restricted" with a
+/// reason string. Models already in a non-available state (e.g.
+/// "unauthorized", "not_found") are left unchanged.
+pub fn apply_origin_policy(
+    models: &mut [ModelInfo],
+    policy: &crate::model_origin::ModelOriginPolicy,
+) {
+    for model in models.iter_mut() {
+        let decision = policy.evaluate(&model.model_id);
+        model.origin = Some(decision.origin.to_string());
+        if !decision.is_allowed() && model.status == "available" {
+            model.status = "restricted".to_string();
+            model.restriction_reason = Some(decision.reason);
+        }
+    }
+}
+
+/// Check whether a model switch should be allowed (REQ-LLM-046).
+///
+/// Returns `Ok(())` if the model is permitted, or `Err(reason)` if
+/// the model is denied by the origin policy.
+pub fn check_model_switch(
+    model: &str,
+    policy: &crate::model_origin::ModelOriginPolicy,
+) -> Result<(), String> {
+    let decision = policy.evaluate(model);
+    if decision.is_allowed() {
+        Ok(())
+    } else {
+        Err(decision.reason)
+    }
 }
 
 /// Send a minimal completion request to probe endpoint connectivity.
@@ -574,12 +624,16 @@ mod tests {
                 status: "available".to_string(),
                 input_rate: 0.0,
                 output_rate: 0.0,
+                origin: None,
+                restriction_reason: None,
             },
             ModelInfo {
                 model_id: "gemini-2.5-pro-001".to_string(),
                 status: "available".to_string(),
                 input_rate: 1.25,
                 output_rate: 10.0,
+                origin: None,
+                restriction_reason: None,
             },
         ];
         let table = format_model_table(&models);
@@ -690,6 +744,8 @@ mod tests {
             status: "available".to_string(),
             input_rate: 1.0,
             output_rate: 2.0,
+            origin: None,
+            restriction_reason: None,
         };
         assert_eq!(info.model_id, "test");
         assert_eq!(info.status, "available");
@@ -815,5 +871,143 @@ mod tests {
         let local = providers.iter().find(|p| p.name == "local").unwrap();
         assert_eq!(local.models[0].model_id, "my-custom-model");
         assert_eq!(local.models[0].context_window, None);
+    }
+
+    // --- REQ-LLM-045: Discovery filter strips or tags restricted models ---
+
+    // rtmx:req REQ-LLM-045
+    #[test]
+    fn test_list_models_filters_restricted_origins() {
+        use crate::model_origin::ModelOriginPolicy;
+
+        let mut models = vec![
+            ModelInfo {
+                model_id: "llama3:latest".to_string(),
+                status: "available".to_string(),
+                input_rate: 0.0,
+                output_rate: 0.0,
+                origin: None,
+                restriction_reason: None,
+            },
+            ModelInfo {
+                model_id: "qwen:7b".to_string(),
+                status: "available".to_string(),
+                input_rate: 0.0,
+                output_rate: 0.0,
+                origin: None,
+                restriction_reason: None,
+            },
+            ModelInfo {
+                model_id: "deepseek-r1:8b".to_string(),
+                status: "available".to_string(),
+                input_rate: 0.0,
+                output_rate: 0.0,
+                origin: None,
+                restriction_reason: None,
+            },
+            ModelInfo {
+                model_id: "mistral:7b".to_string(),
+                status: "available".to_string(),
+                input_rate: 0.0,
+                output_rate: 0.0,
+                origin: None,
+                restriction_reason: None,
+            },
+        ];
+
+        let policy = ModelOriginPolicy::default();
+        apply_origin_policy(&mut models, &policy);
+
+        // US model: approved
+        assert_eq!(models[0].status, "available");
+        assert_eq!(models[0].origin.as_deref(), Some("US"));
+        assert!(models[0].restriction_reason.is_none());
+
+        // Chinese models: restricted
+        assert_eq!(models[1].status, "restricted");
+        assert_eq!(models[1].origin.as_deref(), Some("China"));
+        assert!(
+            models[1]
+                .restriction_reason
+                .as_ref()
+                .unwrap()
+                .contains("China")
+        );
+
+        assert_eq!(models[2].status, "restricted");
+        assert_eq!(models[2].origin.as_deref(), Some("China"));
+
+        // French model: approved
+        assert_eq!(models[3].status, "available");
+        assert_eq!(models[3].origin.as_deref(), Some("France"));
+    }
+
+    // rtmx:req REQ-LLM-045
+    #[test]
+    fn test_origin_filter_preserves_non_available_status() {
+        use crate::model_origin::ModelOriginPolicy;
+
+        let mut models = vec![ModelInfo {
+            model_id: "qwen:7b".to_string(),
+            status: "unauthorized".to_string(),
+            input_rate: 0.0,
+            output_rate: 0.0,
+            origin: None,
+            restriction_reason: None,
+        }];
+
+        let policy = ModelOriginPolicy::default();
+        apply_origin_policy(&mut models, &policy);
+
+        // Status stays "unauthorized", not overwritten to "restricted"
+        assert_eq!(models[0].status, "unauthorized");
+        assert_eq!(models[0].origin.as_deref(), Some("China"));
+    }
+
+    // --- REQ-LLM-046: Model switch rejects restricted models ---
+
+    // rtmx:req REQ-LLM-046
+    #[test]
+    fn test_switch_rejects_restricted_model() {
+        use crate::model_origin::ModelOriginPolicy;
+
+        let policy = ModelOriginPolicy::default();
+
+        let result = check_model_switch("qwen:7b", &policy);
+        assert!(result.is_err());
+        let reason = result.unwrap_err();
+        assert!(reason.contains("restricted"));
+        assert!(reason.contains("China"));
+    }
+
+    // rtmx:req REQ-LLM-046
+    #[test]
+    fn test_switch_allows_approved_model() {
+        use crate::model_origin::ModelOriginPolicy;
+
+        let policy = ModelOriginPolicy::default();
+        assert!(check_model_switch("llama3:latest", &policy).is_ok());
+        assert!(check_model_switch("mistral:7b", &policy).is_ok());
+        assert!(check_model_switch("gemma4:latest", &policy).is_ok());
+    }
+
+    // rtmx:req REQ-LLM-046
+    #[test]
+    fn test_switch_rejects_unknown_model_by_default() {
+        use crate::model_origin::ModelOriginPolicy;
+
+        let policy = ModelOriginPolicy::default();
+        let result = check_model_switch("some-novel-model", &policy);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown"));
+    }
+
+    // rtmx:req REQ-LLM-046
+    #[test]
+    fn test_switch_allows_unknown_with_flag() {
+        use crate::model_origin::ModelOriginPolicy;
+
+        let policy = ModelOriginPolicy::default().allow_unclassified();
+        assert!(check_model_switch("some-novel-model", &policy).is_ok());
     }
 }
