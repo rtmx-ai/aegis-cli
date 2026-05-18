@@ -10,6 +10,10 @@ Requirements tracked here:
 - REQ-BUILD-014: VHS tape scripts for terminal demo GIF generation
 - REQ-BUILD-017: Hero demo tape (`tapes/hero.tape`)
 - REQ-BUILD-018: HITL approval flow demo tape (`tapes/hitl-approval.tape`)
+- REQ-BUILD-019: Air-gapped demo tape (`tapes/airgapped.tape`)
+- REQ-BUILD-020: Audit ledger demo tape (`tapes/audit-ledger.tape`)
+- REQ-BUILD-021: Plugin provisioning demo tape (`tapes/plugin-provision.tape`)
+- REQ-BUILD-022: .aegisignore demo tape (`tapes/aegisignore.tape`)
 
 ## Why VHS
 
@@ -33,12 +37,15 @@ docs/demos/
   tapes/
     hero.tape            -- REQ-BUILD-017
     hitl-approval.tape   -- REQ-BUILD-018
-    01-hero.tape         -- legacy numbered tapes kept for reference
+    01-hero.tape         -- numbered tapes (original 6)
     02-hitl-approval.tape
     03-airgapped.tape
     04-audit-ledger.tape
     05-plugin-provision.tape
     06-aegisignore.tape
+    07-model-picker.tape -- model provenance and origin display
+    08-model-download.tape -- policy-gated model download with progress
+    09-command-palette.tape -- slash commands with autocomplete
     dev-loop.tape        -- records a real aegis session; regen manually
 ```
 

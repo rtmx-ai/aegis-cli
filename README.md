@@ -3,14 +3,31 @@
 [![CI](https://github.com/rtmx-ai/aegis-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/rtmx-ai/aegis-cli/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Rust](https://img.shields.io/badge/Rust-stable-orange.svg)](https://www.rust-lang.org/)
-[![Platform: RHEL | Windows](https://img.shields.io/badge/Platform-RHEL_|_Windows-lightgrey.svg)](#target-platforms)
+[![Platform: RHEL | macOS | Windows](https://img.shields.io/badge/Platform-RHEL_|_macOS_|_Windows-lightgrey.svg)](#target-platforms)
 [![Impact Level](https://img.shields.io/badge/IL4%2FIL5-Assured_Workloads-darkgreen.svg)](#cloud-providers)
 
 **An agentic AI coding assistant that runs where your code already lives -- inside the security boundary.**
 
 Aegis is a terminal-native pair programmer built for defense and regulated environments. It delivers the full experience of a frontier AI coding assistant -- streaming responses, multi-step tool use, inline diffs, human-in-the-loop approval -- as a single static binary that connects only to LLM endpoints you control. GovCloud. Air-gapped. Your call.
 
-![hero demo](docs/demos/hero.gif)
+---
+
+## Demo
+
+![Hero: full REA loop with streaming response, tool calls, and HITL approval](docs/demos/gifs/01-hero.gif)
+
+| | |
+|---|---|
+| ![HITL approval flow](docs/demos/gifs/02-hitl-approval.gif) | ![Air-gapped local model](docs/demos/gifs/03-airgapped.gif) |
+| **HITL approval** -- every mutation needs consent | **Air-gapped** -- offline with Ollama, zero egress |
+| ![Audit ledger](docs/demos/gifs/04-audit-ledger.gif) | ![Plugin provisioning](docs/demos/gifs/05-plugin-provision.gif) |
+| **Audit ledger** -- immutable metadata-only log | **IaC plugins** -- one command to IL4/IL5 |
+| ![.aegisignore](docs/demos/gifs/06-aegisignore.gif) | ![Model picker](docs/demos/gifs/07-model-picker.gif) |
+| **.aegisignore** -- secrets never reach the LLM | **Model picker** -- origin-aware provenance display |
+| ![Model download](docs/demos/gifs/08-model-download.gif) | ![Command palette](docs/demos/gifs/09-command-palette.gif) |
+| **Model download** -- pull with policy gate | **Command palette** -- slash commands with autocomplete |
+
+> Demo GIFs are generated from [VHS](https://github.com/charmbracelet/vhs) tape scripts in [`docs/demos/tapes/`](docs/demos/tapes/). See [`docs/demos/README.md`](docs/demos/README.md) for regeneration instructions.
 
 ---
 
@@ -23,28 +40,85 @@ Aegis eliminates the trade-off. You control the compute, network, and data bound
 ## Features
 
 - **Agentic loop** -- Read-Evaluate-Act cycle with streaming LLM responses, automatic tool dispatch, and iterative problem solving
-- **Human-in-the-loop gate** -- Every state-mutating action (file writes, shell commands) requires explicit human approval before execution
+- **Human-in-the-loop gate** -- Every state-mutating action (file writes, shell commands) requires explicit human approval before execution; edit, skip, or always-allow per tool
 - **Multi-cloud LLM backends** -- Vertex AI (GCP Assured Workloads), Amazon Bedrock (GovCloud), Azure OpenAI (Azure Government), all at IL4/IL5
-- **Air-gapped operation** -- Run fully offline with Ollama or vLLM on disconnected networks; zero network egress
+- **Air-gapped operation** -- Run fully offline with Ollama or vLLM on disconnected networks; zero network egress; air-gapped model manifest with SHA-256 verification
+- **Model provenance** -- Country-of-origin classification, default-deny for restricted origins, AI Bill of Materials per model, policy-gated download
 - **Immutable audit ledger** -- Append-only JSONL log of every session, tool call, and approval decision; metadata only, never CUI
 - **Security filtering** -- `.aegisignore` with mandatory blocklist prevents `.env`, `*.pem`, `*.key`, and credential files from entering agent context
 - **IaC plugin protocol** -- `aegis-infra/v1` protocol over NDJSON; plugins run as subprocesses, no Pulumi or Node.js required on the workstation
-- **Terminal UI** -- ratatui-based interface with streaming markdown, inline diffs, and approval dialogs
+- **Terminal UI** -- ratatui-based interface with streaming markdown, inline diffs, command palette with autocomplete, model picker, approval dialogs
+- **Orchestration** -- Multi-agent parallel execution across git worktrees with wave scheduling, conflict matrix, and failure recovery
 - **Static binary** -- Single musl-linked binary for RHEL 8/9; MSVC build for Windows 10/11; no runtime dependencies
-- **Requirements traceability** -- 159 requirements tracked via [RTMX](https://rtmx.ai), 12 BDD feature files, ~450 Gherkin scenarios
 
-<details>
-<summary>Feature demos</summary>
+## Install
 
-| Feature | Demo |
-|---|---|
-| HITL approval flow | ![HITL approval](docs/demos/hitl-approval.gif) |
-| Air-gapped local model | ![Air-gapped](docs/demos/airgapped.gif) |
-| Audit ledger | ![Audit ledger](docs/demos/gifs/04-audit-ledger.gif) |
-| IaC plugin provisioning | ![Plugin provisioning](docs/demos/gifs/05-plugin-provision.gif) |
-| .aegisignore filtering | ![aegisignore](docs/demos/gifs/06-aegisignore.gif) |
+### macOS (Homebrew)
 
-</details>
+```bash
+brew tap rtmx-ai/tap
+brew install aegis
+```
+
+> **Note:** The current Homebrew formula (`v0.0.1-alpha`) ships x86_64 macOS only. Apple Silicon users should build from source until the next release. See [Releases](https://github.com/rtmx-ai/aegis-cli/releases) for the latest.
+
+### From source
+
+```bash
+git clone https://github.com/rtmx-ai/aegis-cli.git
+cd aegis-cli
+cargo build --release
+```
+
+The binary is at `target/release/aegis` (Linux/macOS) or `target/release/aegis.exe` (Windows).
+
+### From a release tarball
+
+Download the tarball for your platform from [Releases](https://github.com/rtmx-ai/aegis-cli/releases), extract, and place the `aegis` binary on your PATH.
+
+### Installers
+
+RPM, DEB, and MSI installers are generated by the [release workflow](.github/workflows/release.yml) on every tagged release.
+
+## Quick Start
+
+```bash
+aegis init             # Configure provider and mode
+aegis chat             # Launch the TUI
+```
+
+### Development
+
+```bash
+cargo build --workspace          # Build all crates
+cargo test --workspace           # Run all unit + doc tests
+cargo fmt --all                  # Format (required by pre-commit hook)
+cargo clippy --workspace         # Lint (required by pre-commit hook)
+./scripts/hooks/install.sh       # Install git hooks for local quality gates
+```
+
+## Target Platforms
+
+| Platform | Target | Delivery |
+|---|---|---|
+| RHEL 8/9 | `x86_64-unknown-linux-musl` | RPM, standalone static binary |
+| Linux aarch64 | `aarch64-unknown-linux-musl` | Standalone static binary |
+| macOS (Apple Silicon) | `aarch64-apple-darwin` | Homebrew, standalone binary |
+| Ubuntu/Debian | `x86_64-unknown-linux-gnu` | DEB, standalone binary |
+| Windows 10/11 | `x86_64-pc-windows-msvc` | MSI, standalone EXE |
+
+**Connected mode** (NIPR/DIB): Routes to GovCloud endpoints. `aegis init` provisions the cloud boundary via IaC plugin.
+
+**Air-gapped mode** (SIPR): `aegis init --local` configures Ollama or vLLM. Zero network egress.
+
+## Cloud Providers
+
+| Provider | Auth | Region | Models |
+|---|---|---|---|
+| Vertex AI | GCP ADC | Assured Workloads (IL4/IL5) | Gemini 2.5 Pro, Flash |
+| Amazon Bedrock | AWS SDK chain | GovCloud (US) | Claude Sonnet, Nova Pro |
+| Azure OpenAI | Entra ID / API key | Azure Government | GPT-4o, GPT-4o mini |
+| Local | None | N/A (air-gapped) | Any OpenAI-compatible (Ollama, vLLM) |
 
 ## Architecture
 
@@ -114,8 +188,8 @@ flowchart TD
 | aegis-domain | Shared kernel: types, ports, events, errors |
 | aegis-agent | REA loop, tools, orchestration (workstreams, waves, conflict matrix) |
 | aegis-hitl | HITL gate: blocks mutating tools until human approves |
-| aegis-llm | Provider abstraction: Vertex AI, Bedrock, Azure, Ollama/vLLM |
-| aegis-tui | ratatui terminal UI: chat log, streaming markdown, approval dialogs |
+| aegis-llm | Provider abstraction: Vertex AI, Bedrock, Azure, Ollama/vLLM; model provenance and AI BOM |
+| aegis-tui | ratatui terminal UI: chat log, streaming markdown, command palette, model picker, approval dialogs |
 | aegis-audit | Immutable JSONL ledger + async log forwarding to SIEM/syslog |
 | aegis-security | .aegisignore, sandbox, transport, prompt-injection scan, CUI/PII DLP |
 | aegis-infra | Plugin host: aegis-infra/v1 protocol, NDJSON event stream |
@@ -150,7 +224,7 @@ sequenceDiagram
         else State-mutating tool (HITL required)
             Agent->>Gate: request_approval(write_file)
             Gate->>TUI: show approval dialog
-            TUI->>User: [Y] Approve [N] Deny [E] Edit
+            TUI->>User: [Y] Approve [N] Deny [E] Edit [S] Skip
             User->>TUI: Y
             TUI->>Gate: Approved
             Gate-->>Agent: Approved
@@ -238,94 +312,28 @@ sequenceDiagram
 
 **Plugin SDK:** [@aegis/infra-sdk](https://github.com/rtmx-ai/aegis-infra-sdk) -- implement 3 interfaces, call `createPluginCli(config)`
 
-## Cloud Providers
-
-| Provider | Auth | Region | Models |
-|---|---|---|---|
-| Vertex AI | GCP ADC | Assured Workloads (IL4/IL5) | Gemini 2.5 Pro, Flash |
-| Amazon Bedrock | AWS SDK chain | GovCloud (US) | Claude Sonnet, Nova Pro |
-| Azure OpenAI | Entra ID / API key | Azure Government | GPT-4o, GPT-4o mini |
-| Local | None | N/A (air-gapped) | Any OpenAI-compatible (Ollama, vLLM) |
-
-## Quick Start
-
-### Prerequisites
-
-- Rust stable toolchain (via [rustup](https://rustup.rs) or Homebrew)
-
-### Build
-
-```bash
-cargo build --workspace
-```
-
-### Test
-
-```bash
-cargo test --workspace
-```
-
-### Run
-
-```bash
-cargo run --release -- init       # Configure provider and mode
-cargo run --release               # Launch the TUI
-```
-
-### Development
-
-```bash
-cargo fmt --all                   # Format (required by pre-commit hook)
-cargo clippy --workspace          # Lint (required by pre-commit hook)
-```
-
-Install git hooks for local quality gates:
-
-```bash
-./scripts/hooks/install.sh
-```
-
-## Install
-
-### macOS (Homebrew)
-
-```bash
-brew tap rtmx-ai/tap
-brew install aegis
-```
-
-### From source
-
-```bash
-git clone https://github.com/rtmx-ai/aegis-cli.git
-cd aegis-cli
-cargo build --release
-```
-
-The binary is at `target/release/aegis` (Linux/macOS) or `target/release/aegis.exe` (Windows).
-
-RPM, DEB, and MSI installers will be available with future releases.
-
-## Target Platforms
-
-| Platform | Target | Delivery |
-|---|---|---|
-| RHEL 8/9 | `x86_64-unknown-linux-musl` | RPM, standalone static binary |
-| macOS | `x86_64-apple-darwin`, `aarch64-apple-darwin` | Homebrew |
-| Ubuntu/Debian | `x86_64-unknown-linux-gnu` | DEB, standalone binary |
-| Windows 10/11 | `x86_64-pc-windows-msvc` | MSI, standalone EXE |
-
-**Connected mode** (NIPR/DIB): Routes to GovCloud endpoints. `aegis init` provisions the cloud boundary via IaC plugin.
-
-**Air-gapped mode** (SIPR): `aegis init --local` configures Ollama or vLLM. Zero network egress.
-
 ## Project Status
 
 - 11 workspace crates, all compiling and tested
-- 159 tracked requirements across 11 categories
+- 525 tracked requirements across 12 categories (517 complete, 98.5%)
 - 12 BDD feature files with ~450 Gherkin scenarios
-- CI pipeline: format, lint, unit tests (Linux + Windows), integration tests, doc tests, coverage, license/advisory audit, binary builds (musl + MSVC)
+- CI pipeline: format, lint, unit tests (Linux + Windows), integration tests, doc tests, coverage, license/advisory audit (cargo-deny), binary builds (musl + MSVC), benchmarks
 - Pre-commit and pre-push hooks mirror CI locally
+- Release workflow: GPG-signed Linux/macOS/Windows artifacts, CycloneDX SBOM, .deb/.rpm/.msi installers, air-gap bundle, container image (GHCR)
+- 9 VHS demo tape scripts for reproducible terminal recordings
+
+## Contributing
+
+This project uses [CODEOWNERS](.github/CODEOWNERS) for automatic review assignment. All changes to `main` require passing CI status checks.
+
+Required CI checks:
+- Format, Lint
+- Unit Tests (ubuntu-latest, windows-latest)
+- Integration Tests
+- Doc Tests, Coverage
+- License and Advisory Audit (cargo-deny)
+- RTMX Requirements Health
+- Build Gate (musl, MSVC)
 
 ## License
 

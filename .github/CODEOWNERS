@@ -1,0 +1,29 @@
+# CODEOWNERS -- auto-request reviews for changes to owned paths.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: project lead reviews everything not covered below.
+* @rhino11
+
+# Shared kernel -- changes here affect every crate.
+crates/aegis-domain/ @rhino11
+
+# Agent / REA loop / orchestration
+crates/aegis-agent/ @rhino11
+
+# LLM provider abstraction
+crates/aegis-llm/ @rhino11
+
+# TUI
+crates/aegis-tui/ @rhino11
+
+# Security (aegisignore, DLP, sandbox, transport)
+crates/aegis-security/ @rhino11
+
+# Audit ledger
+crates/aegis-audit/ @rhino11
+
+# CI/CD and release workflows
+.github/ @rhino11
+
+# RTM database -- requirement changes need review
+.rtmx/ @rhino11
