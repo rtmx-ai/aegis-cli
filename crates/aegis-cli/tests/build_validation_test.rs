@@ -801,39 +801,46 @@ fn test_vhs_runner_script_exists() {
 
 // rtmx:req REQ-BUILD-064
 #[test]
-fn test_ci_has_vhs_install_step() {
-    let ci = read_ci_yml();
+fn test_vhs_run_all_script_exists() {
+    let script = workspace_root().join("scripts/vhs/run-all.sh");
     assert!(
-        ci.contains("vhs") && ci.contains("charmbracelet"),
-        "CI must install VHS from charmbracelet"
+        script.exists(),
+        "scripts/vhs/run-all.sh must exist for local GIF generation"
     );
+    let content = std::fs::read_to_string(&script).unwrap();
+    assert!(content.contains("vhs"), "run-all.sh must invoke vhs");
 }
 
 // rtmx:req REQ-BUILD-065
 #[test]
-fn test_ci_vhs_artifact_upload() {
-    let ci = read_ci_yml();
+fn test_vhs_tapes_directory_has_tapes() {
+    let tape_dir = workspace_root().join("docs/demos/tapes");
+    assert!(tape_dir.exists(), "docs/demos/tapes/ must exist");
+    let tapes: Vec<_> = std::fs::read_dir(&tape_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "tape"))
+        .collect();
     assert!(
-        ci.contains("demo-gifs"),
-        "CI must upload demo-gifs artifact"
-    );
-    assert!(
-        ci.contains(".tape"),
-        "CI demo-gifs job must reference .tape files"
+        !tapes.is_empty(),
+        "docs/demos/tapes/ must contain at least one .tape file"
     );
 }
 
 // rtmx:req REQ-BUILD-066
 #[test]
-fn test_ci_release_has_gif_assets() {
-    let release = read_release_yml();
+fn test_vhs_output_directory_exists() {
+    // The output directory is created by run-all.sh; verify the script
+    // references the expected output path.
+    let script = workspace_root().join("scripts/vhs/run-all.sh");
+    let content = std::fs::read_to_string(&script).unwrap();
     assert!(
-        release.contains("demo-gifs"),
-        "release workflow must download demo-gifs artifact"
+        content.contains("docs/demos/gifs"),
+        "run-all.sh must output to docs/demos/gifs/"
     );
     assert!(
-        release.contains("*.gif") || release.contains(".gif"),
-        "release workflow must attach GIFs to release"
+        content.contains(".gif"),
+        "run-all.sh must produce .gif files"
     );
 }
 

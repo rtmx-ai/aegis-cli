@@ -272,35 +272,6 @@ jobs:
             bench-output.txt
           retention-days: 30
 
-  # REQ-BUILD-015: Demo GIF generation from VHS tape scripts
-  demo-gifs:
-    name: Demo GIFs
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install vhs
-        run: |
-          # Install charmbracelet/vhs for tape-to-GIF rendering
-          go install github.com/charmbracelet/vhs@latest || {
-            echo "vhs install requires Go; installing via snap as fallback"
-            sudo snap install vhs
-          }
-      - name: Render demo GIFs from tape scripts
-        run: |
-          mkdir -p docs/demos/gifs
-          for tape in docs/demos/tapes/*.tape; do
-            echo "Rendering: $tape"
-            vhs "$tape" || echo "WARN: $tape failed (expected in CI without TTY)"
-          done
-      - name: Upload demo GIFs
-        uses: actions/upload-artifact@v7
-        with:
-          name: demo-gifs
-          path: docs/demos/gifs/
-          retention-days: 30
-
   cargo-deny:
     name: License & Advisory Audit
     runs-on: ubuntu-latest

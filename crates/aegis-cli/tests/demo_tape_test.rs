@@ -167,19 +167,19 @@ fn test_demo_tapes_parse() {
 
 // rtmx:req REQ-BUILD-015
 #[test]
-fn test_ci_gif_generation() {
-    let ci = read_file(".github/workflows/ci.yml");
+fn test_local_gif_generation_script() {
+    let script = read_file("scripts/vhs/run-all.sh");
     assert!(
-        ci.contains("demo-gifs:") || ci.contains("demo-gifs"),
-        "ci.yml must define demo-gifs job"
+        script.contains("vhs"),
+        "run-all.sh must invoke vhs for GIF generation"
     );
     assert!(
-        ci.contains("vhs") || ci.contains("charmbracelet/vhs"),
-        "demo-gifs job must use vhs for GIF generation"
+        script.contains(".tape"),
+        "run-all.sh must reference .tape files"
     );
     assert!(
-        ci.contains(".tape"),
-        "demo-gifs job must reference .tape files"
+        script.contains("docs/demos/gifs"),
+        "run-all.sh must output to docs/demos/gifs/"
     );
 }
 

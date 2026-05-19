@@ -477,47 +477,14 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # Job 3: Generate demo GIFs from VHS tape scripts
-  # ---------------------------------------------------------------------------
-  demo-gifs:
-    name: Demo GIFs
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
-        with:
-          go-version: 'stable'
-      - name: Install vhs and dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg
-          # ttyd is required by VHS for terminal recording
-          curl -fSL --retry 3 \
-            https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64 \
-            -o /usr/local/bin/ttyd
-          sudo chmod +x /usr/local/bin/ttyd
-          go install github.com/charmbracelet/vhs@latest
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-      - name: Run VHS tapes
-        run: ./scripts/vhs/run-all.sh
-      - name: Upload demo GIFs
-        uses: actions/upload-artifact@v7
-        with:
-          name: demo-gifs
-          path: docs/demos/gifs/
-          retention-days: 30
-
-  # ---------------------------------------------------------------------------
-  # Job 4: Create GitHub Release with all files
+  # Job 3: Create GitHub Release with all files
   # ---------------------------------------------------------------------------
   release:
     name: Create GitHub Release
     if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [sign, demo-gifs]
+    needs: [sign]
     permissions:
       contents: write
     steps:
@@ -527,12 +494,6 @@ jobs:
         with:
           name: signed-artifacts
           path: artifacts
-      - name: Download demo GIFs
-        uses: actions/download-artifact@v8
-        with:
-          name: demo-gifs
-          path: demo-gifs
-        continue-on-error: true
       - name: Extract version from tag
         id: tag
         run: |
@@ -550,10 +511,6 @@ jobs:
             --title "aegis $VERSION" \
             --generate-notes \
             artifacts/*
-          # Attach demo GIFs as release assets if available
-          if [ -d demo-gifs ] && ls demo-gifs/*.gif 1>/dev/null 2>&1; then
-            gh release upload "$TAG" demo-gifs/*.gif --clobber
-          fi
 
   # ---------------------------------------------------------------------------
   # Job 5: Build and push container image to GHCR
