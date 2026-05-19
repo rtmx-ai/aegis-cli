@@ -4,7 +4,7 @@
 FROM rust:1-bookworm AS builder
 WORKDIR /build
 COPY . .
-RUN apt-get update && apt-get install -y musl-tools && \
+RUN apt-get update && apt-get install -y musl-tools build-essential pkg-config && \
     rustup target add x86_64-unknown-linux-musl && \
     cargo build --release --target x86_64-unknown-linux-musl --package aegis-cli && \
     strip target/x86_64-unknown-linux-musl/release/aegis
