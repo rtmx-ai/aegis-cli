@@ -70,7 +70,7 @@
                     </Component>
 
                     <!-- Add aegis to PATH -->
-                    <Component Id='path_env' Guid='*' Win64='yes'>
+                    <Component Id='path_env' Guid='7ABEB8D8-18BE-4C30-B098-B0CA1D1FF31B' Win64='yes'>
                         <Environment
                             Id='PATH'
                             Name='PATH'
