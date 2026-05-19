@@ -71,7 +71,13 @@
 
                     <!-- Add aegis to PATH -->
                     <Component Id='path_env' Guid='7ABEB8D8-18BE-4C30-B098-B0CA1D1FF31B' Win64='yes'>
-                        <CreateFolder/>
+                        <RegistryValue
+                            Root='HKLM'
+                            Key='Software\RTMX\aegis'
+                            Name='PathEnv'
+                            Type='integer'
+                            Value='1'
+                            KeyPath='yes'/>
                         <Environment
                             Id='PATH'
                             Name='PATH'
@@ -79,8 +85,7 @@
                             Permanent='no'
                             Part='last'
                             Action='set'
-                            System='yes'
-                            KeyPath='yes'/>
+                            System='yes'/>
                     </Component>
 
                 </Directory>

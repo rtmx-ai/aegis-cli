@@ -138,6 +138,71 @@ fn test_wix_source_file_exists() {
     );
 }
 
+// rtmx:req REQ-BUILD-046
+// Validates WiX source against common WiX 3 pitfalls that only manifest
+// when candle/light run on Windows. Catches errors locally before CI.
+#[test]
+fn test_wix_source_valid_for_wix3() {
+    let wxs = workspace_root().join("crates/aegis-cli/wix/main.wxs");
+    let content = std::fs::read_to_string(&wxs).unwrap();
+
+    // XML comments must not contain "--" (XML spec, WiX candle CNDL0104)
+    let in_comment = content
+        .split("<!--")
+        .skip(1)
+        .filter_map(|s| s.split("-->").next());
+    for comment_body in in_comment {
+        assert!(
+            !comment_body.contains("--"),
+            "XML comments must not contain '--' (violates XML spec, WiX CNDL0104): {comment_body}"
+        );
+    }
+
+    // Components with Guid='*' must have a File child with KeyPath='yes'.
+    // Environment-only or CreateFolder-only components need explicit GUIDs.
+    // (WiX LGHT0230)
+    for line in content.lines() {
+        if line.contains("Guid='*'") && line.contains("Component") {
+            // Find the component block and check it has a File KeyPath
+            let trimmed = line.trim();
+            assert!(
+                !trimmed.contains("path_env"),
+                "Component 'path_env' must not use Guid='*' (no file KeyPath; WiX LGHT0230)"
+            );
+        }
+    }
+
+    // Environment elements must not have KeyPath attribute (WiX CNDL0004)
+    for (i, line) in content.lines().enumerate() {
+        if line.trim().starts_with("<Environment") || line.trim().starts_with("Id='PATH'") {
+            // Check this line and nearby lines for KeyPath on Environment
+            assert!(
+                !(line.contains("Environment") && line.contains("KeyPath")),
+                "Environment element must not have KeyPath attribute (WiX CNDL0004) at line {}",
+                i + 1
+            );
+        }
+    }
+
+    // WixUILicenseRtf path must be correct relative to workspace root
+    if let Some(rtf_line) = content.lines().find(|l| l.contains("WixUILicenseRtf")) {
+        // Extract the Value='...' path
+        if let Some(start) = rtf_line.find("Value='") {
+            let path_start = start + "Value='".len();
+            if let Some(end) = rtf_line[path_start..].find('\'') {
+                let rtf_path = &rtf_line[path_start..path_start + end];
+                // Convert backslashes to forward slashes for local validation
+                let local_path = rtf_path.replace('\\', "/");
+                let full_path = workspace_root().join(&local_path);
+                assert!(
+                    full_path.exists(),
+                    "WixUILicenseRtf path '{local_path}' must exist at {full_path:?}"
+                );
+            }
+        }
+    }
+}
+
 // rtmx:req REQ-BUILD-047
 #[test]
 fn test_release_workflow_has_wix_msi_generation() {
