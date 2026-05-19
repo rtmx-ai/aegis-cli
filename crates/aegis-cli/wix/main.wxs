@@ -110,7 +110,7 @@
 
         <!-- Support silent install: msiexec /i aegis.msi /qn -->
         <UIRef Id='WixUI_Minimal'/>
-        <WixVariable Id='WixUILicenseRtf' Value='wix\License.rtf'/>
+        <WixVariable Id='WixUILicenseRtf' Value='crates\aegis-cli\wix\License.rtf'/>
 
     </Product>
 

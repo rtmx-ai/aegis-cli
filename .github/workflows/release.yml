@@ -170,20 +170,17 @@ jobs:
           targets: aarch64-unknown-linux-musl
       - uses: Swatinem/rust-cache@v2
       # REQ-BUILD-070: Install aarch64 cross-compilation toolchain
+      # Uses gcc-aarch64-linux-gnu with FORTIFY_SOURCE disabled to avoid
+      # glibc symbols (__memcpy_chk etc.) leaking into musl builds.
+      # Matches CI workflow approach (proven reliable).
       - name: Install aarch64 cross tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu
-          # Download musl cross-compiler with retry (103MB, can timeout)
-          curl -fSL --retry 3 --retry-delay 5 \
-            https://musl.cc/aarch64-linux-musl-cross.tgz \
-            -o /tmp/aarch64-linux-musl-cross.tgz
-          sudo tar xzf /tmp/aarch64-linux-musl-cross.tgz -C /opt
-          echo "/opt/aarch64-linux-musl-cross/bin" >> "$GITHUB_PATH"
+          sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
       - name: Build release binary (aarch64 musl static)
         env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-musl-gcc
-          CC_aarch64_unknown_linux_musl: aarch64-linux-musl-gcc
+          CC_aarch64_unknown_linux_musl: aarch64-linux-gnu-gcc
+          CFLAGS_aarch64_unknown_linux_musl: "-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
         run: |
           cargo build --release --package aegis-cli --target aarch64-unknown-linux-musl
       - name: Extract version
