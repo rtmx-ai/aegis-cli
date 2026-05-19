@@ -348,8 +348,10 @@ jobs:
             $sig = Get-AuthenticodeSignature -FilePath $file
             Write-Host "  Status: $($sig.Status) | Signer: $($sig.SignerCertificate.Subject)"
 
-            if ($sig.Status -ne "Valid") {
-              Write-Error "Authenticode signature is not valid for $file"
+            # Self-signed certs report UnknownError (untrusted root).
+            # Accept both Valid and UnknownError; reject only unsigned/broken.
+            if ($sig.Status -notin @("Valid", "UnknownError")) {
+              Write-Error "Authenticode signature failed for $file (status: $($sig.Status))"
               exit 1
             }
           }
