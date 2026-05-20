@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "aegis-agent"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aegis-domain",
  "aegis-security",
@@ -32,7 +32,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-audit"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aegis-domain",
  "aegis-security",
@@ -55,7 +55,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-bench"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aegis-agent",
  "aegis-audit",
@@ -71,7 +71,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aegis-agent",
  "aegis-audit",
@@ -111,7 +111,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-domain"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "chrono",
@@ -126,7 +126,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-hitl"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aegis-domain",
  "async-trait",
@@ -144,7 +144,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-infra"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aegis-domain",
  "rstest",
@@ -157,7 +157,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-llm"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aegis-domain",
  "aegis-security",
@@ -181,7 +181,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-onboard"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aegis-domain",
  "aegis-llm",
@@ -201,7 +201,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-security"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aegis-domain",
  "aegis-test-support",
@@ -219,7 +219,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-test-support"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aegis-domain",
  "async-trait",
@@ -235,7 +235,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-tui"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aegis-agent",
  "aegis-domain",
