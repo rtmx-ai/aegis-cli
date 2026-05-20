@@ -522,6 +522,66 @@ jobs:
             artifacts/*
 
   # ---------------------------------------------------------------------------
+  # Job 4: Update Homebrew tap with new formula
+  # ---------------------------------------------------------------------------
+  homebrew:
+    name: Update Homebrew Tap
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [release]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Extract version from tag
+        id: tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Download macOS tarballs and compute SHA256
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.tag.outputs.version }}"
+          TAG="${{ steps.tag.outputs.tag }}"
+          gh release download "$TAG" \
+            --pattern "aegis-${VERSION}-macos-aarch64.tar.gz" \
+            --pattern "aegis-${VERSION}-macos-x86_64.tar.gz" \
+            --dir /tmp/brew-artifacts
+          SHA_ARM=$(sha256sum /tmp/brew-artifacts/aegis-${VERSION}-macos-aarch64.tar.gz | awk '{print $1}')
+          SHA_INTEL=$(sha256sum /tmp/brew-artifacts/aegis-${VERSION}-macos-x86_64.tar.gz | awk '{print $1}')
+          echo "sha_arm=$SHA_ARM" >> "$GITHUB_OUTPUT"
+          echo "sha_intel=$SHA_INTEL" >> "$GITHUB_OUTPUT"
+        id: sha
+      - name: Generate formula from template
+        run: |
+          VERSION="${{ steps.tag.outputs.version }}"
+          SHA_ARM="${{ steps.sha.outputs.sha_arm }}"
+          SHA_INTEL="${{ steps.sha.outputs.sha_intel }}"
+          sed -e "s/VERSION_PLACEHOLDER/${VERSION}/g" \
+              -e "s/SHA256_PLACEHOLDER_ARM/${SHA_ARM}/g" \
+              -e "s/SHA256_PLACEHOLDER_INTEL/${SHA_INTEL}/g" \
+              packaging/homebrew/aegis.rb > /tmp/aegis.rb
+          echo "--- Generated formula ---"
+          cat /tmp/aegis.rb
+      - name: Push formula to Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.tag.outputs.version }}"
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/rtmx-ai/homebrew-aegis.git" /tmp/homebrew-aegis
+          cd /tmp/homebrew-aegis
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          mkdir -p Formula
+          cp /tmp/aegis.rb Formula/aegis.rb
+          git add Formula/aegis.rb
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "aegis ${VERSION}"
+          git push origin main
+
+  # ---------------------------------------------------------------------------
   # Job 5: Build and push container image to GHCR
   # REQ-BUILD-075: Tagged release pushes container image
   # ---------------------------------------------------------------------------
