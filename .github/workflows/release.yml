@@ -237,6 +237,10 @@ jobs:
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
+      - name: Ensure cross-compilation targets are installed
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          rustup target list --installed
       - name: Build release binaries
         run: |
           cargo build --release --package aegis-cli --target aarch64-apple-darwin
