@@ -616,12 +616,12 @@ fn test_homebrew_formula_has_both_arch_urls() {
     let formula = workspace_root().join("packaging/homebrew/aegis.rb");
     let content = std::fs::read_to_string(&formula).unwrap();
     assert!(
-        content.contains("darwin-aarch64"),
-        "formula must reference darwin-aarch64 tarball"
+        content.contains("macos-aarch64"),
+        "formula must reference macos-aarch64 tarball"
     );
     assert!(
-        content.contains("darwin-x86_64"),
-        "formula must reference darwin-x86_64 tarball"
+        content.contains("macos-x86_64"),
+        "formula must reference macos-x86_64 tarball"
     );
     assert!(
         content.contains("on_macos"),
