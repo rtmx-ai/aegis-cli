@@ -35,6 +35,7 @@ impl App {
                      /cost                 Show session cost breakdown\n\
                      /copy                 Copy last code block to clipboard\n\
                      /feedback             Submit feedback about aegis\n\
+                     /trivia               Random defense AI trivia fact\n\
                      /undo                 Revert most recent approved write\n\
                      /clear                Clear chat log\n\
                      /help                 Show this help\n\
@@ -171,6 +172,17 @@ impl App {
                 self.handle_feedback_command();
                 Action::Continue
             }
+            SlashCommand::Trivia => {
+                use crate::trivia::random_fact;
+                let seed = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos() as u64;
+                let fact = random_fact(seed);
+                self.messages
+                    .push(ChatMessage::system(format!("Defense AI Trivia:\n{fact}")));
+                Action::Continue
+            }
         }
     }
 
@@ -193,7 +205,10 @@ impl App {
                 if request.provider == ConnectProvider::Local && request.endpoint.is_none() {
                     self.messages
                         .push(ChatMessage::system("Setting up local model...".to_string()));
-                    let model = request.model.as_deref().unwrap_or("llama3");
+                    let model = request
+                        .model
+                        .as_deref()
+                        .unwrap_or(aegis_llm::config::DEFAULT_LOCAL_MODEL);
                     match detect_and_setup_local(model) {
                         LocalSetupResult::Ready(endpoint) => {
                             self.model_name = model.to_string();

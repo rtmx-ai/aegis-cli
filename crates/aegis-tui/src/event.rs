@@ -70,6 +70,10 @@ pub enum TuiEvent {
     ModelDownloadComplete { model: String },
     /// REQ-TUI-108: Model download failed.
     ModelDownloadFailed { model: String, reason: String },
+    /// REQ-LLM-054: Background model preload completed.
+    ModelPreloadComplete { model: String, elapsed_ms: u64 },
+    /// REQ-LLM-054: Background model preload failed.
+    ModelPreloadFailed { model: String, reason: String },
 }
 
 /// A pending HITL approval request with the channel to send the decision back.

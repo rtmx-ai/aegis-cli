@@ -1,45 +1,49 @@
 # HITL approval flow: every mutation requires human consent
-# Shows: diff rendering, Y/N/E/S dialog, audit logging
+#
+# Expected outcome:
+#   1. Launch aegis chat
+#   2. Ask the agent to read a file (triggers read_file tool)
+#   3. HITL approval dialog appears
+#   4. User approves with "a"
+#   5. Agent returns file content summary
+#   6. /quit exits cleanly
 
 Output docs/demos/gifs/02-hitl-approval.gif
-Set Width 120
-Set Height 35
+Set Width 1200
+Set Height 700
 Set FontSize 14
 Set Theme "Catppuccin Mocha"
-Set TypingSpeed 50ms
+Set TypingSpeed 40ms
 Set Padding 20
+
+# Clear stale session
+Hide
+Type "rm -f ~/.aegis/sessions/current.json"
+Enter
+Sleep 500ms
+Show
 
 Type "aegis chat"
 Enter
-Sleep 1s
+Sleep 5s
 
-Type "Add error handling to the auth token refresh"
+# Ask a question that triggers read_file tool
+Type "Read the CLAUDE.md file and summarize it"
 Enter
-Sleep 2s
 
-# Agent reads files
-Sleep 2s
+# Wait for agent response and possible tool call
+Sleep 15s
 
-# Agent proposes write_file with inline diff
-# Red/green unified diff appears
-Sleep 3s
+# If tool approval appears, approve it
+Type "a"
+Sleep 10s
 
-# HITL dialog: [Y] Approve [N] Deny [E] Edit [S] Skip
-Sleep 2s
+# Show the streamed result
+Sleep 5s
 
-# User approves
-Type "y"
+# Exit
+Type@0ms "/quit"
+Escape
+Sleep 200ms
 Enter
 Sleep 1s
-
-# Agent proposes a second change
-Sleep 2s
-
-# User edits the proposed command
-Type "e"
-Sleep 1s
-
-# Modified command shown
-Sleep 2s
-Enter
-Sleep 2s

@@ -34,6 +34,13 @@ pub struct ProviderConfig {
     pub region: Option<String>,
 }
 
+/// REQ-LLM-055: Default local model for first-run and fallback.
+/// gemma3:4b chosen for fast cold start (~27s vs ~177s for llama3 8B).
+pub const DEFAULT_LOCAL_MODEL: &str = "gemma3:4b";
+
+/// Default Ollama endpoint.
+pub const DEFAULT_LOCAL_ENDPOINT: &str = "http://localhost:11434/v1";
+
 fn default_max_tokens() -> u32 {
     4096
 }
@@ -460,5 +467,17 @@ mod tests {
         assert_eq!(cfg.model, "gpt-4o");
         assert_eq!(cfg.endpoint, "https://myendpoint.openai.azure.com");
         assert!(cfg.region.is_none());
+    }
+
+    // rtmx:req REQ-LLM-055
+    #[test]
+    fn default_local_model_is_gemma3() {
+        assert_eq!(DEFAULT_LOCAL_MODEL, "gemma3:4b");
+    }
+
+    // rtmx:req REQ-LLM-055
+    #[test]
+    fn default_local_endpoint_is_ollama() {
+        assert!(DEFAULT_LOCAL_ENDPOINT.contains("11434"));
     }
 }

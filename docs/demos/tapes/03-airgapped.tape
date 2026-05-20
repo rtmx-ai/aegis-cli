@@ -1,35 +1,61 @@
 # Air-gapped mode: works offline with local models
-# Shows: local init, Ollama provider, zero network egress
+#
+# Expected outcome:
+#   1. Launch aegis chat (connected to local Ollama)
+#   2. /doctor shows local connectivity health check
+#   3. /model shows the active local model
+#   4. Ask a question, see local model response
+#   5. /trivia shows a defense AI fact
+#   6. /quit exits cleanly
 
 Output docs/demos/gifs/03-airgapped.gif
-Set Width 120
-Set Height 35
+Set Width 1200
+Set Height 700
 Set FontSize 14
 Set Theme "Catppuccin Mocha"
-Set TypingSpeed 50ms
+Set TypingSpeed 40ms
 Set Padding 20
 
-Type "aegis init --local"
+# Clear stale session
+Hide
+Type "rm -f ~/.aegis/sessions/current.json"
 Enter
-Sleep 2s
-
-# Config written to ~/.aegis/config.yaml
-# Status line: Local (Ollama llama3)
-Sleep 1s
+Sleep 500ms
+Show
 
 Type "aegis chat"
 Enter
-Sleep 1s
+Sleep 5s
 
-Type "List the files in this project and summarize the architecture"
+# Show doctor to verify local connectivity
+Type@0ms "/doctor"
+Escape
+Sleep 200ms
 Enter
-Sleep 2s
-
-# Agent uses list_dir, read_file -- all local
 Sleep 4s
 
-# Streaming response from local Ollama
+# Show the model
+Type@0ms "/model"
+Escape
+Sleep 200ms
+Enter
+Sleep 3s
+
+# Ask a simple question
+Type "What is aegis?"
+Enter
+Sleep 15s
+
+# Show trivia
+Type@0ms "/trivia"
+Escape
+Sleep 200ms
+Enter
 Sleep 4s
 
-# No network indicator in status line
-Sleep 2s
+# Exit
+Type@0ms "/quit"
+Escape
+Sleep 200ms
+Enter
+Sleep 1s

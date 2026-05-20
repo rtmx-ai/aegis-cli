@@ -41,6 +41,8 @@ pub enum SlashCommand {
     Cost,
     /// Show feedback template and submission options.
     Feedback,
+    /// Display a random defense AI trivia fact.
+    Trivia,
 }
 
 /// Result of attempting to parse a slash command.
@@ -139,6 +141,7 @@ pub fn parse_slash_command(input: &str) -> ParseResult {
         "/copy" => ParseResult::Command(SlashCommand::Copy),
         "/cost" => ParseResult::Command(SlashCommand::Cost),
         "/feedback" => ParseResult::Command(SlashCommand::Feedback),
+        "/trivia" => ParseResult::Command(SlashCommand::Trivia),
         _ => ParseResult::Unknown(cmd),
     }
 }
@@ -505,6 +508,23 @@ mod tests {
         assert_eq!(
             parse_slash_command("/model"),
             ParseResult::Command(SlashCommand::Model(String::new()))
+        );
+    }
+
+    // rtmx:req REQ-TUI-113
+    #[test]
+    fn test_parse_trivia_command() {
+        assert_eq!(
+            parse_slash_command("/trivia"),
+            ParseResult::Command(SlashCommand::Trivia)
+        );
+        assert_eq!(
+            parse_slash_command("/TRIVIA"),
+            ParseResult::Command(SlashCommand::Trivia)
+        );
+        assert_eq!(
+            parse_slash_command("  /trivia  "),
+            ParseResult::Command(SlashCommand::Trivia)
         );
     }
 

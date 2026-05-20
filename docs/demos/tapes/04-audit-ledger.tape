@@ -1,34 +1,57 @@
 # Audit ledger: every action logged, metadata only
-# Shows: session with tool calls, then ledger inspection
+#
+# Expected outcome:
+#   1. aegis --version shows the installed version
+#   2. aegis history shows past session audit entries
+#   3. Launch chat, ask a question to generate audit events
+#   4. /cost shows token usage and cost tracking
+#   5. /quit exits cleanly
 
 Output docs/demos/gifs/04-audit-ledger.gif
-Set Width 120
-Set Height 35
+Set Width 1200
+Set Height 700
 Set FontSize 14
 Set Theme "Catppuccin Mocha"
-Set TypingSpeed 50ms
+Set TypingSpeed 40ms
 Set Padding 20
 
+# Clear stale session
+Hide
+Type "rm -f ~/.aegis/sessions/current.json"
+Enter
+Sleep 500ms
+Show
+
+# Show aegis version
+Type "aegis --version"
+Enter
+Sleep 2s
+
+# Show history command
+Type "aegis history"
+Enter
+Sleep 4s
+
+# Launch chat session
 Type "aegis chat"
 Enter
-Sleep 1s
+Sleep 5s
 
-Type "Read and fix the bug in parser.rs"
+# Ask a question to generate audit events
+Type "Hello, what can you help with?"
+Enter
+Sleep 12s
+
+# Show cost tracking
+Type@0ms "/cost"
+Escape
+Sleep 200ms
 Enter
 Sleep 3s
 
-# Agent session completes
-Sleep 3s
-
-# Exit chat
-Ctrl+C
-Sleep 1s
-
-# Inspect the audit ledger
-Type "cat ~/.aegis/logs/aegis-2026-03-25.jsonl | head -5 | jq ."
+# Exit
+Type@0ms "/quit"
+Escape
+Sleep 200ms
 Enter
-Sleep 3s
-
-# Shows: SESSION_START, TOOL_PROPOSED (path only, no content),
-# TOOL_APPROVED, TOOL_EXECUTED -- metadata only, never CUI
-Sleep 3s
+Sleep 1s

@@ -454,7 +454,10 @@ fn run_chat(
             // Use a dummy local config so the TUI can start.
             // Agent requests will fail, but the user can see the error and fix it.
             (
-                aegis_llm::config::ProviderConfig::local("http://localhost:11434/v1", "llama3"),
+                aegis_llm::config::ProviderConfig::local(
+                    aegis_llm::config::DEFAULT_LOCAL_ENDPOINT,
+                    aegis_llm::config::DEFAULT_LOCAL_MODEL,
+                ),
                 Some(e),
             )
         }
@@ -493,7 +496,7 @@ fn resolve_provider_config(
             }
         };
         let model = model.unwrap_or_else(|| match kind {
-            ProviderKind::Local => "llama3".to_string(),
+            ProviderKind::Local => aegis_llm::config::DEFAULT_LOCAL_MODEL.to_string(),
             ProviderKind::Vertex => "gemini-2.5-pro-001".to_string(),
             ProviderKind::Bedrock => "us.anthropic.claude-3-5-sonnet-20241022-v2:0".to_string(),
             ProviderKind::Azure => "gpt-4o".to_string(),
@@ -667,9 +670,10 @@ fn resolve_provider_config(
         // Ollama is installed but failed to start. Try pulling the model
         // anyway -- `ollama pull` starts the server implicitly on some
         // platforms.
-        eprintln!("aegis: ollama serve did not respond, pulling llama3...");
+        let default_model = aegis_llm::config::DEFAULT_LOCAL_MODEL;
+        eprintln!("aegis: ollama serve did not respond, pulling {default_model}...");
         let pull = std::process::Command::new("ollama")
-            .args(["pull", "llama3"])
+            .args(["pull", default_model])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .output();
@@ -704,25 +708,27 @@ fn resolve_provider_config(
             Ok(dp.config)
         }
         Err(_) => {
-            // Ollama is running but has no models -- pull llama3
-            eprintln!("aegis: pulling llama3...");
+            // Ollama is running but has no models -- pull default
+            let default_model = aegis_llm::config::DEFAULT_LOCAL_MODEL;
+            eprintln!("aegis: pulling {default_model}...");
             let pull = std::process::Command::new("ollama")
-                .args(["pull", "llama3"])
+                .args(["pull", default_model])
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
                 .output();
             match pull {
                 Ok(o) if o.status.success() => {
-                    eprintln!("aegis: llama3 ready");
+                    eprintln!("aegis: {default_model} ready");
                     Ok(aegis_llm::config::ProviderConfig::local(
-                        "http://localhost:11434/v1",
-                        "llama3",
+                        aegis_llm::config::DEFAULT_LOCAL_ENDPOINT,
+                        default_model,
                     ))
                 }
-                _ => Err("Ollama started but failed to pull llama3.\n  \
-                     Try manually: ollama pull llama3\n  \
+                _ => Err(format!(
+                    "Ollama started but failed to pull {default_model}.\n  \
+                     Try manually: ollama pull {default_model}\n  \
                      Then: aegis chat"
-                    .to_string()),
+                )),
             }
         }
     }
@@ -1346,6 +1352,58 @@ async fn run_interactive_chat(
     let session_id = aegis_domain::types::SessionId::new().to_string();
     let work_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
 
+    // 9b. REQ-LLM-054: Background model preload for local providers.
+    // Sends a minimal request to warm the model into GPU memory while the
+    // splash screen + trivia carousel entertains the user.
+    if startup_error.is_none() && provider_config.kind == aegis_llm::config::ProviderKind::Local {
+        app.model_loading = true;
+        let preload_model = provider_config.model.clone();
+        let preload_endpoint = provider_config.endpoint.clone();
+        let preload_tx = event_tx.clone();
+        tokio::spawn(async move {
+            let start = std::time::Instant::now();
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(300))
+                .build()
+                .unwrap_or_default();
+            // Send a tiny completion to force the model to load.
+            let body = format!(
+                r#"{{"model":"{}","messages":[{{"role":"user","content":"hi"}}],"max_tokens":1,"stream":false}}"#,
+                preload_model
+            );
+            let url = format!("{}/chat/completions", preload_endpoint);
+            let result = client
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .body(body)
+                .send()
+                .await;
+            let elapsed_ms = start.elapsed().as_millis() as u64;
+            match result {
+                Ok(resp) if resp.status().is_success() => {
+                    let _ = preload_tx.send(TuiEvent::ModelPreloadComplete {
+                        model: preload_model,
+                        elapsed_ms,
+                    });
+                }
+                Ok(resp) => {
+                    let status = resp.status();
+                    let text = resp.text().await.unwrap_or_default();
+                    let _ = preload_tx.send(TuiEvent::ModelPreloadFailed {
+                        model: preload_model,
+                        reason: format!("HTTP {status}: {text}"),
+                    });
+                }
+                Err(e) => {
+                    let _ = preload_tx.send(TuiEvent::ModelPreloadFailed {
+                        model: preload_model,
+                        reason: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
     // 10. Show startup error if provider resolution failed
     if let Some(err) = startup_error {
         app.messages
@@ -1359,7 +1417,7 @@ async fn run_interactive_chat(
                    /doctor                               Check connectivity\n\
                  \n\
                  Or start a local model server:\n\
-                   ollama serve && ollama pull llama3"
+                   ollama serve && ollama pull gemma3:4b"
                 .to_string(),
         ));
     }
@@ -1391,11 +1449,17 @@ async fn run_interactive_chat(
         terminal
             .draw(|frame| {
                 if app.phase == aegis_tui::app::AppPhase::Splash {
-                    aegis_tui::splash::render_splash(
-                        frame,
-                        frame.area(),
-                        &aegis_tui::theme::DARK_THEME,
-                    );
+                    if app.model_loading {
+                        aegis_tui::splash::render_loading_splash(
+                            frame,
+                            frame.area(),
+                            &app.theme,
+                            &app.model_name,
+                            app.splash_ticks,
+                        );
+                    } else {
+                        aegis_tui::splash::render_splash(frame, frame.area(), &app.theme);
+                    }
                 } else {
                     let input_mode = match app.input.mode {
                         aegis_tui::input::InputMode::Insert => {

@@ -150,6 +150,8 @@ pub struct App {
     pub download_progress: Option<DownloadProgress>,
     /// REQ-TUI-110: Air-gapped mode disables downloads and restricts to manifest.
     pub airgap_mode: bool,
+    /// REQ-TUI-111: Model is loading/warming up. Splash stays visible with trivia.
+    pub model_loading: bool,
 }
 
 /// REQ-TUI-109: Download progress state for gauge rendering.
@@ -247,6 +249,7 @@ impl App {
             active_download: None,
             download_progress: None,
             airgap_mode: false,
+            model_loading: false,
         }
     }
 
@@ -575,11 +578,41 @@ impl App {
                 )));
                 Action::Continue
             }
+            TuiEvent::ModelPreloadComplete { model, elapsed_ms } => {
+                tracing::info!(model = %model, elapsed_ms, "model preload complete");
+                self.model_loading = false;
+                // If still on splash, transition to idle
+                if self.phase == AppPhase::Splash {
+                    self.phase = AppPhase::Idle;
+                }
+                self.messages.push(ChatMessage::system(format!(
+                    "Model '{model}' ready ({:.1}s warmup).",
+                    elapsed_ms as f64 / 1000.0
+                )));
+                Action::Continue
+            }
+            TuiEvent::ModelPreloadFailed { model, reason } => {
+                tracing::warn!(model = %model, reason = %reason, "model preload failed");
+                self.model_loading = false;
+                if self.phase == AppPhase::Splash {
+                    self.phase = AppPhase::Idle;
+                }
+                self.messages.push(ChatMessage::error(format!(
+                    "Model preload for '{model}' failed: {reason}\n\
+                     The model may load on first prompt instead."
+                )));
+                Action::Continue
+            }
             TuiEvent::Tick => {
                 self.tick_count = self.tick_count.wrapping_add(1);
                 if self.phase == AppPhase::Splash {
                     self.splash_ticks += 1;
-                    if self.splash_ticks >= crate::splash::SPLASH_TIMEOUT_TICKS {
+                    // REQ-TUI-111: Don't auto-dismiss while model is loading.
+                    // The splash stays visible with trivia carousel until
+                    // model_loading is cleared by the composition root.
+                    if !self.model_loading
+                        && self.splash_ticks >= crate::splash::SPLASH_TIMEOUT_TICKS
+                    {
                         self.phase = AppPhase::Idle;
                     }
                 } else if self.phase == AppPhase::Streaming {
@@ -770,6 +803,31 @@ mod tests {
             app.handle_event(TuiEvent::Tick, &tx);
         }
         assert_eq!(app.phase, AppPhase::Idle);
+    }
+
+    // rtmx:req REQ-TUI-111
+    #[test]
+    fn splash_not_dismissed_while_model_loading() {
+        let mut app = App::new("gemma3:4b");
+        app.model_loading = true;
+        let (tx, _rx) = make_agent_tx();
+        // Tick well past the normal timeout
+        for _ in 0..(crate::splash::SPLASH_TIMEOUT_TICKS * 3) {
+            app.handle_event(TuiEvent::Tick, &tx);
+        }
+        assert_eq!(
+            app.phase,
+            AppPhase::Splash,
+            "Splash should remain while model_loading is true"
+        );
+        // Now clear loading flag -- next tick past threshold should dismiss
+        app.model_loading = false;
+        app.handle_event(TuiEvent::Tick, &tx);
+        assert_eq!(
+            app.phase,
+            AppPhase::Idle,
+            "Splash should dismiss after model_loading cleared"
+        );
     }
 
     // rtmx:req REQ-TUI-008

@@ -184,6 +184,7 @@ name = "aegis-onboard"
 version = "0.1.0"
 dependencies = [
  "aegis-domain",
+ "aegis-llm",
  "async-trait",
  "getrandom 0.3.4",
  "reqwest",
@@ -240,6 +241,7 @@ dependencies = [
  "aegis-domain",
  "aegis-hitl",
  "aegis-infra",
+ "aegis-llm",
  "aegis-test-support",
  "arboard",
  "chrono",

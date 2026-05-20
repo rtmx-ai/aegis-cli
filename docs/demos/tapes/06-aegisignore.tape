@@ -1,35 +1,52 @@
 # .aegisignore: secrets never reach the LLM
-# Shows: agent blocked from reading .env, adapts gracefully
+#
+# Expected outcome:
+#   1. cat .aegisignore shows the ignore rules
+#   2. Launch chat, ask about config files
+#   3. Agent response respects .aegisignore (sensitive files excluded)
+#   4. /context shows active context (filtered)
+#   5. /quit exits cleanly
 
 Output docs/demos/gifs/06-aegisignore.gif
-Set Width 120
-Set Height 35
+Set Width 1200
+Set Height 700
 Set FontSize 14
 Set Theme "Catppuccin Mocha"
-Set TypingSpeed 50ms
+Set TypingSpeed 40ms
 Set Padding 20
 
+# Clear stale session
+Hide
+Type "rm -f ~/.aegis/sessions/current.json"
+Enter
+Sleep 500ms
+Show
+
+# Show the aegisignore file
 Type "cat .aegisignore"
 Enter
-Sleep 2s
+Sleep 3s
 
-# Shows mandatory blocklist: .env, *.pem, *.key, credentials
-Sleep 1s
-
+# Launch chat
 Type "aegis chat"
 Enter
-Sleep 1s
+Sleep 5s
 
-Type "Show me all the configuration including .env"
+# Ask about configuration -- agent should respect aegisignore
+Type "What configuration files exist in this project?"
 Enter
-Sleep 2s
+Sleep 15s
 
-# Agent attempts read_file(".env")
-# Gets: "File access denied by .aegisignore: .env"
-Sleep 2s
-
-# Agent adapts: reads config.yaml instead
-Sleep 2s
-
-# Streams response acknowledging the blocked file
+# Show context
+Type@0ms "/context"
+Escape
+Sleep 200ms
+Enter
 Sleep 3s
+
+# Exit
+Type@0ms "/quit"
+Escape
+Sleep 200ms
+Enter
+Sleep 1s

@@ -41,8 +41,8 @@ impl InitInputs {
     pub fn local() -> Self {
         Self {
             mode: Mode::Local,
-            endpoint: "http://localhost:11434/v1".to_string(),
-            model: "llama3".to_string(),
+            endpoint: aegis_llm::config::DEFAULT_LOCAL_ENDPOINT.to_string(),
+            model: aegis_llm::config::DEFAULT_LOCAL_MODEL.to_string(),
             region: None,
         }
     }
@@ -239,7 +239,7 @@ pub fn validate_provider_config(
                 .model
                 .as_deref()
                 .filter(|m| !m.trim().is_empty())
-                .unwrap_or("llama3")
+                .unwrap_or(aegis_llm::config::DEFAULT_LOCAL_MODEL)
                 .to_string();
 
             Ok(ResolvedProviderConfig {
@@ -500,7 +500,7 @@ mod tests {
         let inputs = InitInputs::local();
         assert_eq!(inputs.mode, Mode::Local);
         assert_eq!(inputs.endpoint, "http://localhost:11434/v1");
-        assert_eq!(inputs.model, "llama3");
+        assert_eq!(inputs.model, aegis_llm::config::DEFAULT_LOCAL_MODEL);
         assert!(inputs.region.is_none());
     }
 
@@ -579,7 +579,10 @@ mod tests {
         run_init(&inputs, &config_path).unwrap();
 
         let original = AegisConfig::load(&config_path).unwrap();
-        assert_eq!(original.backend.model, "llama3");
+        assert_eq!(
+            original.backend.model,
+            aegis_llm::config::DEFAULT_LOCAL_MODEL
+        );
 
         // Re-init with new model and endpoint
         let new_inputs = InitInputs {
@@ -761,7 +764,7 @@ mod tests {
         let config = validate_provider_config(ProviderChoice::Local, &state).unwrap();
         assert_eq!(config.provider, "local");
         assert_eq!(config.endpoint, "http://localhost:11434/v1");
-        assert_eq!(config.model, "llama3");
+        assert_eq!(config.model, aegis_llm::config::DEFAULT_LOCAL_MODEL);
     }
 
     // rtmx:req REQ-ONBOARD-028
