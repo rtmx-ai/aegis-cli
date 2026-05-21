@@ -7,11 +7,22 @@ class Aegis < Formula
   on_macos do
     on_arm do
       url "https://github.com/rtmx-ai/aegis-cli/releases/download/vVERSION_PLACEHOLDER/aegis-VERSION_PLACEHOLDER-macos-aarch64.tar.gz"
-      sha256 "SHA256_PLACEHOLDER_ARM"
+      sha256 "SHA256_PLACEHOLDER_MACOS_ARM"
     end
     on_intel do
       url "https://github.com/rtmx-ai/aegis-cli/releases/download/vVERSION_PLACEHOLDER/aegis-VERSION_PLACEHOLDER-macos-x86_64.tar.gz"
-      sha256 "SHA256_PLACEHOLDER_INTEL"
+      sha256 "SHA256_PLACEHOLDER_MACOS_INTEL"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/rtmx-ai/aegis-cli/releases/download/vVERSION_PLACEHOLDER/aegis-VERSION_PLACEHOLDER-linux-aarch64.tar.gz"
+      sha256 "SHA256_PLACEHOLDER_LINUX_ARM"
+    end
+    on_intel do
+      url "https://github.com/rtmx-ai/aegis-cli/releases/download/vVERSION_PLACEHOLDER/aegis-VERSION_PLACEHOLDER-linux-x86_64.tar.gz"
+      sha256 "SHA256_PLACEHOLDER_LINUX_INTEL"
     end
   end
 
@@ -20,6 +31,6 @@ class Aegis < Formula
   end
 
   test do
-    system "#{bin}/aegis", "--version"
+    assert_match "aegis", shell_output("#{bin}/aegis --version")
   end
 end

@@ -539,7 +539,7 @@ jobs:
           VERSION="${TAG#v}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-      - name: Download macOS tarballs and compute SHA256
+      - name: Download release tarballs and compute SHA256
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -548,20 +548,22 @@ jobs:
           gh release download "$TAG" \
             --pattern "aegis-${VERSION}-macos-aarch64.tar.gz" \
             --pattern "aegis-${VERSION}-macos-x86_64.tar.gz" \
+            --pattern "aegis-${VERSION}-linux-aarch64.tar.gz" \
+            --pattern "aegis-${VERSION}-linux-x86_64.tar.gz" \
             --dir /tmp/brew-artifacts
-          SHA_ARM=$(sha256sum /tmp/brew-artifacts/aegis-${VERSION}-macos-aarch64.tar.gz | awk '{print $1}')
-          SHA_INTEL=$(sha256sum /tmp/brew-artifacts/aegis-${VERSION}-macos-x86_64.tar.gz | awk '{print $1}')
-          echo "sha_arm=$SHA_ARM" >> "$GITHUB_OUTPUT"
-          echo "sha_intel=$SHA_INTEL" >> "$GITHUB_OUTPUT"
+          echo "sha_macos_arm=$(sha256sum /tmp/brew-artifacts/aegis-${VERSION}-macos-aarch64.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "sha_macos_intel=$(sha256sum /tmp/brew-artifacts/aegis-${VERSION}-macos-x86_64.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "sha_linux_arm=$(sha256sum /tmp/brew-artifacts/aegis-${VERSION}-linux-aarch64.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "sha_linux_intel=$(sha256sum /tmp/brew-artifacts/aegis-${VERSION}-linux-x86_64.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
         id: sha
       - name: Generate formula from template
         run: |
           VERSION="${{ steps.tag.outputs.version }}"
-          SHA_ARM="${{ steps.sha.outputs.sha_arm }}"
-          SHA_INTEL="${{ steps.sha.outputs.sha_intel }}"
           sed -e "s/VERSION_PLACEHOLDER/${VERSION}/g" \
-              -e "s/SHA256_PLACEHOLDER_ARM/${SHA_ARM}/g" \
-              -e "s/SHA256_PLACEHOLDER_INTEL/${SHA_INTEL}/g" \
+              -e "s/SHA256_PLACEHOLDER_MACOS_ARM/${{ steps.sha.outputs.sha_macos_arm }}/g" \
+              -e "s/SHA256_PLACEHOLDER_MACOS_INTEL/${{ steps.sha.outputs.sha_macos_intel }}/g" \
+              -e "s/SHA256_PLACEHOLDER_LINUX_ARM/${{ steps.sha.outputs.sha_linux_arm }}/g" \
+              -e "s/SHA256_PLACEHOLDER_LINUX_INTEL/${{ steps.sha.outputs.sha_linux_intel }}/g" \
               packaging/homebrew/aegis.rb > /tmp/aegis.rb
           echo "--- Generated formula ---"
           cat /tmp/aegis.rb
@@ -570,8 +572,8 @@ jobs:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           VERSION="${{ steps.tag.outputs.version }}"
-          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/rtmx-ai/homebrew-aegis.git" /tmp/homebrew-aegis
-          cd /tmp/homebrew-aegis
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/rtmx-ai/homebrew-tap.git" /tmp/homebrew-tap
+          cd /tmp/homebrew-tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           mkdir -p Formula

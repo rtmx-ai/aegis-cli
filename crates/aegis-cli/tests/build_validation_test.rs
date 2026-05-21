@@ -624,8 +624,20 @@ fn test_homebrew_formula_has_both_arch_urls() {
         "formula must reference macos-x86_64 tarball"
     );
     assert!(
+        content.contains("linux-aarch64"),
+        "formula must reference linux-aarch64 tarball"
+    );
+    assert!(
+        content.contains("linux-x86_64"),
+        "formula must reference linux-x86_64 tarball"
+    );
+    assert!(
         content.contains("on_macos"),
         "formula must use on_macos block"
+    );
+    assert!(
+        content.contains("on_linux"),
+        "formula must use on_linux block"
     );
 }
 
