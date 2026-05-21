@@ -567,10 +567,10 @@ jobs:
           cat /tmp/aegis.rb
       - name: Push formula to Homebrew tap
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           VERSION="${{ steps.tag.outputs.version }}"
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/rtmx-ai/homebrew-aegis.git" /tmp/homebrew-aegis
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/rtmx-ai/homebrew-aegis.git" /tmp/homebrew-aegis
           cd /tmp/homebrew-aegis
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
