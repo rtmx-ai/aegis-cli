@@ -88,6 +88,23 @@ pub fn parse_toolshim_response(text: &str) -> Option<ToolCall> {
     }
 }
 
+/// Return the text before any JSON tool-call block.
+///
+/// If the response contains a fenced code block or bare JSON object,
+/// this returns everything before it (trimmed). If no JSON is found,
+/// returns the full text unchanged.
+pub fn extract_preamble(text: &str) -> String {
+    // Check for fenced code block first
+    if let Some(pos) = text.find("```") {
+        return text[..pos].trim().to_string();
+    }
+    // Check for bare JSON object
+    if let Some(pos) = text.find('{') {
+        return text[..pos].trim().to_string();
+    }
+    text.to_string()
+}
+
 /// Extract JSON from a fenced code block (```json ... ``` or ``` ... ```).
 fn extract_fenced_json(text: &str) -> Option<String> {
     // Find opening fence
@@ -343,5 +360,33 @@ mod tests {
             }
             other => panic!("Expected RunCommand, got {other:?}"),
         }
+    }
+
+    // rtmx:req REQ-AGENT-003
+    #[test]
+    fn extract_preamble_from_fenced_block() {
+        let text = "I'll read that file for you.\n\n```json\n{\"tool\": \"read_file\"}\n```";
+        assert_eq!(extract_preamble(text), "I'll read that file for you.");
+    }
+
+    // rtmx:req REQ-AGENT-003
+    #[test]
+    fn extract_preamble_from_bare_json() {
+        let text = r#"Here: {"tool": "list_dir", "arguments": {"path": "."}}"#;
+        assert_eq!(extract_preamble(text), "Here:");
+    }
+
+    // rtmx:req REQ-AGENT-003
+    #[test]
+    fn extract_preamble_plain_text_unchanged() {
+        let text = "No tools needed here.";
+        assert_eq!(extract_preamble(text), "No tools needed here.");
+    }
+
+    // rtmx:req REQ-AGENT-003
+    #[test]
+    fn extract_preamble_bare_json_only() {
+        let text = r#"{"tool": "list_dir", "arguments": {"path": "."}}"#;
+        assert_eq!(extract_preamble(text), "");
     }
 }

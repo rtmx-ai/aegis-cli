@@ -66,6 +66,9 @@ pub struct AgentConfig {
     /// When true, disables prompt caching (local providers do not support it).
     /// Defaults to false (caching enabled for cloud providers).
     pub is_local_provider: bool,
+    /// When true, parses text responses for embedded JSON tool calls.
+    /// Enable for models without native tool calling (REQ-AGENT-003).
+    pub uses_tool_shim: bool,
     /// Context injection configuration (REQ-AGENT-054).
     pub context_injection: ContextInjectionConfig,
 }
@@ -76,6 +79,7 @@ impl Default for AgentConfig {
             max_iterations: 100,
             system_prompt: "You are a helpful coding assistant.".to_string(),
             is_local_provider: false,
+            uses_tool_shim: false,
             context_injection: ContextInjectionConfig::default(),
         }
     }
@@ -504,6 +508,25 @@ where
                         return Err(DomainError::ProviderError { message });
                     }
                 }
+            }
+
+            // REQ-AGENT-003: Parse tool calls from text when using tool shim.
+            // Models without native tool calling emit JSON in plain text;
+            // the shim parser extracts it into a real ToolCall so it flows
+            // through the same HITL gate and execution path.
+            if tool_calls.is_empty()
+                && self.config.uses_tool_shim
+                && let Some(call) = crate::toolshim::parse_toolshim_response(&response_text)
+            {
+                // Notify TUI of the parsed tool call
+                if let Some(ref sink) = self.event_sink {
+                    let _ = sink.send(StreamEvent::ToolUse(call.clone()));
+                }
+                // Strip the JSON from the assistant message, keeping
+                // only the natural-language preamble (if any).
+                let preamble = crate::toolshim::extract_preamble(&response_text);
+                response_text = preamble;
+                tool_calls.push(call);
             }
 
             // Add assistant response to history

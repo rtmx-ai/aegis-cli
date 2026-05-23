@@ -230,6 +230,7 @@ fn bench_agent_loop_iteration_overhead(c: &mut Criterion) {
                 system_prompt: black_box("system prompt".to_string()),
                 max_iterations: 25,
                 is_local_provider: false,
+                uses_tool_shim: false,
                 context_injection: aegis_agent::loop_runner::ContextInjectionConfig::default(),
             };
             black_box(config);

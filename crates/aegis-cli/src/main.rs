@@ -957,7 +957,8 @@ async fn run_headless_chat(
     let config = aegis_agent::loop_runner::AgentConfig {
         max_iterations: 20,
         system_prompt: build_system_prompt(),
-        is_local_provider: false,
+        is_local_provider: provider_config.kind == aegis_llm::config::ProviderKind::Local,
+        uses_tool_shim: aegis_llm::capabilities::needs_tool_shim(&provider_config.model),
         context_injection: aegis_agent::loop_runner::ContextInjectionConfig::default(),
     };
 
@@ -1094,7 +1095,8 @@ async fn run_plaintext_turn(
     let config = aegis_agent::loop_runner::AgentConfig {
         max_iterations: 20,
         system_prompt: build_system_prompt(),
-        is_local_provider: false,
+        is_local_provider: provider_config.kind == aegis_llm::config::ProviderKind::Local,
+        uses_tool_shim: aegis_llm::capabilities::needs_tool_shim(&provider_config.model),
         context_injection: aegis_agent::loop_runner::ContextInjectionConfig::default(),
     };
 
@@ -1378,21 +1380,27 @@ async fn run_interactive_chat(
                 .body(body)
                 .send()
                 .await;
-            let elapsed_ms = start.elapsed().as_millis() as u64;
+            // Consume the full response body before measuring elapsed time.
+            // `.send()` returns when HTTP headers arrive, but Ollama loads
+            // the model during body generation -- without this the reported
+            // warmup time only reflects the header round-trip, not the
+            // actual model load.
             match result {
-                Ok(resp) if resp.status().is_success() => {
-                    let _ = preload_tx.send(TuiEvent::ModelPreloadComplete {
-                        model: preload_model,
-                        elapsed_ms,
-                    });
-                }
                 Ok(resp) => {
                     let status = resp.status();
-                    let text = resp.text().await.unwrap_or_default();
-                    let _ = preload_tx.send(TuiEvent::ModelPreloadFailed {
-                        model: preload_model,
-                        reason: format!("HTTP {status}: {text}"),
-                    });
+                    let _body = resp.text().await.unwrap_or_default();
+                    let elapsed_ms = start.elapsed().as_millis() as u64;
+                    if status.is_success() {
+                        let _ = preload_tx.send(TuiEvent::ModelPreloadComplete {
+                            model: preload_model,
+                            elapsed_ms,
+                        });
+                    } else {
+                        let _ = preload_tx.send(TuiEvent::ModelPreloadFailed {
+                            model: preload_model,
+                            reason: format!("HTTP {status}: {_body}"),
+                        });
+                    }
                 }
                 Err(e) => {
                     let _ = preload_tx.send(TuiEvent::ModelPreloadFailed {
@@ -1913,7 +1921,8 @@ async fn run_agent_for_tui(
     let config = aegis_agent::loop_runner::AgentConfig {
         max_iterations: 20,
         system_prompt: build_system_prompt(),
-        is_local_provider: false,
+        is_local_provider: provider_config.kind == aegis_llm::config::ProviderKind::Local,
+        uses_tool_shim: aegis_llm::capabilities::needs_tool_shim(&provider_config.model),
         context_injection: aegis_agent::loop_runner::ContextInjectionConfig::default(),
     };
 
