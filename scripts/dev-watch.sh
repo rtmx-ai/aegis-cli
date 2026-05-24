@@ -16,9 +16,19 @@ ONCE="${3:-}"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 source_checksum() {
+    # Portable mtime: BSD stat -f '%m', GNU stat -c '%Y'.
+    local mtime_flag
+    if stat -f '%m' /dev/null >/dev/null 2>&1; then
+        mtime_flag="-f %m"       # macOS / BSD
+    else
+        mtime_flag="-c %Y"       # Linux / GNU coreutils
+    fi
     find "$PROJECT_DIR/crates" "$PROJECT_DIR/Cargo.toml" \
         -name '*.rs' -o -name '*.toml' 2>/dev/null \
-        | sort | xargs stat -f '%m' 2>/dev/null | md5 || echo "none"
+        | sort | xargs stat $mtime_flag 2>/dev/null \
+        | md5sum 2>/dev/null | cut -d' ' -f1 \
+        || md5 2>/dev/null \
+        || echo "error"
 }
 
 BEFORE=$(source_checksum)

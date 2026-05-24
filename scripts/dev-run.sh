@@ -77,7 +77,7 @@ while true; do
     # calls tcsetattr() while still in a background process group.
     cd "$SANDBOX"
     AEGIS_EXIT=0
-    ( echo $$ > "$PIDFILE"; exec "$BINARY" chat ) || AEGIS_EXIT=$?
+    ( echo $$ > "$PIDFILE"; export RUST_LOG="${RUST_LOG:-info}"; exec "$BINARY" chat ) || AEGIS_EXIT=$?
     rm -f "$PIDFILE"
 
     # Restore terminal state in case aegis was killed before its cleanup
@@ -96,17 +96,11 @@ while true; do
     if [ -f "$SENTINEL" ]; then
         rm -f "$SENTINEL"
     elif [ "$AEGIS_EXIT" -ne 0 ]; then
-        # Crashed or killed (e.g., tmux detach disrupted terminal).
-        EXIT_TIME=$(date +%s)
-        ELAPSED=$(( EXIT_TIME - LAUNCH_TIME ))
-        if [ "$ELAPSED" -lt 5 ]; then
-            CRASH_COUNT=$(( CRASH_COUNT + 1 ))
-        else
-            CRASH_COUNT=1
-        fi
-        if [ "$CRASH_COUNT" -ge 3 ]; then
-            echo "[aegis crashed $CRASH_COUNT times in a row -- waiting for source changes...]"
+        # Signal-based exits (128+signum) are not crashes.
+        # SIGINT=130, SIGTERM=143 -- user quit or watcher killed.
+        if [ "$AEGIS_EXIT" -ge 128 ]; then
             CRASH_COUNT=0
+            echo "[aegis exited on signal $(( AEGIS_EXIT - 128 )) -- waiting for source changes...]"
             cd "$PROJECT_DIR"
             "$SCRIPT_DIR/dev-watch.sh" "$PIDFILE" "$SENTINEL" --once &
             WATCH_PID=$!
@@ -114,8 +108,27 @@ while true; do
             WATCH_PID=""
             rm -f "$SENTINEL"
         else
-            echo "[aegis exited unexpectedly (exit $AEGIS_EXIT) -- retrying in 2s...]"
-            sleep 2
+            # Real crash (panic, runtime error).
+            EXIT_TIME=$(date +%s)
+            ELAPSED=$(( EXIT_TIME - LAUNCH_TIME ))
+            if [ "$ELAPSED" -lt 5 ]; then
+                CRASH_COUNT=$(( CRASH_COUNT + 1 ))
+            else
+                CRASH_COUNT=1
+            fi
+            if [ "$CRASH_COUNT" -ge 3 ]; then
+                echo "[aegis crashed $CRASH_COUNT times in a row -- waiting for source changes...]"
+                CRASH_COUNT=0
+                cd "$PROJECT_DIR"
+                "$SCRIPT_DIR/dev-watch.sh" "$PIDFILE" "$SENTINEL" --once &
+                WATCH_PID=$!
+                wait "$WATCH_PID" 2>/dev/null || true
+                WATCH_PID=""
+                rm -f "$SENTINEL"
+            else
+                echo "[aegis exited unexpectedly (exit $AEGIS_EXIT) -- retrying in 2s...]"
+                sleep 2
+            fi
         fi
     else
         CRASH_COUNT=0
