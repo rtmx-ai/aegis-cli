@@ -995,7 +995,7 @@ mod tests {
         let _ = run_subagent_loop(provider.clone(), config, "test".into()).await;
 
         // Verify the tool schemas passed to the LLM contain only read-only tools.
-        let captured = provider.captured_tool_schemas.lock().unwrap();
+        let captured = provider.captured_tool_schemas();
         assert_eq!(captured.len(), 1, "stream() should have been called once");
         let schemas = &captured[0];
         assert_eq!(schemas.len(), 3);

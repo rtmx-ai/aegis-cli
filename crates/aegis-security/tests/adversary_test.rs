@@ -358,7 +358,7 @@ async fn test_off_skips_assessment() {
     );
     // Mock never called: captured schemas stays empty.
     assert!(
-        provider.captured_tool_schemas.lock().unwrap().is_empty(),
+        provider.captured_tool_schemas().is_empty(),
         "provider must not be called in Off mode"
     );
 }

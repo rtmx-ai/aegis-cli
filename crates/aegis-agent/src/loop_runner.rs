@@ -954,6 +954,61 @@ mod tests {
         assert_eq!(result.response, "Done.");
     }
 
+    // rtmx:req REQ-AGENT-003
+    #[tokio::test]
+    async fn tool_shim_injects_results_as_role_user() {
+        let provider = MockLlmProvider::new();
+
+        // LLM requests read_file, then completes
+        provider.queue_response(vec![
+            StreamEvent::ToolUse(ToolCall::ReadFile {
+                path: FilePath::new_unchecked("Cargo.toml"),
+            }),
+            StreamEvent::Done {
+                input_tokens: 10,
+                output_tokens: 5,
+            },
+        ]);
+        provider.queue_response(vec![
+            StreamEvent::Token("Done.".to_string()),
+            StreamEvent::Done {
+                input_tokens: 30,
+                output_tokens: 2,
+            },
+        ]);
+
+        let config = AgentConfig {
+            uses_tool_shim: true,
+            ..Default::default()
+        };
+        let provider_ref = provider.clone();
+        let agent = AgentLoop::new(
+            provider,
+            MockApprovalGate::always_approve(),
+            MockToolExecutor::new(),
+            MockAuditLedger::new(),
+            MockSecurityFilter,
+            config,
+        );
+        let result = agent.run("Read Cargo.toml").await.unwrap();
+        assert_eq!(result.iterations, 2);
+
+        // On the second stream() call, the history should contain the
+        // tool result as a Role::User message (not Role::Tool).
+        let calls = provider_ref.captured_messages();
+        assert!(calls.len() >= 2, "expected at least 2 stream calls");
+        let second_call_msgs = &calls[1];
+        let tool_result_msg = second_call_msgs
+            .iter()
+            .find(|m| m.content.contains("[tool result:"))
+            .expect("should have a [tool result:] message in history");
+        assert_eq!(
+            tool_result_msg.role,
+            Role::User,
+            "tool shim results must be injected as Role::User"
+        );
+    }
+
     // rtmx:req REQ-AGENT-008
     #[tokio::test]
     async fn agent_halts_at_max_iterations() {
