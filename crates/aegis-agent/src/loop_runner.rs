@@ -576,8 +576,13 @@ where
                         "Tool '{}' skipped: batch aborted by denial",
                         call.tool_name()
                     );
+                    let role = if self.config.uses_tool_shim {
+                        Role::User
+                    } else {
+                        Role::Tool
+                    };
                     history.push(Message {
-                        role: Role::Tool,
+                        role,
                         content: skip_text,
                         cache_control: None,
                     });
@@ -627,12 +632,24 @@ where
                 // REQ-AGENT-027: Track files from this tool call.
                 working_mem.track_tool_call(call);
 
-                // INJECT: Add tool result to history
-                history.push(Message {
-                    role: Role::Tool,
-                    content: result_text,
-                    cache_control: None,
-                });
+                // INJECT: Add tool result to history.
+                // REQ-AGENT-003: Tool shim models never issued a native
+                // tool_call, so Role::Tool is meaningless to them.  Inject
+                // as Role::User with the tool name so the model recognises
+                // the result and does not retry the same call.
+                if self.config.uses_tool_shim {
+                    history.push(Message {
+                        role: Role::User,
+                        content: format!("[tool result: {}]\n{}", call.tool_name(), result_text),
+                        cache_control: None,
+                    });
+                } else {
+                    history.push(Message {
+                        role: Role::Tool,
+                        content: result_text,
+                        cache_control: None,
+                    });
+                }
             }
         }
 
