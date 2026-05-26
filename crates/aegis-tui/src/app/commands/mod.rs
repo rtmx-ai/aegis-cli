@@ -139,8 +139,11 @@ impl App {
                         "switching model"
                     );
                     self.model_name = name.clone();
+                    // REQ-LLM-056: Signal main.rs to update shared provider
+                    // config and trigger warmup for the new model.
+                    self.pending_model_switch = Some(name.clone());
                     self.messages
-                        .push(ChatMessage::system(format!("Model switched to: {name}")));
+                        .push(ChatMessage::system(format!("Switching to {name}...")));
                 }
                 Action::Continue
             }

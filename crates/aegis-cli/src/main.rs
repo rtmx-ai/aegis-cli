@@ -1724,6 +1724,60 @@ async fn run_interactive_chat(
             } // else: policy check passed
         }
 
+        // REQ-LLM-056: Model switch -- update shared provider config and warmup.
+        if let Some(new_model) = app.pending_model_switch.take() {
+            {
+                let mut guard = shared_provider_config.write().unwrap();
+                guard.model = new_model.clone();
+            }
+            app.model_loading = true;
+            let warmup_model = new_model;
+            let warmup_endpoint = shared_provider_config.read().unwrap().endpoint.clone();
+            let warmup_tx = event_tx.clone();
+            tokio::spawn(async move {
+                let start = std::time::Instant::now();
+                let client = reqwest::Client::builder()
+                    .timeout(Duration::from_secs(300))
+                    .build()
+                    .unwrap_or_default();
+                let body = format!(
+                    r#"{{"model":"{}","messages":[{{"role":"user","content":"hi"}}],"max_tokens":1,"stream":false}}"#,
+                    warmup_model
+                );
+                let url = format!("{}/chat/completions", warmup_endpoint);
+                let result = client
+                    .post(&url)
+                    .header("Content-Type", "application/json")
+                    .body(body)
+                    .send()
+                    .await;
+                match result {
+                    Ok(resp) => {
+                        let status = resp.status();
+                        let _body = resp.text().await.unwrap_or_default();
+                        let elapsed_ms = start.elapsed().as_millis() as u64;
+                        if status.is_success() {
+                            let _ = warmup_tx.send(TuiEvent::ModelPreloadComplete {
+                                model: warmup_model,
+                                elapsed_ms,
+                            });
+                        } else {
+                            let _ = warmup_tx.send(TuiEvent::ModelPreloadFailed {
+                                model: warmup_model,
+                                reason: format!("HTTP {status}: {_body}"),
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        let _ = warmup_tx.send(TuiEvent::ModelPreloadFailed {
+                            model: warmup_model,
+                            reason: e.to_string(),
+                        });
+                    }
+                }
+            });
+        }
+
         // REQ-TUI-060: autosave after every completed assistant turn so a
         // crash right after the turn (hot reload, panic, OOM) does not lose
         // the just-finished response.

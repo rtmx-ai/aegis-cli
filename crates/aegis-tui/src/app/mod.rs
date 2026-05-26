@@ -152,6 +152,11 @@ pub struct App {
     pub airgap_mode: bool,
     /// REQ-TUI-111: Model is loading/warming up. Splash stays visible with trivia.
     pub model_loading: bool,
+
+    /// REQ-LLM-056: Pending model switch for main.rs to consume.
+    /// Set by /model <name>, consumed by the event loop to update
+    /// shared_provider_config and trigger warmup.
+    pub pending_model_switch: Option<String>,
 }
 
 /// REQ-TUI-109: Download progress state for gauge rendering.
@@ -250,6 +255,7 @@ impl App {
             download_progress: None,
             airgap_mode: false,
             model_loading: false,
+            pending_model_switch: None,
         }
     }
 
