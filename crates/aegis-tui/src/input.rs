@@ -2,7 +2,7 @@
 //!
 //! Provides an InputState that handles text editing with two modes:
 //! Insert (typing) and Normal (vim navigation). Supports command
-//! history via Up/Down arrows.
+//! history via Up/Down arrows. History persists to disk across sessions.
 
 /// Input editing mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,6 +32,8 @@ pub struct InputState {
     saved_text: String,
     /// Active search query (Some when in search mode, None otherwise).
     search_query: Option<String>,
+    /// REQ-TUI-114: True after submit() adds to history; cleared by caller.
+    pub history_dirty: bool,
 }
 
 impl Default for InputState {
@@ -45,6 +47,7 @@ impl Default for InputState {
             history_index: None,
             saved_text: String::new(),
             search_query: None,
+            history_dirty: false,
         }
     }
 }
@@ -196,6 +199,7 @@ impl InputState {
         let text = self.text.clone();
         if !text.trim().is_empty() {
             self.history.push(text.clone());
+            self.history_dirty = true;
         }
         self.text.clear();
         self.cursor = 0;
@@ -249,6 +253,36 @@ impl InputState {
     /// Get the history entries.
     pub fn history(&self) -> &[String] {
         &self.history
+    }
+
+    /// Maximum number of persisted history entries.
+    const MAX_HISTORY: usize = 500;
+
+    /// REQ-TUI-114: Load history from disk. Call once at startup.
+    pub fn load_history(&mut self, path: &std::path::Path) {
+        if let Ok(contents) = std::fs::read_to_string(path) {
+            self.history = contents
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(String::from)
+                .collect();
+            // Cap at MAX_HISTORY, keeping newest
+            if self.history.len() > Self::MAX_HISTORY {
+                let start = self.history.len() - Self::MAX_HISTORY;
+                self.history.drain(..start);
+            }
+        }
+    }
+
+    /// REQ-TUI-114: Save history to disk. Call after each submit.
+    pub fn save_history(&self, path: &std::path::Path) {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        // Keep only the last MAX_HISTORY entries
+        let start = self.history.len().saturating_sub(Self::MAX_HISTORY);
+        let lines: Vec<&str> = self.history[start..].iter().map(|s| s.as_str()).collect();
+        let _ = std::fs::write(path, lines.join("\n"));
     }
 
     /// Enter search mode (Ctrl+F).

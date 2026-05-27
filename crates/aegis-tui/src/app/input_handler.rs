@@ -67,8 +67,8 @@ impl App {
             AppPhase::Idle => {}
         }
 
-        // Command palette intercept: handle keys when palette is visible (idle only).
-        if self.phase == AppPhase::Idle && self.command_palette.is_visible {
+        // REQ-TUI-115: Command palette intercept works in all phases.
+        if self.command_palette.is_visible {
             match key.code {
                 KeyCode::Up => {
                     self.command_palette.prev();
@@ -422,14 +422,12 @@ impl App {
             }
             KeyCode::Char(c) => {
                 self.input.insert_char(c);
-                // Show/update command palette when typing /commands (idle only)
-                if self.phase == AppPhase::Idle {
-                    if self.input.text.starts_with('/') && !self.input.text.contains(' ') {
-                        self.command_palette.show();
-                        self.command_palette.filter(&self.input.text);
-                    } else if self.command_palette.is_visible {
-                        self.command_palette.hide();
-                    }
+                // REQ-TUI-115: Show/update command palette when typing /commands.
+                if self.input.text.starts_with('/') && !self.input.text.contains(' ') {
+                    self.command_palette.show();
+                    self.command_palette.filter(&self.input.text);
+                } else if self.command_palette.is_visible {
+                    self.command_palette.hide();
                 }
                 Action::Continue
             }

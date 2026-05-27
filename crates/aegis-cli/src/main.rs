@@ -1333,6 +1333,11 @@ async fn run_interactive_chat(
 
     // 10. Create App state, restoring previous session if available (REQ-BUILD-036)
     let mut app = App::new(&provider_config.model);
+    // REQ-TUI-114: Load persistent prompt history.
+    let history_path = dirs_next::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".aegis/prompt_history");
+    app.input.load_history(&history_path);
     app.current_provider_info = Some(aegis_tui::app::ProviderInfo {
         provider: format!("{:?}", provider_config.kind).to_lowercase(),
         model: provider_config.model.clone(),
@@ -1556,6 +1561,11 @@ async fn run_interactive_chat(
                 if app.handle_event(event, &agent_input_tx) == Action::Quit {
                     should_quit = true;
                 }
+                // REQ-TUI-114: Persist prompt history after submit.
+                if app.input.history_dirty {
+                    app.input.save_history(&history_path);
+                    app.input.history_dirty = false;
+                }
             }
             EventWake::Timer => {
                 // No event to dispatch; drop through to autosave check.
@@ -1724,27 +1734,128 @@ async fn run_interactive_chat(
             } // else: policy check passed
         }
 
-        // REQ-LLM-056: Model switch -- update shared provider config and warmup.
+        // REQ-LLM-056 + REQ-LLM-057: Model switch -- pull if needed,
+        // update provider config, and warmup.
         if let Some(new_model) = app.pending_model_switch.take() {
             {
                 let mut guard = shared_provider_config.write().unwrap();
                 guard.model = new_model.clone();
             }
             app.model_loading = true;
-            let warmup_model = new_model;
-            let warmup_endpoint = shared_provider_config.read().unwrap().endpoint.clone();
-            let warmup_tx = event_tx.clone();
+            let switch_model = new_model;
+            let switch_endpoint = shared_provider_config.read().unwrap().endpoint.clone();
+            let switch_tx = event_tx.clone();
             tokio::spawn(async move {
-                let start = std::time::Instant::now();
                 let client = reqwest::Client::builder()
-                    .timeout(Duration::from_secs(300))
+                    .timeout(Duration::from_secs(600))
                     .build()
                     .unwrap_or_default();
+
+                // REQ-LLM-057: Check if model is locally available via
+                // Ollama /api/tags. If not, pull it first.
+                let base = switch_endpoint
+                    .trim_end_matches("/v1")
+                    .trim_end_matches('/');
+                let tags_url = format!("{base}/api/tags");
+                let needs_pull = match client.get(&tags_url).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        let body = resp.text().await.unwrap_or_default();
+                        !body.contains(&format!("\"{}\"", switch_model))
+                            && !body.contains(&format!("\"name\":\"{}\"", switch_model))
+                    }
+                    _ => true, // Can't reach Ollama, try warmup anyway
+                };
+
+                if needs_pull {
+                    let _ = switch_tx.send(TuiEvent::AgentToken(format!(
+                        "\n[Pulling model '{}'...]\n",
+                        switch_model
+                    )));
+                    let pull_url = format!("{base}/api/pull");
+                    let pull_resp = client
+                        .post(&pull_url)
+                        .json(&serde_json::json!({
+                            "name": switch_model,
+                            "stream": true
+                        }))
+                        .send()
+                        .await;
+                    match pull_resp {
+                        Err(e) => {
+                            let _ = switch_tx.send(TuiEvent::ModelPreloadFailed {
+                                model: switch_model,
+                                reason: format!("Pull failed: {e}"),
+                            });
+                            return;
+                        }
+                        Ok(response) if !response.status().is_success() => {
+                            let status = response.status();
+                            let body = response.text().await.unwrap_or_default();
+                            let _ = switch_tx.send(TuiEvent::ModelPreloadFailed {
+                                model: switch_model,
+                                reason: format!("Pull HTTP {status}: {body}"),
+                            });
+                            return;
+                        }
+                        Ok(response) => {
+                            // Stream pull progress.
+                            let mut buf = String::new();
+                            let mut stream = response.bytes_stream();
+                            use futures::StreamExt;
+                            while let Some(chunk_result) = stream.next().await {
+                                let chunk = match chunk_result {
+                                    Ok(c) => c,
+                                    Err(e) => {
+                                        let _ = switch_tx.send(TuiEvent::ModelPreloadFailed {
+                                            model: switch_model.clone(),
+                                            reason: format!("Pull stream error: {e}"),
+                                        });
+                                        return;
+                                    }
+                                };
+                                buf.push_str(&String::from_utf8_lossy(&chunk));
+                                while let Some(pos) = buf.find('\n') {
+                                    let line = buf[..pos].trim().to_string();
+                                    buf.drain(..=pos);
+                                    if line.is_empty() {
+                                        continue;
+                                    }
+                                    if let Ok(val) =
+                                        serde_json::from_str::<serde_json::Value>(&line)
+                                    {
+                                        let status = val
+                                            .get("status")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let completed = val
+                                            .get("completed")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        let total = val
+                                            .get("total")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        let _ = switch_tx.send(TuiEvent::ModelDownloadProgress {
+                                            model: switch_model.clone(),
+                                            status,
+                                            completed,
+                                            total,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Warmup: send a tiny completion to load model into GPU.
+                let start = std::time::Instant::now();
                 let body = format!(
                     r#"{{"model":"{}","messages":[{{"role":"user","content":"hi"}}],"max_tokens":1,"stream":false}}"#,
-                    warmup_model
+                    switch_model
                 );
-                let url = format!("{}/chat/completions", warmup_endpoint);
+                let url = format!("{}/chat/completions", switch_endpoint);
                 let result = client
                     .post(&url)
                     .header("Content-Type", "application/json")
@@ -1757,20 +1868,20 @@ async fn run_interactive_chat(
                         let _body = resp.text().await.unwrap_or_default();
                         let elapsed_ms = start.elapsed().as_millis() as u64;
                         if status.is_success() {
-                            let _ = warmup_tx.send(TuiEvent::ModelPreloadComplete {
-                                model: warmup_model,
+                            let _ = switch_tx.send(TuiEvent::ModelPreloadComplete {
+                                model: switch_model,
                                 elapsed_ms,
                             });
                         } else {
-                            let _ = warmup_tx.send(TuiEvent::ModelPreloadFailed {
-                                model: warmup_model,
+                            let _ = switch_tx.send(TuiEvent::ModelPreloadFailed {
+                                model: switch_model,
                                 reason: format!("HTTP {status}: {_body}"),
                             });
                         }
                     }
                     Err(e) => {
-                        let _ = warmup_tx.send(TuiEvent::ModelPreloadFailed {
-                            model: warmup_model,
+                        let _ = switch_tx.send(TuiEvent::ModelPreloadFailed {
+                            model: switch_model,
                             reason: e.to_string(),
                         });
                     }
