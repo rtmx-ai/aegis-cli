@@ -19,11 +19,12 @@ import (
 	"github.com/rtmx-ai/aegis-cli/internal/framing"
 	"github.com/rtmx-ai/aegis-cli/internal/harness"
 	"github.com/rtmx-ai/aegis-cli/internal/harness/goose"
-	"github.com/rtmx-ai/aegis-cli/internal/harness/opencode"
+	ocharness "github.com/rtmx-ai/aegis-cli/internal/harness/opencode"
 	servingharness "github.com/rtmx-ai/aegis-cli/internal/harness/serving"
 	"github.com/rtmx-ai/aegis-cli/internal/install"
 	"github.com/rtmx-ai/aegis-cli/internal/loop"
 	"github.com/rtmx-ai/aegis-cli/internal/metrics"
+	"github.com/rtmx-ai/aegis-cli/internal/opencode"
 	"github.com/rtmx-ai/aegis-cli/internal/rtmx"
 	"github.com/rtmx-ai/aegis-cli/internal/serving"
 )
@@ -36,7 +37,7 @@ func selectHarness(cfg config.Config) (harness.Adapter, error) {
 	case config.HarnessBuiltin:
 		return servingharness.New(cfg.Endpoint)
 	case config.HarnessOpenCode:
-		return opencode.New(""), nil
+		return ocharness.New(""), nil
 	case config.HarnessGoose:
 		return goose.New(""), nil
 	default:
@@ -58,11 +59,13 @@ func main() {
 // from main so tests can exercise it directly.
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		usage(stderr)
-		return 2
+		// The centerpiece: bare `aegis` launches the bundled OpenCode TUI.
+		return cmdTUI(stdout, stderr)
 	}
 	cmd, rest := args[0], args[1:]
 	switch cmd {
+	case "code", "tui":
+		return cmdTUI(stdout, stderr)
 	case "init":
 		return cmdInit(rest, stdout, stderr)
 	case "run":
@@ -90,11 +93,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 // usage prints the top-level command surface.
 func usage(w io.Writer) {
-	fmt.Fprint(w, `aegis — thin requirements-loop orchestrator
+	fmt.Fprint(w, `aegis — air-gap-native agentic coding (OpenCode TUI + local model + rtmx intent)
 
-usage: aegis <command> [flags]
+usage: aegis [command] [flags]
+
+  (no command)  launch the bundled OpenCode TUI (the centerpiece experience)
 
 commands:
+  code | tui    launch the OpenCode TUI explicitly
   init [--dry-run] [--force] [--config PATH]
                 detect host capabilities, plan target/tier/calibration, and
                 write an offline-safe config (then calibrate + verify air-gap)
@@ -293,6 +299,25 @@ func servingPreflight(endpoint, expectID, expectDigest string) func(ctx context.
 		}
 		return nil
 	}
+}
+
+// cmdTUI launches the centerpiece OpenCode TUI under the air-gap-hardened config
+// + the local loopback model + rtmx as the intent layer. It loads the config
+// from the default path if present, otherwise offline-safe defaults.
+func cmdTUI(stdout, stderr io.Writer) int {
+	cfg, err := config.Load("")
+	if err != nil {
+		cfg = config.Default()
+	}
+	if err := opencode.Launch(cfg, "", ""); err != nil {
+		if opencode.IsMissing(err) {
+			fmt.Fprintln(stderr, opencode.MissingGuidance)
+			return 1
+		}
+		fmt.Fprintf(stderr, "aegis: opencode: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 // cmdFrame implements `aegis frame`: classify the backlog and surface the

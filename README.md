@@ -8,24 +8,23 @@
 
 <sub>CI status, statement coverage, and component version regenerate live on every green `main` build (`make badges` → `badges` branch); Go grade is served by goreportcard.com; license reads from `LICENSE` (Apache-2.0).</sub>
 
-A **thin orchestrator** that drives a coding agent through a requirements-driven
-build loop inside a closed, air-gap-suitable environment. It is *not* an agent
-harness. The harness (opencode or Goose), the model (a local MoE served on-box),
-and the requirements engine (rtmx) already exist — aegis-cli's only job is the
-control loop that wires them together:
+An **air-gap-native, top-tier agentic coding experience**. Its centerpiece is the
+**OpenCode TUI** (MIT), driven by a **local model** (Ollama / llama.cpp, loopback)
+with **rtmx as the intent layer**. Running `aegis` launches that TUI inside a
+closed, air-gap-suitable environment. aegis **bundles and launches OpenCode; it
+does not fork or rebuild it** — it owns the air-gap distribution, hardening, the
+rtmx intent loop (interactive + headless `aegis run`), audit, and packaging.
 
 ```mermaid
 flowchart LR
-    next["rtmx next --one"] --> drive["harness implements + tests"]
-    drive --> verify["rtmx verify"]
-    verify --> gate{pass / fail}
-    gate -- "pass: close + release" --> next
-    gate -- fail --> escalate["retry / escalate"]
-    escalate --> next
+    user["operator"] --> tui["aegis → OpenCode TUI (bundled, hardened)"]
+    tui <--> model["local model (Ollama / llama.cpp, loopback)"]
+    tui <--> rtmx["rtmx MCP — intent layer (next/claim/verify/set_status)"]
+    tui -.headless.-> run["aegis run — unattended rtmx drain"]
 ```
 
-If a task feels like it needs tool-calling, file editing, or sandboxing, that
-belongs to the harness — **not here.**
+Tool-calling, file editing, and sandboxing are **OpenCode's** job — aegis
+configures and drives it, and never reimplements the harness.
 
 ---
 

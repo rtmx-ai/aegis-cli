@@ -7,37 +7,46 @@ Read this first. Then read the relevant skill in `skills/` before acting.
 
 ## 1. What aegis-cli is
 
-aegis-cli is a **thin orchestrator**. It drives a coding agent through a
-requirements-driven build loop inside a closed, ITAR-suitable environment.
+aegis-cli is an **air-gap-native, top-tier agentic coding experience**. Its
+centerpiece is the **OpenCode TUI** (MIT), driven by a **local model** (Ollama
+spike / llama.cpp production, loopback only), with **rtmx as the intent layer**
+(the requirements/traceability engine). Running `aegis` launches that TUI inside
+a closed, ITAR-suitable environment.
 
-It is **not** an agent harness. The harness (opencode or Goose), the model
-(a local MoE served on-box), and the requirements engine (rtmx) already exist.
-aegis-cli's only job is the control loop that wires them together:
+aegis-cli **bundles and launches OpenCode; it does not fork or rebuild it.** It
+owns the things a closed-enclave distribution needs *around* the harness:
+air-gap hardening + egress default-deny, the rtmx intent loop (interactive in the
+TUI and headless via `aegis run`), audit, metrics, calibration, and packaging.
+OpenCode owns the agentic UX (tool-calling, file editing, the TUI); rtmx owns
+intent (what to build, traced); the local model does the inference.
 
 ```mermaid
 flowchart LR
-    next["rtmx next --one"] --> drive["harness implements + tests"]
-    drive --> verify["rtmx verify"]
-    verify --> gate{pass / fail}
-    gate -- "pass: close + release" --> next
-    gate -- fail --> escalate["retry / escalate"]
-    escalate --> next
+    user["operator"] --> tui["aegis → OpenCode TUI (bundled, hardened)"]
+    tui <--> model["local model (Ollama / llama.cpp, loopback)"]
+    tui <--> rtmx["rtmx MCP — intent layer (next/claim/verify/set_status)"]
+    tui -.headless.-> run["aegis run — unattended rtmx drain"]
+    run --> rtmx
 ```
 
-The previous Rust implementation tried to be the harness and did not pan out.
-**Do not rebuild the harness.** If a task feels like it needs tool-calling, file
-editing, or sandboxing logic, that belongs to the harness, not here.
+**Do not fork or rebuild OpenCode.** If a task feels like it needs tool-calling,
+file editing, or sandboxing, that is OpenCode's job — configure/drive it, do not
+reimplement it. aegis's code is the bundling, hardening, launch, rtmx wiring, and
+loop around it.
 
 ### The three non-negotiables
 
-1. **Closed by construction.** No component aegis-cli ships or writes may make a
-   network call other than loopback to the local model endpoint. Egress is a
-   build-failing condition, not a warning. See `skills/airgap-hygiene`.
-2. **Thin-orchestrator discipline.** aegis-cli owns only: the loop, retry/escalation
-   policy, audit logging, metrics, and config. Everything else is delegated.
-3. **One requirement at a time.** The loop claims a single rtmx requirement, closes
-   it, releases it, and moves on. Scope is narrowed deliberately so a small local
-   model can succeed and so every change is independently verifiable.
+1. **Closed by construction.** No component aegis ships, bundles, or launches may
+   make a network call other than loopback to the local model endpoint. Egress is
+   a build-failing condition, not a warning — including OpenCode's config (offline,
+   telemetry off, no model-registry fetch). See `skills/airgap-hygiene`.
+2. **Bundle, don't rebuild.** aegis owns distribution, hardening, launch, the rtmx
+   intent loop, audit, metrics, egress guard, and config — and bundles OpenCode +
+   the model + rtmx. It does not fork OpenCode or reimplement the harness.
+3. **rtmx is the intent layer.** Work is scoped by human-authored, test-linked rtmx
+   requirements — interactively in the TUI and headlessly via `aegis run` — one at
+   a time, so a small local model succeeds and every change is independently
+   verifiable. Closure is verify-driven (tests decide done).
 
 ---
 

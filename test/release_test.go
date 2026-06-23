@@ -108,3 +108,14 @@ func TestReleaseSigningVerifiable(t *testing.T) {
 		t.Error("deploy/release must document the public-key location")
 	}
 }
+
+// TestReleaseBundlesOpenCode models REQ-TUI-005: the release bundles the OpenCode
+// binary for offline distribution.
+func TestReleaseBundlesOpenCode(t *testing.T) {
+	rel := readRepoFile(t, "scripts/release.sh")
+	for _, want := range []string{"OPENCODE_BIN", "opencode"} {
+		if !strings.Contains(rel, want) {
+			t.Errorf("release.sh must bundle OpenCode (%q)", want)
+		}
+	}
+}

@@ -71,14 +71,25 @@ go list -m -json all >"$DIST/modules.json" 2>/dev/null || echo '{}' >"$DIST/modu
 python3 scripts/gen-sbom.py "$DIST/modules.json" "$VERSION" >"$DIST/sbom.cdx.json"
 rm -f "$DIST/modules.json"
 
-# BUILD-004: SHA-256 checksums manifest over every artifact.
+# TUI-005: bundle OpenCode (the centerpiece TUI/harness) for offline distribution.
+# Staged on the connected build host and pointed at via OPENCODE_BIN; shipped
+# alongside aegis so a closed enclave installs both from one artifact set.
+if [ -n "${OPENCODE_BIN:-}" ] && [ -x "${OPENCODE_BIN:-}" ]; then
+	cp "$OPENCODE_BIN" "$DIST/opencode"
+	echo "release: bundled OpenCode from $OPENCODE_BIN"
+else
+	echo "release: NOTE — OPENCODE_BIN unset; OpenCode not bundled (stage the opencode binary and set OPENCODE_BIN to ship it)." >&2
+fi
+
+# BUILD-004: SHA-256 checksums manifest over every artifact (aegis binaries,
+# .exe, .deb, the bundled opencode if present, and the SBOM).
 (
 	cd "$DIST"
-	# Cover every artifact: binaries (aegis-*), .exe, .deb (aegis_*), and the SBOM.
+	files="$(ls | grep -v '^SHA256SUMS$')"
 	if command -v sha256sum >/dev/null 2>&1; then
-		sha256sum aegis* sbom.cdx.json >SHA256SUMS
+		sha256sum $files >SHA256SUMS
 	else
-		shasum -a 256 aegis* sbom.cdx.json >SHA256SUMS
+		shasum -a 256 $files >SHA256SUMS
 	fi
 )
 
