@@ -24,11 +24,20 @@ import (
 )
 
 // systemPrompt instructs the model to emit edits in a strict, parseable form.
-const systemPrompt = `You are a disciplined implementer. Make the minimal change to satisfy the requirement and its acceptance test. Reply ONLY with one or more file blocks in this exact form:
+// A one-shot example is included so smaller models reliably emit the ```file
+// block format the parser requires (real-model validation showed small models
+// otherwise reply in prose and the edit fails to parse).
+const systemPrompt = `You are a disciplined implementer. Make the minimal change to satisfy the requirement and its acceptance test. Reply with ONLY one or more file blocks — no prose, no explanation, no markdown fences other than the file blocks. Each block is exactly:
 ` + "```" + `file <relative/path>
 <full file contents>
 ` + "```" + `
-Do not include prose outside the file blocks.`
+For example, to create greet.go you would reply with exactly:
+` + "```" + `file greet.go
+package demo
+
+func Greet() string { return "hello" }
+` + "```" + `
+Output nothing except file blocks.`
 
 // TestRunner runs a requirement's acceptance test in workspace and reports
 // pass/fail. It is injectable so the harness can be tested without invoking a

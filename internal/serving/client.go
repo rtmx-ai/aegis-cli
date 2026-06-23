@@ -272,10 +272,16 @@ func (c *Client) ModelInfo(ctx context.Context) (ModelInfo, error) {
 
 // PreflightSmoke verifies the model actually serves completions by issuing a
 // minimal chat request (SERVE-012). It returns an error if the endpoint is
-// unreachable or does not answer — the fast-fail check before a run.
-func (c *Client) PreflightSmoke(ctx context.Context) error {
+// unreachable or does not answer — the fast-fail check before a run. model is
+// the served model name to request; multi-model backends (e.g. Ollama) reject
+// an unknown name, so pass the configured model. An empty model falls back to
+// "default" for single-model backends (e.g. llama-server) that ignore it.
+func (c *Client) PreflightSmoke(ctx context.Context, model string) error {
+	if model == "" {
+		model = "default"
+	}
 	_, err := c.ChatCompletion(ctx, ChatRequest{
-		Model:     "preflight",
+		Model:     model,
 		Messages:  []Message{{Role: "user", Content: "ping"}},
 		MaxTokens: 1,
 	})

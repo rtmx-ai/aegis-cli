@@ -77,3 +77,15 @@ and decompose into the prefill/decode/verify/harness breakdown (CLAUDE.md §5).
 A model that fails any step is not cleared for unattended operation. Capture the
 preflight/digest error or the ACR delta, fix the cause (wrong model, bad
 calibration, regressed quant), and re-run this procedure from step 1.
+
+## Running the validation as a gated test
+
+The procedure above is executable: with a model served on loopback (e.g. Ollama),
+
+```bash
+AEGIS_REAL_ENDPOINT=http://127.0.0.1:11434 AEGIS_REAL_MODEL=phi4-mini:latest \
+  go test ./test/ -run TestRealModelValidation -v
+```
+
+drives the real serving client + built-in harness against the live model
+(`test/realmodel_manual_test.go`; skipped unless those env vars are set).

@@ -284,7 +284,7 @@ func servingPreflight(endpoint, expectID, expectDigest string) func(ctx context.
 		if err != nil {
 			return err
 		}
-		if err := c.PreflightSmoke(ctx); err != nil {
+		if err := c.PreflightSmoke(ctx, expectID); err != nil {
 			return err
 		}
 		// SERVE-013: model digest/id gate (skipped when unset).

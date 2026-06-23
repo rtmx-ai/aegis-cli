@@ -241,11 +241,11 @@ func TestPreflightSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.PreflightSmoke(context.Background()); err != nil {
+	if err := c.PreflightSmoke(context.Background(), ""); err != nil {
 		t.Errorf("preflight smoke against a live endpoint must pass: %v", err)
 	}
 	mock.Close() // endpoint now dead
-	if err := c.PreflightSmoke(context.Background()); err == nil {
+	if err := c.PreflightSmoke(context.Background(), ""); err == nil {
 		t.Error("preflight smoke against a dead endpoint must fail")
 	}
 }
