@@ -274,6 +274,57 @@ func TestApacheLicensePresent(t *testing.T) {
 	}
 }
 
+// TestCIHardeningGates models REQ-CI-006: the `ci` pipeline runs the hardening
+// gates (lint, race, cover-gate, vuln) on top of the original stages, and CI
+// installs the tools that enforce lint + vuln.
+func TestCIHardeningGates(t *testing.T) {
+	prereqs := makeTargetPrereqs(t, readRepoFile(t, "Makefile"), "ci")
+	for _, gate := range []string{"lint", "race", "cover-gate", "vuln"} {
+		if !strings.Contains(prereqs, gate) {
+			t.Errorf("make ci must run the %q gate (prereqs: %q)", gate, prereqs)
+		}
+	}
+	wf := readRepoFile(t, ".github/workflows/ci.yml")
+	for _, tool := range []string{"golangci-lint", "govulncheck"} {
+		if !strings.Contains(wf, tool) {
+			t.Errorf("CI must install %q so the gate is enforced", tool)
+		}
+	}
+}
+
+// TestCIOSMatrix models REQ-CI-007: CI builds+tests both ship targets via an OS
+// matrix; the macOS leg runs ci-darwin (no linux-only airgap gate).
+func TestCIOSMatrix(t *testing.T) {
+	wf := readRepoFile(t, ".github/workflows/ci.yml")
+	for _, want := range []string{"matrix:", "ubuntu-latest", "macos-latest", "ci-darwin"} {
+		if !strings.Contains(wf, want) {
+			t.Errorf("CI workflow must define the OS matrix element %q", want)
+		}
+	}
+	// ci-darwin must be the full pipeline minus the linux-only airgap gate.
+	darwin := makeTargetPrereqs(t, readRepoFile(t, "Makefile"), "ci-darwin")
+	if strings.Contains(darwin, "airgap") {
+		t.Error("ci-darwin must NOT run the linux-only airgap gate")
+	}
+	for _, gate := range []string{"test", "race", "cover-gate"} {
+		if !strings.Contains(darwin, gate) {
+			t.Errorf("ci-darwin must still run %q", gate)
+		}
+	}
+}
+
+// TestCoverGateConfigured models REQ-CI-008: a coverage-regression gate exists
+// with an explicit floor.
+func TestCoverGateConfigured(t *testing.T) {
+	mk := readRepoFile(t, "Makefile")
+	if !strings.Contains(mk, "cover-gate:") {
+		t.Error("Makefile must define a cover-gate target")
+	}
+	if !strings.Contains(mk, "COVER_MIN") {
+		t.Error("cover-gate must be governed by an explicit COVER_MIN floor")
+	}
+}
+
 // runAirgapRaw invokes the gate with no `--` separator and returns the exit code.
 func runAirgapRaw(t *testing.T) int {
 	t.Helper()

@@ -9,24 +9,58 @@
 pipeline: aegis-cli
 source_of_truth: Makefile        # `make ci` is the executable pipeline
 runners:
-  - github-actions: .github/workflows/ci.yml   # runs `make ci`
+  - github-actions: .github/workflows/ci.yml   # OS matrix: linux runs `make ci`, macOS runs `make ci-darwin`
   - git-hook: pre-push                          # runs `make ci`
   - git-hook: pre-commit                        # runs `make ci-fast` (fast subset)
+
+# OS matrix validates both ship targets (CLAUDE.md §2). The linux leg runs the
+# full `make ci` incl. the netns egress gate (the real EGRESS=0 ITAR proof). The
+# macOS leg runs `make ci-darwin` (= `make ci` minus airgap) for darwin-metal
+# build/test parity — verify-airgap.sh's netns/ss proof is linux-only, so the
+# egress gate is enforced on the linux enclave host + linux CI leg, never on macOS.
+os_matrix:
+  - os: ubuntu-latest   # linux-cpu — full `make ci`, fail-closed airgap (AIRGAP_STRICT=1)
+  - os: macos-latest    # darwin-metal — `make ci-darwin` (no linux-only airgap step)
 
 # Ordered stages. Each maps to make targets composed by `make ci`.
 stages:
   - id: build
     name: Reproducible offline build
-    make: [fmt-check, vet, build]
+    make: [fmt-check, lint, vet, build]
     description: >
-      gofmt-clean check, go vet, and an offline/vendored build of the static
-      aegis binary. No network fetch (BUILD-001).
+      gofmt-clean check, golangci-lint (govet/staticcheck/ineffassign/errcheck/
+      unused/gofmt/gosimple/misspell), go vet, and an offline/vendored build of
+      the static aegis binary. No network fetch (BUILD-001). lint also runs in
+      ci-fast (pre-commit). golangci-lint is installed + enforced in CI; locally
+      it degrades to a note if absent.
 
   - id: unit
     name: Unit + integration tests
     make: [test]
     description: >
       go test ./... — unit and stub-harness loop integration tests.
+
+  - id: race
+    name: Race detector
+    make: [race]
+    description: >
+      go test -race ./... — the suite must pass cleanly under the data-race
+      detector (no flaky concurrency in the loop's generate/verify phasing).
+
+  - id: cover-regression
+    name: Coverage-regression gate
+    make: [cover-gate]
+    description: >
+      Module statement coverage (reusing the `cover` profile, -coverpkg=./...)
+      must not fall below the COVER_MIN floor (currently 70%; measured ~77.9%).
+      Prints measured vs floor and fails below it.
+
+  - id: vuln
+    name: Vulnerability scan
+    make: [vuln]
+    description: >
+      govulncheck ./... — fails on known vulnerabilities in the dependency
+      graph. Installed + enforced in CI; locally degrades to a note if absent.
 
   - id: airgap-gate
     name: Egress gate

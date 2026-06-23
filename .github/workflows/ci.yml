@@ -19,8 +19,20 @@ permissions:
   contents: read
 
 jobs:
+  # Build/test MATRIX over both ship targets (CLAUDE.md §2: linux-cpu + darwin-metal).
+  #   - ubuntu-latest runs the FULL `make ci` incl. the linux-only netns egress
+  #     gate, fail-closed (AIRGAP_STRICT=1). This is the real ITAR EGRESS=0 proof.
+  #   - macos-latest runs `make ci-darwin` (= `make ci` minus the airgap step):
+  #     scripts/verify-airgap.sh relies on `unshare -rn` / `ss`, both linux-only,
+  #     so the netns proof CANNOT run on macOS. The macOS leg is for darwin-metal
+  #     build/test parity ONLY — the egress proof is enforced on the linux enclave
+  #     host and the linux CI leg, never claimed here.
   ci:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,22 +47,34 @@ jobs:
         with:
           python-version: "3"
 
-      # The ONLY network step: install the rtmx binary into the CI toolchain.
-      # This is CI *setup*, not part of the build — `make ci` itself runs offline
-      # (vendored/std-lib build, egress gate, golden metrics) and never fetches.
-      - name: Install rtmx (toolchain setup — the only network step)
+      # CI toolchain setup (the network steps). `make ci`/`ci-darwin` themselves
+      # run offline — vendored/std-lib build, egress gate, golden metrics — and
+      # never fetch. golangci-lint and govulncheck are installed here so the
+      # lint/vuln gates are ENFORCED in CI (locally they degrade to a note).
+      - name: Install rtmx (toolchain setup)
         run: go install github.com/rtmx-ai/rtmx/cmd/rtmx@latest
+
+      - name: Install golangci-lint (toolchain setup — enforces `make lint`)
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+      - name: Install govulncheck (toolchain setup — enforces `make vuln`)
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Add Go bin to PATH
         run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      # The single build step: the same pipeline the pre-push hook runs locally.
-      # AIRGAP_STRICT=1 makes the egress gate fail-closed in CI (the dev-host
-      # pass-with-note concession in verify-airgap.sh is disabled here).
-      - name: make ci (single source of truth — identical to local pre-push)
+      # Single build step per leg: the same pipeline the pre-push hook runs.
+      # Linux = full `make ci` (incl. fail-closed netns egress gate).
+      - name: make ci (linux — single source of truth, full egress gate)
+        if: runner.os == 'Linux'
         env:
           AIRGAP_STRICT: "1"
         run: make ci
+
+      # macOS = `make ci-darwin` (full pipeline minus the linux-only airgap step).
+      - name: make ci-darwin (macOS — darwin-metal build/test parity)
+        if: runner.os == 'macOS'
+        run: make ci-darwin
 
   # Publish the live README badge data (coverage, version) on every green main
   # build. Pushes shields "endpoint" JSON to the orphan `badges` branch — NOT

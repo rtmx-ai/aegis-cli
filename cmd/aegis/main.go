@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rtmx-ai/aegis-cli/internal/config"
+	"github.com/rtmx-ai/aegis-cli/internal/install"
 )
 
 // version is the build version, overridable via -ldflags.
@@ -31,6 +32,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	cmd, rest := args[0], args[1:]
 	switch cmd {
+	case "init":
+		return cmdInit(rest, stdout, stderr)
 	case "run":
 		return cmdRun(rest, stdout, stderr)
 	case "status":
@@ -59,6 +62,9 @@ func usage(w io.Writer) {
 usage: aegis <command> [flags]
 
 commands:
+  init [--dry-run] [--force] [--config PATH]
+                detect host capabilities, plan target/tier/calibration, and
+                write an offline-safe config (then calibrate + verify air-gap)
   run [--once] [--max N] [--break-after M] [--budget DUR] [--config PATH]
                 drain the backlog (or one iteration with --once)
   status        report backlog + endpoint status
@@ -77,6 +83,38 @@ func loadConfig(path string, stderr io.Writer) (config.Config, bool) {
 		return cfg, false
 	}
 	return cfg, true
+}
+
+// cmdInit implements `aegis init`: detect host capabilities, build the install
+// plan (target/tier/calibration/offline-safe config), print a readable summary,
+// and — unless --dry-run — write the config. Logic lives in internal/install;
+// this handler is just flag parsing + I/O.
+func cmdInit(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	dryRun := fs.Bool("dry-run", false, "print the plan but write nothing")
+	force := fs.Bool("force", false, "overwrite an existing config file")
+	cfgPath := fs.String("config", "aegis.json", "config file path to write")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	caps := install.Detect()
+	plan := install.Plan(caps)
+
+	// Write the config first (when not a dry run) so the summary reflects what
+	// actually happened: an existing-file conflict fails before we claim a write.
+	if !*dryRun {
+		if err := install.WriteConfig(*cfgPath, plan.Config, *force); err != nil {
+			fmt.Fprintf(stderr, "aegis: init: %v\n", err)
+			return 1
+		}
+	}
+	if err := install.WritePlan(stdout, plan, *cfgPath, *dryRun); err != nil {
+		fmt.Fprintf(stderr, "aegis: init: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 // cmdRun implements `aegis run`.

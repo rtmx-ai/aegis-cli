@@ -1,0 +1,43 @@
+# .golangci.yml — lint config for aegis-cli (CLAUDE.md §8 Go conventions).
+#
+# Sensible, not overbearing: the standard correctness/hygiene linters, no
+# style-bikeshedding ones. `make lint` runs `golangci-lint run ./...`; CI
+# installs golangci-lint and enforces it (a dev box without it degrades to a
+# note via the Makefile, so it never hard-blocks local work).
+#
+# Targets Go 1.23 (matches go.mod).
+
+run:
+  timeout: 5m
+  go: "1.23"
+
+linters:
+  # Start from a clean slate and enable exactly the set we want, so a
+  # golangci-lint version bump can't silently turn on noisy new linters.
+  disable-all: true
+  enable:
+    - govet        # suspicious constructs (superset of `go vet`)
+    - staticcheck  # broad correctness + simplification analysis
+    - ineffassign  # ineffectual assignments
+    - errcheck     # unchecked errors (the air-gap/audit code must not drop them)
+    - unused       # unused code
+    - gofmt        # gofmt-clean (mirrors `make fmt-check`)
+    - gosimple     # simplifications
+    - misspell     # commonly misspelled English in comments/strings
+
+linters-settings:
+  misspell:
+    locale: US
+
+issues:
+  # Don't cap findings — show everything.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    # Tests legitimately ignore errors on cleanup/best-effort calls and use
+    # throwaway assignments; keep errcheck/unused noise out of _test.go so the
+    # gate stays focused on shipping code.
+    - path: _test\.go
+      linters:
+        - errcheck
+        - unused
