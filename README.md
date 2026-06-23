@@ -1,5 +1,13 @@
 # aegis-cli
 
+[![CI](https://github.com/rtmx-ai/aegis-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/rtmx-ai/aegis-cli/actions/workflows/ci.yml)
+[![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/rtmx-ai/aegis-cli/badges/coverage.json)](https://github.com/rtmx-ai/aegis-cli/actions/workflows/ci.yml)
+[![version](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/rtmx-ai/aegis-cli/badges/version.json)](https://github.com/rtmx-ai/aegis-cli/blob/main/VERSION)
+[![Go Report Card](https://goreportcard.com/badge/github.com/rtmx-ai/aegis-cli)](https://goreportcard.com/report/github.com/rtmx-ai/aegis-cli)
+[![License](https://img.shields.io/github/license/rtmx-ai/aegis-cli)](LICENSE)
+
+<sub>CI status, statement coverage, and component version regenerate live on every green `main` build (`make badges` → `badges` branch); Go grade is served by goreportcard.com; license reads from `LICENSE` (Apache-2.0).</sub>
+
 A **thin orchestrator** that drives a coding agent through a requirements-driven
 build loop inside a closed, air-gap-suitable environment. It is *not* an agent
 harness. The harness (opencode or Goose), the model (a local MoE served on-box),

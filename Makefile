@@ -24,6 +24,9 @@ PKG           := ./cmd/aegis
 GOLDEN        := eval/golden
 BASELINE      := eval/baseline.json
 AIRGAP_CMD    := $(BIN) version
+VERSION       := $(shell tr -d ' \n' < VERSION 2>/dev/null || echo dev)
+LDFLAGS       := -ldflags "-s -w -X main.version=$(VERSION)"
+COVERPROFILE  := coverage.out
 
 # Pick vendored mode only when a real vendor/ tree exists; otherwise build
 # offline against the module cache with no network (GOPROXY=off).
@@ -33,7 +36,7 @@ else
 GO_BUILD_ENV  := GOFLAGS=-mod=vendor
 endif
 
-.PHONY: all build fmt fmt-check vet test airgap metrics \
+.PHONY: all build fmt fmt-check vet test cover airgap metrics badges \
         ci ci-fast hooks-install clean help
 
 all: build
@@ -41,7 +44,7 @@ all: build
 ## build: compile the static aegis binary offline (vendored if vendor/ exists)
 build:
 	@mkdir -p $(BIN_DIR)
-	$(GO_BUILD_ENV) $(GO) build -o $(BIN) $(PKG)
+	$(GO_BUILD_ENV) $(GO) build $(LDFLAGS) -o $(BIN) $(PKG)
 
 ## fmt: format all Go sources in place
 fmt:
@@ -62,6 +65,15 @@ vet:
 ## test: run the unit + integration test suite
 test:
 	$(GO) test ./...
+
+## cover: run tests with coverage and print the module total
+cover:
+	$(GO) test -coverpkg=./... -coverprofile=$(COVERPROFILE) ./...
+	@$(GO) tool cover -func=$(COVERPROFILE) | awk '/^total:/ {print "total coverage: "$$3}'
+
+## badges: regenerate live README badge data (coverage, version) into badges/
+badges:
+	scripts/gen-badges.sh
 
 ## airgap: EGRESS=0 gate — run a representative command under egress capture
 airgap: build

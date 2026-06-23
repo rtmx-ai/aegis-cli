@@ -220,6 +220,60 @@ func TestOperatorDocsPresent(t *testing.T) {
 	}
 }
 
+// TestReadmeBadgesPresent models REQ-DOCS-002: the README carries the five live
+// status badges, the badge generator emits valid shields "endpoint" JSON for the
+// two computed badges, and CI regenerates them each run via `make badges`.
+func TestReadmeBadgesPresent(t *testing.T) {
+	readme := readRepoFile(t, "README.md")
+	badges := map[string]string{
+		"CI status": "actions/workflows/ci.yml/badge.svg",
+		"coverage":  "raw.githubusercontent.com/rtmx-ai/aegis-cli/badges/coverage.json",
+		"version":   "raw.githubusercontent.com/rtmx-ai/aegis-cli/badges/version.json",
+		"Go grade":  "goreportcard.com/badge/github.com/rtmx-ai/aegis-cli",
+		"license":   "img.shields.io/github/license/rtmx-ai/aegis-cli",
+	}
+	for name, frag := range badges {
+		if !strings.Contains(readme, frag) {
+			t.Errorf("README missing the %s badge (expected URL fragment %q)", name, frag)
+		}
+	}
+	// The generator must emit a valid shields endpoint payload (schemaVersion +
+	// label + message) for both computed badges. Assert on the script source so
+	// the test never re-invokes coverage (which would recurse into `go test`).
+	gen := readRepoFile(t, "scripts/gen-badges.sh")
+	for _, key := range []string{`"schemaVersion":1`, "coverage.json", "version.json"} {
+		if !strings.Contains(gen, key) {
+			t.Errorf("gen-badges.sh must emit %q", key)
+		}
+	}
+	// CI must regenerate the badge data each run via the single-source target.
+	wf := readRepoFile(t, ".github/workflows/ci.yml")
+	if !strings.Contains(wf, "make badges") || !strings.Contains(wf, "badges:") {
+		t.Error("CI workflow must have a badges job that runs `make badges`")
+	}
+}
+
+// TestApacheLicensePresent models REQ-DOCS-003: the project is licensed
+// Apache-2.0 with LICENSE + NOTICE present and the README license badge links it.
+func TestApacheLicensePresent(t *testing.T) {
+	lic := readRepoFile(t, "LICENSE")
+	for _, want := range []string{"Apache License", "Version 2.0", "ioTACTICAL LLC"} {
+		if !strings.Contains(lic, want) {
+			t.Errorf("LICENSE must contain %q", want)
+		}
+	}
+	if strings.Contains(lic, "[name of copyright owner]") {
+		t.Error("LICENSE still has the unfilled copyright placeholder")
+	}
+	notice := readRepoFile(t, "NOTICE")
+	if !strings.Contains(notice, "ioTACTICAL LLC") {
+		t.Error("NOTICE must assert the ioTACTICAL LLC copyright")
+	}
+	if !strings.Contains(readRepoFile(t, "README.md"), "](LICENSE)") {
+		t.Error("README license badge must link to LICENSE")
+	}
+}
+
 // runAirgapRaw invokes the gate with no `--` separator and returns the exit code.
 func runAirgapRaw(t *testing.T) int {
 	t.Helper()

@@ -23,6 +23,9 @@ rtmx-results.json
 *.gguf
 /models/
 
+# Generated badge data — published to the orphan `badges` branch, not tracked on main
+/badges/
+
 # Editor / OS cruft
 .DS_Store
 .idea/
