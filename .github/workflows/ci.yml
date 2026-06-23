@@ -84,13 +84,16 @@ jobs:
     needs: ci
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    # Cosmetic: badge publishing must never fail the build. The data is
+    # regenerated every run, so a transient publish hiccup is harmless.
+    continue-on-error: true
     permissions:
       contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Go 1.23
+      - name: Set up Go 1.25.11
         uses: actions/setup-go@v5
         with:
           go-version: "1.25.11"
@@ -98,24 +101,22 @@ jobs:
       - name: Regenerate badge data (make badges — single source of truth)
         run: make badges
 
-      - name: Publish to the orphan `badges` branch
+      # Publish to the `badges` branch by force-pushing a clean single-commit
+      # orphan built in a scratch dir. This avoids the main working tree (where a
+      # `badges/` directory makes `git checkout badges` ambiguous) and sidesteps
+      # fast-forward conflicts — the branch is machine-generated data, no history.
+      - name: Publish badges branch
         env:
-          GIT_AUTHOR_NAME: github-actions[bot]
-          GIT_AUTHOR_EMAIL: github-actions[bot]@users.noreply.github.com
-          GIT_COMMITTER_NAME: github-actions[bot]
-          GIT_COMMITTER_EMAIL: github-actions[bot]@users.noreply.github.com
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
-          tmp="$(mktemp -d)"
-          cp badges/*.json "$tmp/"
-          git fetch origin badges 2>/dev/null && git checkout badges \
-            || git checkout --orphan badges
-          git rm -rf . >/dev/null 2>&1 || true
-          cp "$tmp"/*.json .
-          git add -A ./*.json
-          if git diff --cached --quiet; then
-            echo "badges unchanged; nothing to publish"
-          else
-            git commit -m "ci: update live badges (coverage, version) [skip ci]"
-            git push origin badges
-          fi
+          wt="$(mktemp -d)"
+          cp badges/*.json "$wt/"
+          cd "$wt"
+          git init -q
+          git checkout -q -b badges
+          git add ./*.json
+          git -c user.name='github-actions[bot]' \
+              -c user.email='github-actions[bot]@users.noreply.github.com' \
+              commit -q -m "ci: update live badges (coverage, version) [skip ci]"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" badges
