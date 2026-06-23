@@ -78,3 +78,21 @@ func TestLoadMissingReturnsDefaults(t *testing.T) {
 		t.Errorf("harness = %q, want default opencode", c.Harness)
 	}
 }
+
+// TestHarnessSelectionBuiltin models HARNESS-010: config selects the harness
+// implementation; "builtin" (the serving-backed harness) is valid alongside the
+// external harnesses, and an unknown value is rejected.
+func TestHarnessSelectionBuiltin(t *testing.T) {
+	for _, h := range []Harness{HarnessBuiltin, HarnessOpenCode, HarnessGoose} {
+		c := Default()
+		c.Harness = h
+		if err := Validate(c); err != nil {
+			t.Errorf("harness %q must be valid: %v", h, err)
+		}
+	}
+	c := Default()
+	c.Harness = "bogus"
+	if err := Validate(c); err == nil {
+		t.Error("unknown harness must be rejected")
+	}
+}

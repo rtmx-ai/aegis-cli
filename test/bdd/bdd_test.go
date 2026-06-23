@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -71,6 +72,9 @@ type world struct {
 
 	caps install.HostCaps
 	plan install.InstallPlan
+
+	workspace string
+	editedRel string
 }
 
 func (w *world) reset() {
@@ -268,8 +272,12 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 		if w.mock != nil {
 			w.mock.Close()
 		}
+		if w.workspace != "" {
+			_ = os.RemoveAll(w.workspace)
+		}
 		return ctx, nil
 	})
+	w.registerHarnessSteps(sc)
 
 	sc.Step(`^a mock model endpoint on loopback$`, w.aMockModelEndpointOnLoopback)
 	sc.Step(`^a backlog with one requirement that will verify successfully$`, w.oneReqVerifiesOK)

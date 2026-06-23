@@ -13,8 +13,28 @@ import (
 	"time"
 
 	"github.com/rtmx-ai/aegis-cli/internal/config"
+	"github.com/rtmx-ai/aegis-cli/internal/harness"
+	"github.com/rtmx-ai/aegis-cli/internal/harness/goose"
+	"github.com/rtmx-ai/aegis-cli/internal/harness/opencode"
+	servingharness "github.com/rtmx-ai/aegis-cli/internal/harness/serving"
 	"github.com/rtmx-ai/aegis-cli/internal/install"
 )
+
+// selectHarness constructs the harness adapter the config selects (HARNESS-010).
+// The built-in serving-backed harness needs no external process; opencode/goose
+// remain selectable behind the same seam.
+func selectHarness(cfg config.Config) (harness.Adapter, error) {
+	switch cfg.Harness {
+	case config.HarnessBuiltin:
+		return servingharness.New(cfg.Endpoint)
+	case config.HarnessOpenCode:
+		return opencode.New(""), nil
+	case config.HarnessGoose:
+		return goose.New(""), nil
+	default:
+		return nil, fmt.Errorf("unknown harness %q", cfg.Harness)
+	}
+}
 
 // version is the build version, overridable via -ldflags.
 var version = "dev"
@@ -147,14 +167,20 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// The scaffold wires config but defers live rtmx/harness connection to the
-	// LOOP/RTMX/HARNESS requirements. Report the resolved plan deterministically.
+	// Select the harness adapter the config names (HARNESS-010). The built-in
+	// serving-backed harness is constructed here; live rtmx connection + loop
+	// drive remain wired in the LOOP/RTMX requirements.
+	adapter, err := selectHarness(cfg)
+	if err != nil {
+		fmt.Fprintf(stderr, "aegis: harness: %v\n", err)
+		return 1
+	}
 	mode := "drain"
 	if *once {
 		mode = "once"
 	}
 	fmt.Fprintf(stdout, "aegis run: mode=%s harness=%s target=%s endpoint=%s max=%d break-after=%d budget=%s\n",
-		mode, cfg.Harness, cfg.Target, cfg.Endpoint, cfg.Budget.MaxRequirements, cfg.BreakAfter, cfg.Budget.WallClock)
+		mode, adapter.Name(), cfg.Target, cfg.Endpoint, cfg.Budget.MaxRequirements, cfg.BreakAfter, cfg.Budget.WallClock)
 	_ = context.Background()
 	_ = time.Now
 	return 0

@@ -20,6 +20,9 @@ type Harness string
 
 // Supported harnesses.
 const (
+	// HarnessBuiltin is the in-binary serving-backed harness (no external
+	// harness process; drives the local model over loopback directly).
+	HarnessBuiltin  Harness = "builtin"
 	HarnessOpenCode Harness = "opencode"
 	HarnessGoose    Harness = "goose"
 )
@@ -119,7 +122,7 @@ func Validate(c Config) error {
 		return fmt.Errorf("config: endpoint %q is not loopback (egress is build-failing)", c.Endpoint)
 	}
 	switch c.Harness {
-	case HarnessOpenCode, HarnessGoose:
+	case HarnessBuiltin, HarnessOpenCode, HarnessGoose:
 	default:
 		return fmt.Errorf("config: unknown harness %q", c.Harness)
 	}
