@@ -49,6 +49,7 @@ jobs:
         with:
           files: |
             dist/aegis-*
+            dist/aegis_*.deb
             dist/sbom.cdx.json
             dist/SHA256SUMS
             dist/SHA256SUMS.minisig

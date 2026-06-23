@@ -13,9 +13,10 @@ release with a CycloneDX SBOM** — an artifact set built once on a connected
 build host, then transferred into a closed enclave on a stage-then-disconnect
 basis and **verified in-enclave with no online dependency**.
 
-In scope: a cross-compiled static release build for the two ship targets
-(`linux-cpu` Ryzen → linux/amd64 + linux/arm64; `darwin-metal` M-series →
-darwin/arm64), a CycloneDX SBOM derived from the vendored module set, a
+In scope: a cross-compiled static release build for the ship targets
+(`linux-cpu` → linux/amd64 + linux/arm64; `darwin-metal` → darwin/arm64 Apple
+Silicon + darwin/amd64 Intel; plus windows/amd64), Debian (.deb) packages for the
+Linux targets, a CycloneDX SBOM derived from the vendored module set, a
 SHA-256 checksums manifest, offline detached signatures over that manifest, the
 reproducibility procedure for a given commit, and the tag-triggered workflow
 that emits the full set. Out of scope: OS-native packaging (`.msi`/`.deb`/`.rpm`
@@ -45,8 +46,8 @@ steps** — they do not perform a full cross-build on every PR.
   CycloneDX SBOM, the `SHA256SUMS` manifest, and the detached signature(s) over
   that manifest.
 - **Ship targets** — the two procured hosts from `docs/hardware-purchase-spec.md`:
-  `linux-cpu` (Ryzen, → linux/amd64 + linux/arm64) and `darwin-metal` (M-series,
-  → darwin/arm64).
+  `linux-cpu` (→ linux/amd64 + linux/arm64), `darwin-metal` (→ darwin/arm64 Apple
+  Silicon + darwin/amd64 Intel), and windows/amd64.
 - **Checksums manifest** — a `SHA256SUMS` file with one `sha256  filename` line
   per non-signature artifact (every binary + the SBOM), in the standard
   `sha256sum -c` format.
@@ -67,7 +68,8 @@ linked to the inspection test that closes it via `rtmx verify`.
 
 ### REQ-BUILD-002 — Reproducible static cross-compiled release build
 **The release build shall** cross-compile a static binary for each ship target
-(linux/amd64, linux/arm64, darwin/arm64) with `CGO_ENABLED=0`, `-trimpath`, and
+(linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64) with
+`CGO_ENABLED=0`, `-trimpath`, and
 the version + commit stamped via `-ldflags -X`, producing one named artifact per
 target.
 *Rationale:* the two procured hosts (`docs/hardware-purchase-spec.md`) need a
@@ -133,6 +135,15 @@ supports a verify/repro mode), addressing `SOURCE_DATE_EPOCH` and `-buildvcs`
 considerations; an inspection confirms the offline flags and the documented
 identical-rebuild procedure.
 *Test:* `test::TestReleaseIsOfflineReproducible`. *Depends on:* REQ-BUILD-002.
+
+### REQ-BUILD-008 — Debian packages for the Linux targets
+**The release build shall** produce Debian (`.deb`) packages for the Linux ship
+targets (amd64, arm64) via `dpkg-deb`, installing the binary to `/usr/bin/aegis`.
+*Rationale:* `.deb` is the native install path for Debian/Ubuntu enclave hosts;
+it rides the same offline, checksummed, signed artifact set. *Acceptance:*
+`aegis_<version>_amd64.deb` and `_arm64.deb` are built and covered by the
+checksums manifest. *Test:* `test::TestDebianPackagingConfigured`. *Depends on:*
+REQ-BUILD-002.
 
 ### REQ-BUILD-007 — Tag-triggered release workflow emits the full set
 **When** a version tag is pushed, **the release workflow shall** build the

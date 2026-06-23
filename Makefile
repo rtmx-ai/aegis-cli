@@ -27,6 +27,7 @@ AIRGAP_CMD    := $(BIN) version
 VERSION       := $(shell tr -d ' \n' < VERSION 2>/dev/null || echo dev)
 LDFLAGS       := -ldflags "-s -w -X main.version=$(VERSION)"
 COVERPROFILE  := coverage.out
+GOBIN_DIR     := $(shell $(GO) env GOPATH)/bin
 
 # Coverage-regression floor: `make cover-gate` fails if module statement
 # coverage drops below this. Set at a round value the current total clears with
@@ -87,12 +88,14 @@ cover-gate: cover
 	echo "cover-gate: OK"
 
 ## lint: run golangci-lint (degrades to a note if not installed — CI enforces it)
+## Resolves the tool from PATH OR $(GOPATH)/bin, so the git hooks (which run with
+## a minimal PATH) still find a `go install`-ed linter — closing the parity gap
+## that let lint findings reach CI green-locally.
 lint:
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run ./...; \
-	else \
-		echo "lint: note — golangci-lint not installed; skipping locally (CI installs + enforces it)."; \
-	fi
+	@bin="$$(command -v golangci-lint || true)"; \
+	[ -n "$$bin" ] || { [ -x "$(GOBIN_DIR)/golangci-lint" ] && bin="$(GOBIN_DIR)/golangci-lint"; }; \
+	if [ -n "$$bin" ]; then "$$bin" run ./...; \
+	else echo "lint: note — golangci-lint not installed (PATH or $(GOBIN_DIR)); CI installs + enforces it."; fi
 
 ## race: run the test suite under the race detector
 race:
@@ -100,11 +103,10 @@ race:
 
 ## vuln: run govulncheck (degrades to a note if not installed — CI enforces it)
 vuln:
-	@if command -v govulncheck >/dev/null 2>&1; then \
-		govulncheck ./...; \
-	else \
-		echo "vuln: note — govulncheck not installed; skipping locally (CI installs + enforces it)."; \
-	fi
+	@bin="$$(command -v govulncheck || true)"; \
+	[ -n "$$bin" ] || { [ -x "$(GOBIN_DIR)/govulncheck" ] && bin="$(GOBIN_DIR)/govulncheck"; }; \
+	if [ -n "$$bin" ]; then "$$bin" ./...; \
+	else echo "vuln: note — govulncheck not installed (PATH or $(GOBIN_DIR)); CI installs + enforces it."; fi
 
 ## badges: regenerate live README badge data (coverage, version) into badges/
 badges:

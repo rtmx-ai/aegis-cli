@@ -9,7 +9,7 @@ import (
 // for the ship targets, stamped + trimmed.
 func TestReleaseBuildMatrixConfigured(t *testing.T) {
 	rel := readRepoFile(t, "scripts/release.sh")
-	for _, want := range []string{"CGO_ENABLED=0", "-trimpath", "main.version", "linux/amd64", "linux/arm64", "darwin/arm64"} {
+	for _, want := range []string{"CGO_ENABLED=0", "-trimpath", "main.version", "linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64", "windows/amd64"} {
 		if !strings.Contains(rel, want) {
 			t.Errorf("release.sh must configure %q", want)
 		}
@@ -71,6 +71,17 @@ func TestReleaseWorkflowConfigured(t *testing.T) {
 	for _, want := range []string{"tags:", "make release", "SHA256SUMS", "sbom.cdx.json"} {
 		if !strings.Contains(wf, want) {
 			t.Errorf("release workflow must configure %q", want)
+		}
+	}
+}
+
+// TestDebianPackagingConfigured → REQ-BUILD-008: release builds .deb packages
+// for the Linux targets.
+func TestDebianPackagingConfigured(t *testing.T) {
+	rel := readRepoFile(t, "scripts/release.sh")
+	for _, want := range []string{"dpkg-deb", "build_deb", "amd64", "arm64", "Architecture:"} {
+		if !strings.Contains(rel, want) {
+			t.Errorf("release.sh must build .deb packages (%q)", want)
 		}
 	}
 }

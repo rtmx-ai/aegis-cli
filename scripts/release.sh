@@ -28,14 +28,43 @@ mkdir -p "$DIST"
 export CGO_ENABLED=0 GOPROXY=off GOFLAGS=-mod=vendor
 LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$COMMIT"
 
-# BUILD-002: static cross-compiled matrix for the ship targets.
-TARGETS="linux/amd64 linux/arm64 darwin/arm64"
+# BUILD-002: static cross-compiled matrix for the ship targets — Linux (amd64 +
+# arm64), macOS Apple Silicon (arm64) AND Intel (amd64), and Windows (amd64).
+TARGETS="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64"
 for t in $TARGETS; do
 	os="${t%/*}"; arch="${t#*/}"
 	out="$DIST/aegis-$VERSION-$os-$arch"
+	[ "$os" = "windows" ] && out="$out.exe"
 	echo "release: building $out"
 	GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "$LDFLAGS" -o "$out" ./cmd/aegis
 done
+
+# BUILD-008: Debian (.deb) packages for the Linux targets.
+build_deb() {
+	deb_arch="$1"
+	bin="$DIST/aegis-$VERSION-linux-$deb_arch"
+	if ! command -v dpkg-deb >/dev/null 2>&1; then
+		echo "release: NOTE — dpkg-deb not found; skipping .deb for $deb_arch (CI ubuntu has it)." >&2
+		return 0
+	fi
+	root="$(mktemp -d)"
+	mkdir -p "$root/usr/bin" "$root/DEBIAN"
+	install -m 0755 "$bin" "$root/usr/bin/aegis"
+	cat >"$root/DEBIAN/control" <<CTL
+Package: aegis
+Version: $VERSION
+Section: utils
+Priority: optional
+Architecture: $deb_arch
+Maintainer: ioTACTICAL LLC <dev@rtmx.ai>
+Description: aegis-cli — thin requirements-loop orchestrator for closed/air-gapped environments
+CTL
+	dpkg-deb --root-owner-group --build "$root" "$DIST/aegis_${VERSION}_${deb_arch}.deb" >/dev/null
+	rm -rf "$root"
+	echo "release: built $DIST/aegis_${VERSION}_${deb_arch}.deb"
+}
+build_deb amd64
+build_deb arm64
 
 # BUILD-003: CycloneDX SBOM from the vendored module set.
 go list -m -json all >"$DIST/modules.json" 2>/dev/null || echo '{}' >"$DIST/modules.json"
@@ -45,10 +74,11 @@ rm -f "$DIST/modules.json"
 # BUILD-004: SHA-256 checksums manifest over every artifact.
 (
 	cd "$DIST"
+	# Cover every artifact: binaries (aegis-*), .exe, .deb (aegis_*), and the SBOM.
 	if command -v sha256sum >/dev/null 2>&1; then
-		sha256sum aegis-* sbom.cdx.json >SHA256SUMS
+		sha256sum aegis* sbom.cdx.json >SHA256SUMS
 	else
-		shasum -a 256 aegis-* sbom.cdx.json >SHA256SUMS
+		shasum -a 256 aegis* sbom.cdx.json >SHA256SUMS
 	fi
 )
 
