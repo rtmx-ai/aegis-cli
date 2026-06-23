@@ -1,0 +1,30 @@
+# deploy/goose — hardened Goose harness config (MCP-native contender).
+#
+# Air-gap posture baked in: local loopback model only, local stdio extensions
+# only, telemetry/update phone-home off. Goose is the MCP-native bake-off
+# contender against opencode (CLAUDE.md §2); decide by metrics, not assumption.
+
+# Model provider: the loopback OpenAI-compatible endpoint (llama-server/Ollama).
+GOOSE_PROVIDER: openai
+GOOSE_MODEL: local-moe
+
+# OpenAI-compatible provider pointed at loopback. No remote host, ever.
+OPENAI_HOST: http://127.0.0.1:8080
+OPENAI_BASE_PATH: /v1/chat/completions
+OPENAI_API_KEY: not-needed-loopback
+
+# Telemetry / update phone-home OFF (egress vectors — GUARD gate).
+GOOSE_TELEMETRY_ENABLED: false
+GOOSE_DISABLE_UPDATE_CHECK: true
+
+# Extensions: LOCAL stdio only. The rtmx requirements engine is registered as a
+# stdio MCP server — the dev-loop foundation. No remote/SSE extensions allowed.
+extensions:
+  rtmx:
+    enabled: true
+    type: stdio
+    cmd: rtmx
+    args:
+      - mcp-server
+      - --stdio
+    envs: {}

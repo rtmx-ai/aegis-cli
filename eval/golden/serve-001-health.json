@@ -1,0 +1,18 @@
+{
+  "requirement_id": "REQ-SERVE-001",
+  "description": "Local model endpoint answers a loopback health probe within 2s",
+  "closed": true,
+  "escalated": false,
+  "first_pass": true,
+  "turns": 2,
+  "tool_calls": 4,
+  "valid_tool_calls": 4,
+  "tokens": 1800,
+  "wall_clock_ms": 9000,
+  "stages_ms": {
+    "prefill": 1200,
+    "decode": 4200,
+    "verify": 2600,
+    "harness_overhead": 1000
+  }
+}

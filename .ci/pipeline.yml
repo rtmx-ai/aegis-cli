@@ -1,0 +1,64 @@
+# .ci/pipeline.yml — canonical pipeline STAGE description (CLAUDE.md §3).
+#
+# This is a DECLARATIVE description of the pipeline stages and their hard gates.
+# It documents what `make ci` implements; the Makefile is the single source of
+# truth and the actual executor (GitHub Actions and the pre-push hook both run
+# `make ci`). Keep this file consistent with the Makefile `ci` target — if they
+# drift, fix one of them (CLAUDE.md §8: don't let doc and code diverge).
+
+pipeline: aegis-cli
+source_of_truth: Makefile        # `make ci` is the executable pipeline
+runners:
+  - github-actions: .github/workflows/ci.yml   # runs `make ci`
+  - git-hook: pre-push                          # runs `make ci`
+  - git-hook: pre-commit                        # runs `make ci-fast` (fast subset)
+
+# Ordered stages. Each maps to make targets composed by `make ci`.
+stages:
+  - id: build
+    name: Reproducible offline build
+    make: [fmt-check, vet, build]
+    description: >
+      gofmt-clean check, go vet, and an offline/vendored build of the static
+      aegis binary. No network fetch (BUILD-001).
+
+  - id: unit
+    name: Unit + integration tests
+    make: [test]
+    description: >
+      go test ./... — unit and stub-harness loop integration tests.
+
+  - id: airgap-gate
+    name: Egress gate
+    make: [airgap]
+    gate: EGRESS=0
+    hard_gate: true
+    description: >
+      Runs a representative command under egress capture/isolation
+      (scripts/verify-airgap.sh). ANY non-loopback egress fails the build. In CI
+      this runs fail-closed (AIRGAP_STRICT=1, netns isolation); GUARD-001.
+
+  - id: trace-health
+    name: Traceability / health gate
+    make: [health]
+    gate: TRACE=100%
+    hard_gate: true
+    description: >
+      `rtmx health` — no orphaned requirements or tests. rtmx is the dev-loop
+      foundation and this is the TRACE gate.
+
+  - id: golden-metrics
+    name: Golden-set metrics + ACR-regression gate
+    make: [metrics]
+    gate: ACR-regression
+    hard_gate: true
+    description: >
+      scripts/ci-metrics.py computes ACR (north star) + TCVR/FPVR/MTC/WCR/TCR/ESC
+      over eval/golden and fails if ACR regresses more than the configured delta
+      below eval/baseline.json (METRIC-002).
+
+# The three hard gates that must all hold for a green run (CLAUDE.md §5).
+hard_gates:
+  - EGRESS=0          # airgap-gate
+  - TRACE=100%        # trace-health
+  - ACR-regression    # golden-metrics

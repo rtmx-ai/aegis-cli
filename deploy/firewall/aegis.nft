@@ -1,0 +1,51 @@
+#!/usr/sbin/nft -f
+#
+# deploy/firewall/aegis.nft — default-deny egress ruleset (nftables).
+#
+# Defense-in-depth BEHIND the app-level zero-egress guarantee: aegis-cli and every
+# component it ships are loopback-only by construction (CLAUDE.md §1). This
+# firewall is the belt to that suspenders — if a component ever attempted egress,
+# the kernel drops it here too. It is NOT a substitute for the app guarantee.
+#
+# Policy: allow loopback in/out; allow established/related; allow ONLY the local
+# model port on loopback; DROP all other egress by default.
+#
+# Apply:   sudo nft -f deploy/firewall/aegis.nft
+# Inspect: sudo nft list ruleset
+#
+# MODEL_PORT below must match calibration.json "port" (default 8080).
+
+flush ruleset
+
+define MODEL_PORT = 8080
+
+table inet aegis {
+	chain input {
+		type filter hook input priority 0; policy drop;
+
+		iif "lo" accept
+		ct state established,related accept
+		ct state invalid drop
+
+		# Allow loopback model endpoint traffic only (defensive; lo already covers it).
+		ip  daddr 127.0.0.1 tcp dport $MODEL_PORT accept
+		ip6 daddr ::1       tcp dport $MODEL_PORT accept
+	}
+
+	chain forward {
+		type filter hook forward priority 0; policy drop;
+	}
+
+	chain output {
+		type filter hook output priority 0; policy drop;
+
+		oif "lo" accept
+		ct state established,related accept
+
+		# Allow only loopback to the local model port; everything else is denied.
+		ip  daddr 127.0.0.1 tcp dport $MODEL_PORT accept
+		ip6 daddr ::1       tcp dport $MODEL_PORT accept
+
+		# No other egress. (DNS, HTTP(S), update checks, telemetry — all dropped.)
+	}
+}

@@ -1,11 +1,18 @@
-# RTMX Configuration
-# See https://rtmx.ai for documentation
+# RTMX Configuration — aegis-cli
+# rtmx is the closed-loop requirements engine for this repo.
+# `rtmx verify --update` runs `go test -json ./...` and writes each requirement's
+# status back to database.csv via the test_module + test_function mapping.
+# `rtmx health` is the TRACE=100% CI gate (no orphaned requirements/tests).
+# See https://rtmx.ai for documentation.
 
 rtmx:
   database: .rtmx/database.csv
   schema: core
+
+  # Marker patterns let rtmx scan source for `// @req REQ-XXX-NNN` traceability
+  # markers. This is a Go project, so the Go/comment marker is the load-bearing one.
   markers:
-    rust:
-      pattern: '#\[req\("(REQ-[A-Z]+-\d+)"\)\]'
+    go:
+      pattern: '// @req (REQ-[A-Z]+-\d+)'
     comment:
       pattern: '// @req (REQ-[A-Z]+-\d+)'

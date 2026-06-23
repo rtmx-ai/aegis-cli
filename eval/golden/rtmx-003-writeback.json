@@ -1,0 +1,18 @@
+{
+  "requirement_id": "REQ-RTMX-003",
+  "description": "verify result writes status back to the CSV database",
+  "closed": true,
+  "escalated": false,
+  "first_pass": false,
+  "turns": 5,
+  "tool_calls": 9,
+  "valid_tool_calls": 8,
+  "tokens": 4200,
+  "wall_clock_ms": 16000,
+  "stages_ms": {
+    "prefill": 2100,
+    "decode": 8200,
+    "verify": 3700,
+    "harness_overhead": 2000
+  }
+}

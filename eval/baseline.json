@@ -1,0 +1,14 @@
+{
+  "_comment": "Rolling metric baselines for the golden set. The ACR-regression hard gate (CLAUDE.md §5) fails the build if measured ACR falls more than acr_regression_delta below baseline_acr. Other metrics are tracked/trended, not gated. Update deliberately when the golden set or the model/harness baseline legitimately moves; record why in notes.",
+  "baseline_acr": 1.0,
+  "acr_regression_delta": 0.05,
+  "dashboard": {
+    "tcvr": 0.923,
+    "fpvr": 0.5,
+    "mtc": 3.5,
+    "wcr_ms": 12500,
+    "tcr": 3000.0,
+    "esc": 0.0
+  },
+  "notes": "Initial baseline from the frozen 2-fixture golden set (REQ-SERVE-001, REQ-RTMX-003), both autonomously closed. ACR=1.0; gate allows a 0.05 drop before failing."
+}

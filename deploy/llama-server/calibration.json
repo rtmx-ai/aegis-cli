@@ -1,0 +1,8 @@
+{
+  "target": "linux-cpu",
+  "threads": 16,
+  "batch": 512,
+  "ngl": 0,
+  "model": "/models/REPLACE-ME.gguf",
+  "port": 8080
+}
