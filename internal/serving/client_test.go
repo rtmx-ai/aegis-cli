@@ -116,7 +116,7 @@ func TestChatCompletionStreamCallbackError(t *testing.T) {
 	}
 }
 
-// TestChatCompletionStreamCtxCancel → SERVE: cancelling the context stops a
+// TestChatCompletionStreamCtxCancel → SERVE: canceling the context stops a
 // streaming completion.
 func TestChatCompletionStreamCtxCancel(t *testing.T) {
 	srv := mockmodel.New(mockmodel.Options{
@@ -197,14 +197,14 @@ func TestChatCompletionCtxTimeout(t *testing.T) {
 	c, _ := NewClient(srv.URL())
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // already cancelled before the call
+	cancel() // already canceled before the call
 
 	_, err := c.ChatCompletion(ctx, ChatRequest{
 		Model:    "gemma",
 		Messages: []Message{{Role: "user", Content: "x"}},
 	})
 	if err == nil {
-		t.Fatal("expected error from cancelled context")
+		t.Fatal("expected error from canceled context")
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled wrapped", err)

@@ -88,7 +88,7 @@ func (c *Calibration) validate() error {
 // LaunchArgs builds the llama-server launch command for cal. A nil calibration
 // is a hard error: uncalibrated launch is forbidden.
 //
-// On linux-cpu the server is pinned with taskset and de-prioritised with nice,
+// On linux-cpu the server is pinned with taskset and de-prioritized with nice,
 // runs CPU-only (-ngl 0), and uses the calibrated thread count. On
 // darwin-metal there is no taskset, all layers offload (-ngl 999), and nice
 // still applies.

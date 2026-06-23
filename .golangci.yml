@@ -5,11 +5,11 @@
 # installs golangci-lint and enforces it (a dev box without it degrades to a
 # note via the Makefile, so it never hard-blocks local work).
 #
-# Targets Go 1.23 (matches go.mod).
+# Targets Go 1.25 (matches go.mod).
 
 run:
   timeout: 5m
-  go: "1.23"
+  go: "1.25"
 
 linters:
   # Start from a clean slate and enable exactly the set we want, so a

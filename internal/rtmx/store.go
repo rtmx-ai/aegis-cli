@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -257,18 +256,4 @@ func (s *Store) Release(id string) error {
 		return err
 	}
 	return nil
-}
-
-// claimedIDs lists currently-claimed ids (sorted; used in tests/diagnostics).
-func (s *Store) claimedIDs() []string {
-	entries, err := os.ReadDir(s.claimsDir)
-	if err != nil {
-		return nil
-	}
-	var ids []string
-	for _, e := range entries {
-		ids = append(ids, strings.TrimSuffix(e.Name(), ".json"))
-	}
-	sort.Strings(ids)
-	return ids
 }

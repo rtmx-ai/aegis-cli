@@ -1,6 +1,6 @@
 module github.com/rtmx-ai/aegis-cli
 
-go 1.23
+go 1.25.11
 
 require github.com/cucumber/godog v0.15.1
 

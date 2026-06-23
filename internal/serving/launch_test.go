@@ -22,7 +22,7 @@ func TestLaunchArgsLinuxCPU(t *testing.T) {
 		t.Error("linux-cpu must pin with taskset")
 	}
 	if !strings.Contains(joined, "nice") {
-		t.Error("linux-cpu must de-prioritise with nice")
+		t.Error("linux-cpu must de-prioritize with nice")
 	}
 	if !strings.Contains(joined, "-ngl 0") {
 		t.Error("linux-cpu must run CPU-only (-ngl 0)")
