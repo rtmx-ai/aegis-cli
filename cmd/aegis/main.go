@@ -11,10 +11,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rtmx-ai/aegis-cli/internal/audit"
 	"github.com/rtmx-ai/aegis-cli/internal/config"
+	"github.com/rtmx-ai/aegis-cli/internal/framing"
 	"github.com/rtmx-ai/aegis-cli/internal/harness"
 	"github.com/rtmx-ai/aegis-cli/internal/harness/goose"
 	"github.com/rtmx-ai/aegis-cli/internal/harness/opencode"
@@ -68,6 +70,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cmdVerifyEnv(rest, stdout, stderr)
 	case "propose":
 		return cmdPropose(rest, stdout, stderr)
+	case "frame":
+		return cmdFrame(rest, stdout, stderr)
 	case "version":
 		fmt.Fprintln(stdout, version)
 		return 0
@@ -97,6 +101,8 @@ commands:
   verify-env    report egress + traceability status before a run
   propose <prefix>
                 emit atomic children of a requirement (human approves)
+  frame         classify the backlog + surface the reframe/unframed lists
+                (continuous-discovery evidence; assistive, human reframes)
   version       print the build version
 `)
 }
@@ -283,6 +289,38 @@ func servingPreflight(endpoint, expectID, expectDigest string) func(ctx context.
 			return c.CheckModel(ctx, expectID, expectDigest)
 		}
 		return nil
+	}
+}
+
+// cmdFrame implements `aegis frame`: classify the backlog and surface the
+// continuous-discovery evidence (the reframe backlog + framing-hygiene gaps).
+// It is assistive — it reports; a human reframes and approves.
+func cmdFrame(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("frame", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	reqs, err := rtmx.NewStore(defaultRTMXDB).Requirements()
+	if err != nil {
+		fmt.Fprintf(stderr, "aegis: frame: %v\n", err)
+		return 1
+	}
+	frameReport(reqs, stdout)
+	return 0
+}
+
+// frameReport prints the five-way classification plus the reframe and unframed
+// lists. Separated from cmdFrame so it is testable without a database.
+func frameReport(reqs []*rtmx.Requirement, w io.Writer) {
+	c := framing.Classify(reqs)
+	fmt.Fprintf(w, "backlog: delivered=%d in-flight=%d parked=%d proposed=%d (unframed=%d)\n",
+		len(c.Delivered), len(c.InFlight), len(c.Parked), len(c.Proposed), len(c.Unframed))
+	if len(c.Parked) > 0 {
+		fmt.Fprintf(w, "reframe backlog (parked — discovery input): %s\n", strings.Join(c.Parked, ", "))
+	}
+	if len(c.Unframed) > 0 {
+		fmt.Fprintf(w, "unframed (needs a spec/outcome trace): %s\n", strings.Join(c.Unframed, ", "))
 	}
 }
 

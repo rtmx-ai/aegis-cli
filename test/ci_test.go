@@ -350,3 +350,17 @@ func TestModelValidationRunbookPresent(t *testing.T) {
 		}
 	}
 }
+
+// TestDiscoverySkillPresent models REQ-FRAME-001: the discovery/framing skill
+// exists with frontmatter and covers the double loop and its guardrails.
+func TestDiscoverySkillPresent(t *testing.T) {
+	s := readRepoFile(t, "skills/discovery/SKILL.md")
+	if !strings.HasPrefix(s, "---") || !strings.Contains(s, "name: discovery") {
+		t.Error("discovery skill must have valid frontmatter")
+	}
+	for _, topic := range []string{"define gate", "vertical slice", "propose", "parked", "human"} {
+		if !strings.Contains(s, topic) {
+			t.Errorf("discovery skill must cover %q", topic)
+		}
+	}
+}

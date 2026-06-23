@@ -134,3 +134,21 @@ func TestRunRefusesOpenEnv(t *testing.T) {
 		t.Errorf("error must mention egress, got: %s", errBuf.String())
 	}
 }
+
+// TestFrameReports → REQ-FRAME-004: frameReport classifies the backlog and
+// surfaces the reframe (parked) and unframed lists.
+func TestFrameReports(t *testing.T) {
+	reqs := []*rtmx.Requirement{
+		{ID: "REQ-A-1", Status: rtmx.StatusClosed, SpecFile: "s.md"},
+		{ID: "REQ-A-2", Status: rtmx.StatusBlocked, SpecFile: "s.md"},
+		{ID: "REQ-OLD", Status: rtmx.StatusOpen}, // unframed
+	}
+	var out bytes.Buffer
+	frameReport(reqs, &out)
+	s := out.String()
+	for _, want := range []string{"delivered=1", "parked=1", "REQ-A-2", "unframed", "REQ-OLD"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("frame report missing %q:\n%s", want, s)
+		}
+	}
+}

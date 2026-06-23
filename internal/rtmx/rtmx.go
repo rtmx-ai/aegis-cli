@@ -34,6 +34,10 @@ type Requirement struct {
 	Tests []string `json:"tests"`
 	// Deps are the IDs of requirements this one depends on.
 	Deps []string `json:"deps"`
+	// SpecFile links the framing artifact (the requirement_file column), if any.
+	SpecFile string `json:"spec_file,omitempty"`
+	// Notes is the free-form notes column (may carry a "spec:" reference).
+	Notes string `json:"notes,omitempty"`
 }
 
 // Client is the contract the loop uses to drive rtmx.

@@ -112,12 +112,14 @@ func (db *rawDB) toRequirement(row []string) *Requirement {
 		}
 	}
 	return &Requirement{
-		ID:     id,
-		Prefix: prefix,
-		Title:  db.get(row, "requirement_text"),
-		Status: statusFromCSV(db.get(row, "status")),
-		Tests:  tests,
-		Deps:   deps,
+		ID:       id,
+		Prefix:   prefix,
+		Title:    db.get(row, "requirement_text"),
+		Status:   statusFromCSV(db.get(row, "status")),
+		Tests:    tests,
+		Deps:     deps,
+		SpecFile: db.get(row, "requirement_file"),
+		Notes:    db.get(row, "notes"),
 	}
 }
 
