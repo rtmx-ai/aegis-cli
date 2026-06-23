@@ -120,3 +120,30 @@ jobs:
               -c user.email='github-actions[bot]@users.noreply.github.com' \
               commit -q -m "ci: update live badges (coverage, version) [skip ci]"
           git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" badges
+
+  # Validate the full release matrix on every push so the ship targets — Linux
+  # (amd64/arm64), macOS (Intel amd64 + Apple Silicon arm64), Windows (amd64),
+  # and the Debian .deb packages — are continuously built and visible in CI, not
+  # only on a release tag. Runs `make release` (cross-compile + SBOM + checksums
+  # + .deb); it does not publish (that is release.yml on a tag).
+  build-targets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go 1.25.11
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.11"
+
+      - name: Set up Python 3
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3"
+
+      - name: make release (cross-compile all ship targets + .deb, no publish)
+        run: make release
+
+      - name: List built artifacts
+        run: ls -la dist/

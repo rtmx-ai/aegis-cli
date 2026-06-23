@@ -14,10 +14,14 @@ It is **not** an agent harness. The harness (opencode or Goose), the model
 (a local MoE served on-box), and the requirements engine (rtmx) already exist.
 aegis-cli's only job is the control loop that wires them together:
 
-```
-rtmx next --one  ──►  harness implements + tests  ──►  rtmx verify  ──►  pass/fail
-      ▲                                                                      │
-      └──────────────────────────  retry / escalate  ◄──────────────────────┘
+```mermaid
+flowchart LR
+    next["rtmx next --one"] --> drive["harness implements + tests"]
+    drive --> verify["rtmx verify"]
+    verify --> gate{pass / fail}
+    gate -- "pass: close + release" --> next
+    gate -- fail --> escalate["retry / escalate"]
+    escalate --> next
 ```
 
 The previous Rust implementation tried to be the harness and did not pan out.

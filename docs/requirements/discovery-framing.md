@@ -14,12 +14,16 @@ exists to prevent — see `decomposition`).
 
 The model is a coupled **double loop**:
 
-```
-   DISCOVERY (human-led, divergent)            DELIVERY (loop-led, convergent)
-   frame problem / outcome / user                  drain atomic, test-linked reqs
-   → coarse requirement + spec doc   ──propose──▶    one decision → functional value
-        ▲                                                │
-        └──────── evidence: parked reqs, ACR/MTC, audit ◀┘
+```mermaid
+flowchart LR
+    subgraph DISCOVERY["DISCOVERY — human-led, divergent"]
+      frame["frame problem / outcome / user<br/>→ coarse requirement + spec doc"]
+    end
+    subgraph DELIVERY["DELIVERY — loop-led, convergent"]
+      drain["drain atomic, test-linked reqs<br/>one decision → functional value"]
+    end
+    frame -- "aegis propose" --> drain
+    drain -- "evidence: parked reqs, ACR/MTC, audit" --> frame
 ```
 
 Discovery feeds delivery through `aegis propose` + the human-gated `proposed`
