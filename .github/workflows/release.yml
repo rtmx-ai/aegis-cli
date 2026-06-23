@@ -44,14 +44,18 @@ jobs:
           GPG_KEY: ${{ secrets.GPG_KEY }}
         run: make release
 
-      - name: Publish artifacts
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/aegis-*
-            dist/aegis_*.deb
-            dist/sbom.cdx.json
-            dist/SHA256SUMS
-            dist/SHA256SUMS.minisig
-            dist/SHA256SUMS.asc
-          fail_on_unmatched_files: false
+      # Publish via the pre-installed gh CLI rather than a third-party action:
+      # the org allowlists Actions (allowed_actions=selected), so softprops/* is
+      # blocked and caused a startup failure. gh needs no allowlist entry.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          assets="$(ls dist/aegis-* dist/aegis_*.deb dist/sbom.cdx.json dist/SHA256SUMS 2>/dev/null)"
+          for s in dist/SHA256SUMS.minisig dist/SHA256SUMS.asc; do
+            [ -f "$s" ] && assets="$assets $s"
+          done
+          gh release create "$GITHUB_REF_NAME" $assets \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Automated release. Static binaries (linux amd64/arm64, macOS Intel + Apple Silicon, windows amd64), Debian .deb packages, CycloneDX SBOM, and SHA-256 checksums. Verify downloads against SHA256SUMS."
