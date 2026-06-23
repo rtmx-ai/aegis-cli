@@ -78,6 +78,15 @@ type Options struct {
 	// ModelDigest is the digest reported by GET /v1/models. Defaults to
 	// "sha256:0000".
 	ModelDigest string
+	// Models, when non-empty, makes GET /v1/models report this full list (for
+	// multi-model backends like Ollama). Overrides ModelID/ModelDigest.
+	Models []ModelEntry
+}
+
+// ModelEntry is one model reported by GET /v1/models.
+type ModelEntry struct {
+	ID     string
+	Digest string
 }
 
 // Server is a running mock model server.
@@ -85,6 +94,7 @@ type Server struct {
 	ts          *httptest.Server
 	modelID     string
 	modelDigest string
+	models      []ModelEntry
 	handler     func(RecordedRequest) (Response, bool)
 
 	mu       sync.Mutex
@@ -97,6 +107,7 @@ func New(opts Options) *Server {
 	s := &Server{
 		modelID:     orDefault(opts.ModelID, "mock-model"),
 		modelDigest: orDefault(opts.ModelDigest, "sha256:0000"),
+		models:      opts.Models,
 		handler:     opts.Handler,
 		queue:       append([]Response(nil), opts.Responses...),
 	}
@@ -148,18 +159,18 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, _ *http.Request) {
-	out := map[string]any{
-		"object": "list",
-		"data": []map[string]any{
-			{
-				"id":       s.modelID,
-				"object":   "model",
-				"digest":   s.modelDigest,
-				"created":  time.Now().Unix(),
-				"owned_by": "mockmodel",
-			},
-		},
+	entries := s.models
+	if len(entries) == 0 {
+		entries = []ModelEntry{{ID: s.modelID, Digest: s.modelDigest}}
 	}
+	data := make([]map[string]any, 0, len(entries))
+	for _, e := range entries {
+		data = append(data, map[string]any{
+			"id": e.ID, "object": "model", "digest": e.Digest,
+			"created": time.Now().Unix(), "owned_by": "mockmodel",
+		})
+	}
+	out := map[string]any{"object": "list", "data": data}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
 }

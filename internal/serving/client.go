@@ -180,17 +180,21 @@ func (c *Client) ChatCompletion(ctx context.Context, req ChatRequest) (ChatRespo
 // only) is valid. A mismatch is an error — the run must not proceed on the
 // wrong or wrongly-quantized model.
 func (c *Client) CheckModel(ctx context.Context, wantID, wantDigest string) error {
-	info, err := c.ModelInfo(ctx)
+	if wantID == "" && wantDigest == "" {
+		return nil
+	}
+	models, err := c.Models(ctx)
 	if err != nil {
 		return err
 	}
-	if wantID != "" && info.ID != wantID {
-		return fmt.Errorf("serving: model id mismatch: want %q, serving %q", wantID, info.ID)
+	served := make([]string, 0, len(models))
+	for _, m := range models {
+		served = append(served, m.ID)
+		if (wantID == "" || m.ID == wantID) && (wantDigest == "" || m.Digest == wantDigest) {
+			return nil // a served model matches the expectation (membership)
+		}
 	}
-	if wantDigest != "" && info.Digest != wantDigest {
-		return fmt.Errorf("serving: model digest mismatch: want %q, serving %q", wantDigest, info.Digest)
-	}
-	return nil
+	return fmt.Errorf("serving: no served model matches id=%q digest=%q (served: %v)", wantID, wantDigest, served)
 }
 
 // ChatCompletionStream performs a streaming chat completion, invoking onChunk
@@ -245,29 +249,39 @@ func (c *Client) ChatCompletionStream(ctx context.Context, req ChatRequest, onCh
 }
 
 // ModelInfo fetches the served model id and digest from GET /v1/models.
-func (c *Client) ModelInfo(ctx context.Context) (ModelInfo, error) {
+func (c *Client) Models(ctx context.Context) ([]ModelInfo, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/v1/models", nil)
 	if err != nil {
-		return ModelInfo{}, fmt.Errorf("serving: build models request: %w", err)
+		return nil, fmt.Errorf("serving: build models request: %w", err)
 	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return ModelInfo{}, fmt.Errorf("serving: models request failed: %w", err)
+		return nil, fmt.Errorf("serving: models request failed: %w", err)
 	}
 	defer resp.Body.Close()
 	if err := checkStatus(resp); err != nil {
-		return ModelInfo{}, err
+		return nil, err
 	}
 	var out struct {
 		Data []ModelInfo `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return ModelInfo{}, fmt.Errorf("serving: decode models: %w", err)
+		return nil, fmt.Errorf("serving: decode models: %w", err)
 	}
-	if len(out.Data) == 0 {
+	return out.Data, nil
+}
+
+// ModelInfo returns the first served model. On a multi-model backend the first
+// entry is arbitrary; use CheckModel to gate against a specific expected model.
+func (c *Client) ModelInfo(ctx context.Context) (ModelInfo, error) {
+	models, err := c.Models(ctx)
+	if err != nil {
+		return ModelInfo{}, err
+	}
+	if len(models) == 0 {
 		return ModelInfo{}, fmt.Errorf("serving: models list is empty")
 	}
-	return out.Data[0], nil
+	return models[0], nil
 }
 
 // PreflightSmoke verifies the model actually serves completions by issuing a

@@ -137,3 +137,18 @@ is run manually per `docs/model-validation.md` on the enclave host and is **not*
 a CI gate. Build order follows the dependency graph: SERVE-012 and SERVE-014
 (on REQ-SERVE-006) and SERVE-013 (on REQ-SERVE-010) first, then DOCS-004
 (on SERVE-012).
+
+## REQ-SERVE-015 — Digest gate checks membership, not the first model
+
+**The model id/digest gate shall** verify the expected model is **among** the
+served models (`/v1/models`), not that it equals the first-listed model.
+
+*Rationale:* surfaced by real-model validation against Ollama. `CheckModel`
+compared `data[0]`, which is "the model" only on a single-model backend
+(llama-server). On a multi-model backend (Ollama) `data[0]` is arbitrary, so a
+correctly-served model failed the gate. Membership is correct for both: a
+single-model list has one entry; a multi-model list is searched.
+
+*Acceptance:* `CheckModel(id, digest)` passes when some served model matches the
+expected id (and digest, if given) and errors when none do. *Test:*
+`internal/serving::TestCheckModelMultiModel`. *Depends on:* REQ-SERVE-013.

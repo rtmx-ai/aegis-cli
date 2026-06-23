@@ -294,3 +294,36 @@ func TestClientReportsTiming(t *testing.T) {
 		t.Errorf("expected a measured latency, got %v", resp.Latency)
 	}
 }
+
+// TestCheckModelMultiModel models SERVE-015: the id/digest gate matches the
+// expected model by MEMBERSHIP in the served list, not equality with the first
+// listed model (correct for multi-model backends like Ollama).
+func TestCheckModelMultiModel(t *testing.T) {
+	mock := mockmodel.New(mockmodel.Options{Models: []mockmodel.ModelEntry{
+		{ID: "gemma4-qat:32k", Digest: "sha256:aaa"},
+		{ID: "phi4-mini:latest", Digest: "sha256:bbb"},
+		{ID: "gemma4:26b", Digest: "sha256:ccc"},
+	}})
+	defer mock.Close()
+	c, err := NewClient(mock.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	// A served model that is NOT first in the list must pass (membership).
+	if err := c.CheckModel(ctx, "phi4-mini:latest", ""); err != nil {
+		t.Errorf("non-first served model must match by membership: %v", err)
+	}
+	// id + matching digest passes.
+	if err := c.CheckModel(ctx, "gemma4:26b", "sha256:ccc"); err != nil {
+		t.Errorf("id+digest membership must match: %v", err)
+	}
+	// A model not served must error.
+	if err := c.CheckModel(ctx, "not-served", ""); err == nil {
+		t.Error("a model not in the served list must error")
+	}
+	// id served but digest wrong must error.
+	if err := c.CheckModel(ctx, "phi4-mini:latest", "sha256:WRONG"); err == nil {
+		t.Error("a served id with a mismatched digest must error")
+	}
+}
