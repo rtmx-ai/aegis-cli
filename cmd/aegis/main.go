@@ -10,14 +10,20 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/rtmx-ai/aegis-cli/internal/audit"
 	"github.com/rtmx-ai/aegis-cli/internal/config"
 	"github.com/rtmx-ai/aegis-cli/internal/harness"
 	"github.com/rtmx-ai/aegis-cli/internal/harness/goose"
 	"github.com/rtmx-ai/aegis-cli/internal/harness/opencode"
 	servingharness "github.com/rtmx-ai/aegis-cli/internal/harness/serving"
 	"github.com/rtmx-ai/aegis-cli/internal/install"
+	"github.com/rtmx-ai/aegis-cli/internal/loop"
+	"github.com/rtmx-ai/aegis-cli/internal/metrics"
+	"github.com/rtmx-ai/aegis-cli/internal/rtmx"
+	"github.com/rtmx-ai/aegis-cli/internal/serving"
 )
 
 // selectHarness constructs the harness adapter the config selects (HARNESS-010).
@@ -170,20 +176,106 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 	// Select the harness adapter the config names (HARNESS-010). The built-in
 	// serving-backed harness is constructed here; live rtmx connection + loop
 	// drive remain wired in the LOOP/RTMX requirements.
+	// RUN-004: refuse to run if the environment is not closed.
+	if cfg.AllowEgress {
+		fmt.Fprintln(stderr, "aegis: refusing to run: egress is enabled (closed-environment gate)")
+		return 1
+	}
 	adapter, err := selectHarness(cfg)
 	if err != nil {
 		fmt.Fprintf(stderr, "aegis: harness: %v\n", err)
 		return 1
 	}
+	ctx := context.Background()
+
+	// Build the rtmx client: prefer the MCP stdio server, fall back to CSV/CLI.
+	client := buildRTMXClient(ctx, defaultRTMXDB)
+	if mc, ok := client.(*rtmx.MCPClient); ok {
+		defer mc.Close()
+	}
+	// RUN-003: audit log to AuditPath (append-only, in-enclave).
+	if cfg.AuditPath != "" {
+		_ = os.MkdirAll(filepath.Dir(cfg.AuditPath), 0o755)
+	}
+	auditLog, err := audit.Open(cfg.AuditPath, "aegis-loop")
+	if err != nil {
+		fmt.Fprintf(stderr, "aegis: audit: %v\n", err)
+		return 1
+	}
+
 	mode := "drain"
 	if *once {
 		mode = "once"
 	}
-	fmt.Fprintf(stdout, "aegis run: mode=%s harness=%s target=%s endpoint=%s max=%d break-after=%d budget=%s\n",
-		mode, adapter.Name(), cfg.Target, cfg.Endpoint, cfg.Budget.MaxRequirements, cfg.BreakAfter, cfg.Budget.WallClock)
-	_ = context.Background()
-	_ = time.Now
+	fmt.Fprintf(stdout, "aegis run: mode=%s harness=%s target=%s endpoint=%s\n", mode, adapter.Name(), cfg.Target, cfg.Endpoint)
+	_, err = liveRun(ctx, cfg, runDeps{
+		RTMX:      client,
+		Harness:   adapter,
+		Audit:     auditLog,
+		Preflight: servingPreflight(cfg.Endpoint),
+	}, *once, stdout)
+	if err != nil {
+		fmt.Fprintf(stderr, "aegis: run: %v\n", err)
+		return 1
+	}
 	return 0
+}
+
+// defaultRTMXDB is the in-repo rtmx database the loop drives.
+const defaultRTMXDB = ".rtmx/database.csv"
+
+// runDeps are the live-run collaborators; production builds them from config,
+// tests inject fakes.
+type runDeps struct {
+	RTMX      rtmx.Client
+	Harness   harness.Adapter
+	Audit     *audit.Log
+	Preflight func(ctx context.Context) error
+}
+
+// liveRun executes the control loop with the given dependencies: serving
+// preflight (RUN-002), then drive the loop (RUN-001) honoring budget/breaker/park
+// (RUN-005), and print a run summary (RUN-003).
+func liveRun(ctx context.Context, cfg config.Config, d runDeps, once bool, stdout io.Writer) (loop.Result, error) {
+	if d.Preflight != nil {
+		if err := d.Preflight(ctx); err != nil {
+			return loop.Result{}, fmt.Errorf("serving preflight failed: %w", err)
+		}
+	}
+	lp, err := loop.New(cfg, loop.Deps{
+		RTMX:    d.RTMX,
+		Harness: d.Harness,
+		Audit:   d.Audit,
+		Metrics: metrics.NewCollector(),
+		Now:     time.Now,
+	})
+	if err != nil {
+		return loop.Result{}, err
+	}
+	res, err := lp.Run(ctx, once)
+	fmt.Fprintf(stdout, "summary: attempted=%d closed=%d parked=%d breaker=%v budget-exhausted=%v\n",
+		res.Attempted, res.Closed, res.Parked, res.BreakerTripped, res.BudgetExhausted)
+	return res, err
+}
+
+// buildRTMXClient prefers the MCP stdio server and falls back to the CSV/CLI
+// client when the server cannot be launched.
+func buildRTMXClient(ctx context.Context, dbPath string) rtmx.Client {
+	if c, err := rtmx.DialMCP(ctx, dbPath); err == nil {
+		return c
+	}
+	return rtmx.NewCLIClient(dbPath)
+}
+
+// servingPreflight checks the model endpoint is reachable on loopback before a run.
+func servingPreflight(endpoint string) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+		c, err := serving.NewClient(endpoint)
+		if err != nil {
+			return err
+		}
+		return c.PreflightSmoke(ctx)
+	}
 }
 
 // cmdStatus implements `aegis status`.

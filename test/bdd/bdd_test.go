@@ -75,6 +75,9 @@ type world struct {
 
 	workspace string
 	editedRel string
+
+	liveClient rtmx.Client
+	liveClosed int
 }
 
 func (w *world) reset() {

@@ -238,6 +238,21 @@ func (c *Client) ModelInfo(ctx context.Context) (ModelInfo, error) {
 	return out.Data[0], nil
 }
 
+// PreflightSmoke verifies the model actually serves completions by issuing a
+// minimal chat request (SERVE-012). It returns an error if the endpoint is
+// unreachable or does not answer — the fast-fail check before a run.
+func (c *Client) PreflightSmoke(ctx context.Context) error {
+	_, err := c.ChatCompletion(ctx, ChatRequest{
+		Model:     "preflight",
+		Messages:  []Message{{Role: "user", Content: "ping"}},
+		MaxTokens: 1,
+	})
+	if err != nil {
+		return fmt.Errorf("serving: preflight smoke failed: %w", err)
+	}
+	return nil
+}
+
 // post marshals body and POSTs it as JSON to path under the base endpoint.
 func (c *Client) post(ctx context.Context, path string, body any) (*http.Response, error) {
 	data, err := json.Marshal(body)

@@ -232,3 +232,20 @@ func TestModelInfo(t *testing.T) {
 		t.Errorf("digest = %q, want sha256:deadbeef", info.Digest)
 	}
 }
+
+// TestPreflightSmoke models SERVE-012: a minimal completion succeeds against a
+// live endpoint, and a dead endpoint yields a timely error.
+func TestPreflightSmoke(t *testing.T) {
+	mock := mockmodel.New(mockmodel.Options{})
+	c, err := NewClient(mock.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.PreflightSmoke(context.Background()); err != nil {
+		t.Errorf("preflight smoke against a live endpoint must pass: %v", err)
+	}
+	mock.Close() // endpoint now dead
+	if err := c.PreflightSmoke(context.Background()); err == nil {
+		t.Error("preflight smoke against a dead endpoint must fail")
+	}
+}

@@ -48,7 +48,19 @@ func (w *world) aWorkspace() error {
 
 func (w *world) mockEmitsValidEdit() error {
 	w.editedRel = "impl.go"
-	return w.setupMock(mockmodel.Response{Content: editBlock(w.editedRel, "package impl")})
+	// Use a Handler (not a one-shot queue) so EVERY completion returns a valid
+	// edit — a live drain calls the model once per requirement.
+	w.mock = mockmodel.New(mockmodel.Options{
+		Handler: func(mockmodel.RecordedRequest) (mockmodel.Response, bool) {
+			return mockmodel.Response{Content: editBlock(w.editedRel, "package impl")}, true
+		},
+	})
+	c, err := serving.NewClient(w.mock.URL())
+	if err != nil {
+		return err
+	}
+	w.client = c
+	return nil
 }
 
 func (w *world) mockMalformedThenValid() error {
@@ -115,4 +127,5 @@ func (w *world) registerHarnessSteps(sc *godog.ScenarioContext) {
 	sc.Step(`^aegis runs one iteration with the built-in harness$`, w.runOneIterationBuiltin)
 	sc.Step(`^the edited file exists in the workspace$`, w.editedFileExists)
 	sc.Step(`^no file is written outside the workspace$`, w.noFileOutsideWorkspace)
+	w.registerLiveSteps(sc)
 }
