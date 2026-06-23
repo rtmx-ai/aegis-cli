@@ -1,0 +1,56 @@
+# GitHub Actions release for aegis-cli.
+#
+# Tag-triggered (BUILD-007). Like ci.yml, the Makefile is the single source of
+# truth: this workflow sets up the toolchain and runs `make release`, which
+# produces the reproducible static binaries, the CycloneDX SBOM, the SHA-256
+# checksums manifest, and the offline detached signature (scripts/release.sh).
+#
+# Signing is air-gap-first (offline detached minisign/GPG), NOT keyless cosign —
+# a closed enclave cannot reach an online CA/transparency log. The signing key
+# is provided via the MINISIGN_KEY / GPG_KEY secret.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go 1.23
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Set up Python 3
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3"
+
+      # Single build step — the same `make release` an operator runs locally.
+      # The build itself is offline (GOPROXY=off, -mod=vendor); only checkout +
+      # toolchain setup touch the network.
+      - name: make release (binaries + SBOM + checksums + signature)
+        env:
+          MINISIGN_KEY: ${{ secrets.MINISIGN_KEY }}
+          GPG_KEY: ${{ secrets.GPG_KEY }}
+        run: make release
+
+      - name: Publish artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/aegis-*
+            dist/sbom.cdx.json
+            dist/SHA256SUMS
+            dist/SHA256SUMS.minisig
+            dist/SHA256SUMS.asc
+          fail_on_unmatched_files: false

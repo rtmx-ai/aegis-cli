@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# release.sh — reproducible, offline, signed release with an SBOM.
+#
+# Implements docs/requirements/release-packaging.md (BUILD-002..006). Produces an
+# enclave-transferable artifact set under dist/: static cross-compiled binaries
+# for the ship targets, a CycloneDX SBOM, a SHA-256 checksums manifest, and an
+# offline detached signature over that manifest.
+#
+# Air-gap-first by design:
+#   - BUILD-006: GOPROXY=off + -mod=vendor + -trimpath — no network, reproducible
+#     for a given commit (binaries depend only on the vendored tree + toolchain).
+#   - BUILD-005: signatures are OFFLINE detached (minisign/GPG). We deliberately
+#     avoid keyless/online signing schemes that need an online CA + transparency
+#     log at sign AND verify time, which a closed enclave cannot reach.
+set -eu
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
+
+VERSION="$(tr -d ' \n' < VERSION 2>/dev/null || echo dev)"
+COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+DIST="${DIST:-dist}"
+rm -rf "$DIST"
+mkdir -p "$DIST"
+
+# Reproducible/offline build environment (BUILD-006).
+export CGO_ENABLED=0 GOPROXY=off GOFLAGS=-mod=vendor
+LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$COMMIT"
+
+# BUILD-002: static cross-compiled matrix for the ship targets.
+TARGETS="linux/amd64 linux/arm64 darwin/arm64"
+for t in $TARGETS; do
+	os="${t%/*}"; arch="${t#*/}"
+	out="$DIST/aegis-$VERSION-$os-$arch"
+	echo "release: building $out"
+	GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "$LDFLAGS" -o "$out" ./cmd/aegis
+done
+
+# BUILD-003: CycloneDX SBOM from the vendored module set.
+go list -m -json all >"$DIST/modules.json" 2>/dev/null || echo '{}' >"$DIST/modules.json"
+python3 scripts/gen-sbom.py "$DIST/modules.json" "$VERSION" >"$DIST/sbom.cdx.json"
+rm -f "$DIST/modules.json"
+
+# BUILD-004: SHA-256 checksums manifest over every artifact.
+(
+	cd "$DIST"
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum aegis-* sbom.cdx.json >SHA256SUMS
+	else
+		shasum -a 256 aegis-* sbom.cdx.json >SHA256SUMS
+	fi
+)
+
+# BUILD-005: offline detached signature over the manifest (air-gap-first).
+if command -v minisign >/dev/null 2>&1 && [ -n "${MINISIGN_KEY:-}" ]; then
+	minisign -S -s "$MINISIGN_KEY" -m "$DIST/SHA256SUMS"
+	echo "release: signed SHA256SUMS with minisign (detached, offline-verifiable)"
+elif command -v gpg >/dev/null 2>&1 && [ -n "${GPG_KEY:-}" ]; then
+	gpg --batch --yes --local-user "$GPG_KEY" --armor --detach-sign "$DIST/SHA256SUMS"
+	echo "release: signed SHA256SUMS with gpg (detached, offline-verifiable)"
+else
+	echo "release: NOTE — no signing key (set MINISIGN_KEY or GPG_KEY); SHA256SUMS is UNSIGNED." >&2
+	echo "release: a real release REQUIRES an offline detached signature (minisign/gpg)." >&2
+fi
+
+echo "release: $VERSION ($COMMIT) — $(ls "$DIST"/aegis-* | wc -l | tr -d ' ') binaries + SBOM + checksums in $DIST/"

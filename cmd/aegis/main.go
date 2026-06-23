@@ -44,8 +44,11 @@ func selectHarness(cfg config.Config) (harness.Adapter, error) {
 	}
 }
 
-// version is the build version, overridable via -ldflags.
-var version = "dev"
+// version and commit are stamped at release build time via -ldflags.
+var (
+	version = "dev"
+	commit  = "unknown"
+)
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -73,7 +76,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "frame":
 		return cmdFrame(rest, stdout, stderr)
 	case "version":
-		fmt.Fprintln(stdout, version)
+		fmt.Fprintf(stdout, "%s (%s)\n", version, commit)
 		return 0
 	case "-h", "--help", "help":
 		usage(stdout)

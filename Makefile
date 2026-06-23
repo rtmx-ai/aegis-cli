@@ -44,7 +44,7 @@ GO_BUILD_ENV  := GOFLAGS=-mod=vendor
 endif
 
 .PHONY: all build fmt fmt-check vet test cover cover-gate lint race vuln \
-        airgap metrics badges ci ci-fast ci-darwin hooks-install clean help
+        airgap metrics badges release ci ci-fast ci-darwin hooks-install clean help
 
 all: build
 
@@ -138,9 +138,13 @@ ci-darwin: fmt-check lint vet build test race cover-gate vuln health metrics
 hooks-install:
 	scripts/install-hooks.sh
 
+## release: reproducible offline signed release (binaries + SBOM + checksums) into dist/
+release:
+	scripts/release.sh
+
 ## clean: remove build artifacts
 clean:
-	rm -rf $(BIN_DIR)
+	rm -rf $(BIN_DIR) dist
 
 ## help: list documented targets
 help:

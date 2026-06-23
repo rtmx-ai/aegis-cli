@@ -34,3 +34,6 @@ rtmx-results.json
 *~
 
 # NOTE: vendor/ is intentionally NOT ignored — offline builds depend on it.
+
+# Release build output (produced by make release)
+/dist/
