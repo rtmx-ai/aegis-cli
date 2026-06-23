@@ -212,7 +212,7 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 		RTMX:      client,
 		Harness:   adapter,
 		Audit:     auditLog,
-		Preflight: servingPreflight(cfg.Endpoint),
+		Preflight: servingPreflight(cfg.Endpoint, cfg.ModelID, cfg.ModelDigest),
 	}, *once, stdout)
 	if err != nil {
 		fmt.Fprintf(stderr, "aegis: run: %v\n", err)
@@ -267,14 +267,22 @@ func buildRTMXClient(ctx context.Context, dbPath string) rtmx.Client {
 	return rtmx.NewCLIClient(dbPath)
 }
 
-// servingPreflight checks the model endpoint is reachable on loopback before a run.
-func servingPreflight(endpoint string) func(ctx context.Context) error {
+// servingPreflight checks the model endpoint serves completions on loopback and
+// (when configured) that the served model matches the expected id/digest.
+func servingPreflight(endpoint, expectID, expectDigest string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		c, err := serving.NewClient(endpoint)
 		if err != nil {
 			return err
 		}
-		return c.PreflightSmoke(ctx)
+		if err := c.PreflightSmoke(ctx); err != nil {
+			return err
+		}
+		// SERVE-013: model digest/id gate (skipped when unset).
+		if expectID != "" || expectDigest != "" {
+			return c.CheckModel(ctx, expectID, expectDigest)
+		}
+		return nil
 	}
 }
 

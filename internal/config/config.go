@@ -67,6 +67,10 @@ type Config struct {
 	AuditPath string `json:"audit_path"`
 	// CalibrationPath is the serving calibration file (host-tuned).
 	CalibrationPath string `json:"calibration_path"`
+	// ModelID and ModelDigest, when set, are the expected served-model identity
+	// checked at run start (SERVE-013). Empty values skip that part of the gate.
+	ModelID     string `json:"model_id,omitempty"`
+	ModelDigest string `json:"model_digest,omitempty"`
 	// AllowEgress, when true, disables the loopback-only guard. It defaults to
 	// false and exists only so the guard itself is testable; production runs
 	// must leave it false.

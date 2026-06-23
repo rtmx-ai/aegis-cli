@@ -338,3 +338,15 @@ func runAirgapRaw(t *testing.T) int {
 	}
 	return 0
 }
+
+// TestModelValidationRunbookPresent models REQ-DOCS-004: the real-model
+// validation runbook exists and covers calibration, the preflight smoke, the
+// digest gate, and golden-set ACR acceptance.
+func TestModelValidationRunbookPresent(t *testing.T) {
+	doc := readRepoFile(t, "docs/model-validation.md")
+	for _, topic := range []string{"bench.sh", "smoke", "digest", "ACR", "golden"} {
+		if !strings.Contains(doc, topic) {
+			t.Errorf("model-validation runbook must cover %q", topic)
+		}
+	}
+}

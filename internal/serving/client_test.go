@@ -249,3 +249,48 @@ func TestPreflightSmoke(t *testing.T) {
 		t.Error("preflight smoke against a dead endpoint must fail")
 	}
 }
+
+// TestModelDigestGate models SERVE-013: the served model id+digest is checked
+// against expected values; a mismatch errors, a match (and empty/skip) passes.
+func TestModelDigestGate(t *testing.T) {
+	mock := mockmodel.New(mockmodel.Options{ModelID: "gemma-4-26b", ModelDigest: "sha256:abc123"})
+	defer mock.Close()
+	c, err := NewClient(mock.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := c.CheckModel(ctx, "gemma-4-26b", "sha256:abc123"); err != nil {
+		t.Errorf("matching id+digest must pass: %v", err)
+	}
+	if err := c.CheckModel(ctx, "", ""); err != nil {
+		t.Errorf("empty expectations must skip the gate: %v", err)
+	}
+	if err := c.CheckModel(ctx, "gemma-4-26b", "sha256:WRONG"); err == nil {
+		t.Error("a digest mismatch must error")
+	}
+	if err := c.CheckModel(ctx, "qwen-wrong", ""); err == nil {
+		t.Error("an id mismatch must error")
+	}
+}
+
+// TestClientReportsTiming models SERVE-014: a completion surfaces token counts
+// and a measured latency for the metrics dashboard.
+func TestClientReportsTiming(t *testing.T) {
+	mock := mockmodel.New(mockmodel.Options{Responses: []mockmodel.Response{{Content: "one two three"}}})
+	defer mock.Close()
+	c, err := NewClient(mock.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c.ChatCompletion(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Usage.TotalTokens <= 0 || resp.Usage.CompletionTokens <= 0 {
+		t.Errorf("expected token counts, got %+v", resp.Usage)
+	}
+	if resp.Latency < 0 {
+		t.Errorf("expected a measured latency, got %v", resp.Latency)
+	}
+}

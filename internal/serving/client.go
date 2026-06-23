@@ -49,6 +49,13 @@ type Choice struct {
 	FinishReason string  `json:"finish_reason"`
 }
 
+// Usage reports token counts for a completion (SERVE-014).
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
 // ChatResponse is an OpenAI-compatible non-streaming chat completion.
 type ChatResponse struct {
 	ID      string   `json:"id"`
@@ -56,6 +63,10 @@ type ChatResponse struct {
 	Created int64    `json:"created"`
 	Model   string   `json:"model"`
 	Choices []Choice `json:"choices"`
+	Usage   Usage    `json:"usage"`
+	// Latency is the wall-clock time the call took. It is measured by the
+	// client (not part of the wire format) and feeds the metrics dashboard.
+	Latency time.Duration `json:"-"`
 }
 
 // ChatChunk is one SSE streaming delta.
@@ -143,9 +154,11 @@ func NewClient(endpoint string, opts ...ClientOption) (*Client, error) {
 	return c, nil
 }
 
-// ChatCompletion performs a non-streaming chat completion.
+// ChatCompletion performs a non-streaming chat completion. It records the call
+// latency on the response (SERVE-014); token counts come from the usage block.
 func (c *Client) ChatCompletion(ctx context.Context, req ChatRequest) (ChatResponse, error) {
 	req.Stream = false
+	start := time.Now()
 	resp, err := c.post(ctx, "/v1/chat/completions", req)
 	if err != nil {
 		return ChatResponse{}, err
@@ -158,7 +171,26 @@ func (c *Client) ChatCompletion(ctx context.Context, req ChatRequest) (ChatRespo
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return ChatResponse{}, fmt.Errorf("serving: decode chat completion: %w", err)
 	}
+	out.Latency = time.Since(start)
 	return out, nil
+}
+
+// CheckModel verifies the served model's id and digest match the expected
+// values (SERVE-013). Empty expectations are skipped, so a partial gate (digest
+// only) is valid. A mismatch is an error — the run must not proceed on the
+// wrong or wrongly-quantized model.
+func (c *Client) CheckModel(ctx context.Context, wantID, wantDigest string) error {
+	info, err := c.ModelInfo(ctx)
+	if err != nil {
+		return err
+	}
+	if wantID != "" && info.ID != wantID {
+		return fmt.Errorf("serving: model id mismatch: want %q, serving %q", wantID, info.ID)
+	}
+	if wantDigest != "" && info.Digest != wantDigest {
+		return fmt.Errorf("serving: model digest mismatch: want %q, serving %q", wantDigest, info.Digest)
+	}
+	return nil
 }
 
 // ChatCompletionStream performs a streaming chat completion, invoking onChunk

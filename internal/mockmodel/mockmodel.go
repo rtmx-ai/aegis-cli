@@ -239,6 +239,11 @@ func (s *Server) jsonCompletion(w http.ResponseWriter, model string, resp Respon
 				},
 			},
 		},
+		"usage": map[string]any{
+			"prompt_tokens":     8,
+			"completion_tokens": len(strings.Fields(resp.Content)) + 1,
+			"total_tokens":      len(strings.Fields(resp.Content)) + 9,
+		},
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
