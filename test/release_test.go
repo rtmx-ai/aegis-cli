@@ -85,3 +85,26 @@ func TestDebianPackagingConfigured(t *testing.T) {
 		}
 	}
 }
+
+// TestReleaseSigningVerifiable models REQ-BUILD-009: a documented offline
+// sign/verify procedure plus `make verify-release` (signature + checksums).
+func TestReleaseSigningVerifiable(t *testing.T) {
+	mk := readRepoFile(t, "Makefile")
+	if !strings.Contains(mk, "verify-release:") {
+		t.Error("Makefile must define a verify-release target")
+	}
+	for _, want := range []string{"SHA256SUMS", "minisign", "gpg --verify"} {
+		if !strings.Contains(mk, want) {
+			t.Errorf("verify-release must check %q", want)
+		}
+	}
+	doc := readRepoFile(t, "docs/release-signing.md")
+	for _, topic := range []string{"minisign", "detached", "verify", "offline"} {
+		if !strings.Contains(doc, topic) {
+			t.Errorf("release-signing doc must cover %q", topic)
+		}
+	}
+	if !strings.Contains(readRepoFile(t, "deploy/release/README.md"), "public") {
+		t.Error("deploy/release must document the public-key location")
+	}
+}

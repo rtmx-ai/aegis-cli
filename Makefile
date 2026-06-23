@@ -45,7 +45,7 @@ GO_BUILD_ENV  := GOFLAGS=-mod=vendor
 endif
 
 .PHONY: all build fmt fmt-check vet test cover cover-gate lint race vuln \
-        airgap metrics badges release ci ci-fast ci-darwin hooks-install clean help
+        airgap metrics badges release verify-release ci ci-fast ci-darwin hooks-install clean help
 
 all: build
 
@@ -143,6 +143,19 @@ hooks-install:
 ## release: reproducible offline signed release (binaries + SBOM + checksums) into dist/
 release:
 	scripts/release.sh
+
+## verify-release: verify dist/ checksums + the offline detached signature (consumer trust check)
+verify-release:
+	@set -e; \
+	[ -f dist/SHA256SUMS ] || { echo "verify-release: dist/SHA256SUMS not found (run make release first)"; exit 1; }; \
+	if [ -f dist/SHA256SUMS.minisig ] && command -v minisign >/dev/null 2>&1 && [ -f deploy/release/aegis-minisign.pub ]; then \
+		minisign -Vm dist/SHA256SUMS -p deploy/release/aegis-minisign.pub && echo "signature: OK (minisign)"; \
+	elif [ -f dist/SHA256SUMS.asc ] && command -v gpg >/dev/null 2>&1; then \
+		gpg --verify dist/SHA256SUMS.asc dist/SHA256SUMS && echo "signature: OK (gpg)"; \
+	else \
+		echo "verify-release: NOTE — no usable signature/public key; checksums only (provision a key per docs/release-signing.md)."; \
+	fi; \
+	( cd dist && (command -v sha256sum >/dev/null 2>&1 && sha256sum -c SHA256SUMS || shasum -a 256 -c SHA256SUMS) >/dev/null ) && echo "checksums: OK"
 
 ## clean: remove build artifacts
 clean:
