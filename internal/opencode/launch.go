@@ -18,6 +18,11 @@ import (
 // DefaultConfigPath is the hardened OpenCode config aegis launches with.
 const DefaultConfigPath = "deploy/opencode/opencode.json"
 
+// StagedRelPath is where `scripts/build-opencode.sh` writes the self-built,
+// air-gap-hardened OpenCode binary (OC-002). aegis resolves it there when it is
+// not on PATH or alongside the aegis binary.
+const StagedRelPath = "deploy/opencode/bin/opencode"
+
 // ErrMissing is returned when the OpenCode binary cannot be found.
 var ErrMissing = errors.New("opencode: binary not found")
 
@@ -48,10 +53,17 @@ func ResolveBinary(explicit string) (string, error) {
 	if p, err := exec.LookPath("opencode"); err == nil {
 		return p, nil
 	}
+	// Candidate locations, in order: alongside the aegis binary (bundled release),
+	// alongside it under the staged path, and the staged path relative to cwd.
+	var cands []string
 	if self, err := os.Executable(); err == nil {
-		cand := filepath.Join(filepath.Dir(self), "opencode")
-		if isExecutable(cand) {
-			return cand, nil
+		dir := filepath.Dir(self)
+		cands = append(cands, filepath.Join(dir, "opencode"), filepath.Join(dir, StagedRelPath))
+	}
+	cands = append(cands, StagedRelPath)
+	for _, c := range cands {
+		if isExecutable(c) {
+			return c, nil
 		}
 	}
 	return "", ErrMissing

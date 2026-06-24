@@ -105,3 +105,35 @@ func TestMissingBinaryGuidance(t *testing.T) {
 		t.Error("guidance must explain how to stage/bundle OpenCode")
 	}
 }
+
+// TestResolveStaged → REQ-OC-004: aegis resolves the self-built OpenCode binary
+// at the staged path (deploy/opencode/bin/opencode).
+func TestResolveStaged(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	staged := filepath.Join(dir, StagedRelPath)
+	if err := os.MkdirAll(filepath.Dir(staged), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(staged, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ResolveBinary("")
+	if err != nil {
+		t.Fatalf("ResolveBinary should find the staged binary: %v", err)
+	}
+	if filepath.Base(got) != "opencode" {
+		t.Errorf("resolved %q, want the staged opencode", got)
+	}
+}
+
+// TestOpenCodeConfigConforms → REQ-OC-004 (config): the hardened config uses the
+// opencode schema with a loopback provider, rtmx MCP, and offline hardening.
+func TestOpenCodeConfigConforms(t *testing.T) {
+	cfg := repoFile(t, DefaultConfigPath)
+	for _, want := range []string{"opencode.ai/config.json", "127.0.0.1", "rtmx", `"offline": true`} {
+		if !strings.Contains(cfg, want) {
+			t.Errorf("hardened opencode config must contain %q", want)
+		}
+	}
+}

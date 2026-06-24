@@ -71,14 +71,20 @@ go list -m -json all >"$DIST/modules.json" 2>/dev/null || echo '{}' >"$DIST/modu
 python3 scripts/gen-sbom.py "$DIST/modules.json" "$VERSION" >"$DIST/sbom.cdx.json"
 rm -f "$DIST/modules.json"
 
-# TUI-005: bundle OpenCode (the centerpiece TUI/harness) for offline distribution.
-# Staged on the connected build host and pointed at via OPENCODE_BIN; shipped
-# alongside aegis so a closed enclave installs both from one artifact set.
-if [ -n "${OPENCODE_BIN:-}" ] && [ -x "${OPENCODE_BIN:-}" ]; then
-	cp "$OPENCODE_BIN" "$DIST/opencode"
-	echo "release: bundled OpenCode from $OPENCODE_BIN"
+# OC-005 / TUI-005: build OpenCode from PINNED source (air-gap-hardened) and bundle
+# it alongside aegis. We build it ourselves (scripts/build-opencode.sh) rather than
+# trust an upstream prebuilt binary; the result is covered by the checksums +
+# signature. OPENCODE_BIN overrides with a prebuilt path if explicitly provided.
+opencode_bin="${OPENCODE_BIN:-deploy/opencode/bin/opencode}"
+if [ ! -x "$opencode_bin" ]; then
+	scripts/build-opencode.sh || true
+fi
+if [ -x "$opencode_bin" ]; then
+	cp "$opencode_bin" "$DIST/opencode"
+	cp deploy/opencode/OPENCODE_REF "$DIST/opencode.VERSION" 2>/dev/null || true
+	echo "release: bundled self-built OpenCode (anomalyco/opencode $(tr -d ' \n' <deploy/opencode/OPENCODE_REF 2>/dev/null))"
 else
-	echo "release: NOTE — OPENCODE_BIN unset; OpenCode not bundled (stage the opencode binary and set OPENCODE_BIN to ship it)." >&2
+	echo "release: NOTE — OpenCode not built/bundled; run scripts/build-opencode.sh on a Bun-equipped build host." >&2
 fi
 
 # BUILD-004: SHA-256 checksums manifest over every artifact (aegis binaries,

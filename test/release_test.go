@@ -119,3 +119,48 @@ func TestReleaseBundlesOpenCode(t *testing.T) {
 		}
 	}
 }
+
+// TestOpenCodePinned → REQ-OC-001: a pinned anomalyco/opencode source ref.
+func TestOpenCodePinned(t *testing.T) {
+	ref := strings.TrimSpace(readRepoFile(t, "deploy/opencode/OPENCODE_REF"))
+	if !strings.HasPrefix(ref, "v") || len(ref) < 4 {
+		t.Errorf("OPENCODE_REF must pin a concrete version, got %q", ref)
+	}
+	if !strings.Contains(readRepoFile(t, "scripts/build-opencode.sh"), "anomalyco/opencode") {
+		t.Error("the build must source anomalyco/opencode")
+	}
+}
+
+// TestBuildOpenCodeConfigured → REQ-OC-002: a hardened build from pinned source.
+func TestBuildOpenCodeConfigured(t *testing.T) {
+	b := readRepoFile(t, "scripts/build-opencode.sh")
+	for _, want := range []string{"OPENCODE_REF", "bun build", "--compile",
+		"OPENCODE_TELEMETRY=0", "OPENCODE_AUTOUPDATE=0", "OPENCODE_DISABLE_SHARE=1"} {
+		if !strings.Contains(b, want) {
+			t.Errorf("build-opencode.sh must configure %q", want)
+		}
+	}
+}
+
+// TestOpenCodeBuildIsOfflineHardened → REQ-OC-003: offline frozen deps; the build
+// degrades safely without Bun, and the binary is bundled under the egress gate.
+func TestOpenCodeBuildIsOfflineHardened(t *testing.T) {
+	b := readRepoFile(t, "scripts/build-opencode.sh")
+	if !strings.Contains(b, "--frozen-lockfile") {
+		t.Error("build must install dependencies offline (--frozen-lockfile)")
+	}
+	if !strings.Contains(b, "command -v bun") {
+		t.Error("build must degrade cleanly when bun is absent (gated host step)")
+	}
+}
+
+// TestReleaseBuildsOpenCode → REQ-OC-005: the release builds OpenCode from source
+// and bundles it with provenance.
+func TestReleaseBuildsOpenCode(t *testing.T) {
+	rel := readRepoFile(t, "scripts/release.sh")
+	for _, want := range []string{"build-opencode.sh", "opencode", "OPENCODE_REF"} {
+		if !strings.Contains(rel, want) {
+			t.Errorf("release.sh must build + bundle OpenCode (%q)", want)
+		}
+	}
+}

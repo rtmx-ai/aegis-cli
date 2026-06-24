@@ -37,3 +37,7 @@ rtmx-results.json
 
 # Release build output (produced by make release)
 /dist/
+
+# Self-built OpenCode binary (produced by scripts/build-opencode.sh; bundled at release)
+/deploy/opencode/bin/
+/build/opencode-src/
