@@ -25,8 +25,8 @@ flowchart LR
     user["operator"] --> tui["aegis → OpenCode TUI (bundled, hardened)"]
     tui <--> model["local model (Ollama / llama.cpp, loopback)"]
     tui <--> rtmx["rtmx MCP — intent layer (next/claim/verify/set_status)"]
-    tui -.headless.-> run["aegis run — unattended rtmx drain"]
-    run --> rtmx
+    tui -.headless.-> loop["aegis loop — unattended rtmx drain"]
+    loop --> rtmx
 ```
 
 **Do not fork or rebuild OpenCode.** If a task feels like it needs tool-calling,

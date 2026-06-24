@@ -6,10 +6,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -65,14 +67,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	cmd, rest := args[0], args[1:]
 	switch cmd {
-	case "code", "tui":
+	case "tui":
 		return cmdTUI(stdout, stderr)
-	case "solve":
-		return cmdSolve(rest, stdout, stderr)
+	case "run", "solve": // solve: back-compat alias for the one-shot run
+		return cmdRun(rest, stdout, stderr)
+	case "loop":
+		return cmdLoop(rest, stdout, stderr)
+	case "rtmx", "code", "model": // hardened pass-through to an inner tool (SURFACE-003)
+		return cmdPassthrough(cmd, rest, stdout, stderr)
 	case "init":
 		return cmdInit(rest, stdout, stderr)
-	case "run":
-		return cmdRun(rest, stdout, stderr)
 	case "status":
 		return cmdStatus(rest, stdout, stderr)
 	case "verify-env":
@@ -96,26 +100,31 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 // usage prints the top-level command surface.
 func usage(w io.Writer) {
-	fmt.Fprint(w, `aegis — air-gap-native agentic coding (OpenCode TUI + local model + rtmx intent)
+	fmt.Fprint(w, `aegis — air-gap-native agentic coding (OpenCode + local model + rtmx intent)
 
 usage: aegis [command] [flags]
 
-  (no command)  launch the bundled OpenCode TUI (the centerpiece experience)
+  (no command)  launch the hardened OpenCode TUI (the centerpiece experience)
 
-commands:
-  code | tui    launch the OpenCode TUI explicitly
+agent:
+  run <prompt>  run one agent task (≡ opencode/ollama run); writes a transcript
+  tui           launch the OpenCode TUI explicitly
+
+orchestration (aegis's own):
+  loop [--once] [--max N] [--break-after M] [--budget DUR] [--config PATH]
+                drain the rtmx backlog (was: aegis run)
   init [--dry-run] [--force] [--config PATH]
-                detect host capabilities, plan target/tier/calibration, and
-                write an offline-safe config (then calibrate + verify air-gap)
-  run [--once] [--max N] [--break-after M] [--budget DUR] [--config PATH]
-                drain the backlog (or one iteration with --once)
+                detect host capabilities + write an offline-safe config
   status        report backlog + endpoint status
+  frame         classify the backlog + surface reframe/unframed lists
+  propose <prefix>   emit atomic children of a requirement (human approves)
   verify-env    report egress + traceability status before a run
-  propose <prefix>
-                emit atomic children of a requirement (human approves)
-  frame         classify the backlog + surface the reframe/unframed lists
-                (continuous-discovery evidence; assistive, human reframes)
   version       print the build version
+
+pass-through (hardened; full inner surface):
+  rtmx  <args>  forward to rtmx (intent layer)
+  code  <args>  forward to opencode (harness)
+  model <args>  forward to ollama (local model)
 `)
 }
 
@@ -161,9 +170,11 @@ func cmdInit(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// cmdRun implements `aegis run`.
-func cmdRun(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+// cmdLoop implements `aegis loop` — drain the rtmx backlog (the orchestration
+// loop). Renamed from `aegis run` so `run` can mean a one-shot agent task,
+// consistent with opencode/ollama `run` (SURFACE-002).
+func cmdLoop(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("loop", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	once := fs.Bool("once", false, "run a single iteration")
 	maxReq := fs.Int("max", 0, "max requirements this session (0 = config default)")
@@ -304,6 +315,55 @@ func servingPreflight(endpoint, expectID, expectDigest string) func(ctx context.
 	}
 }
 
+// cmdPassthrough forwards to an inner tool under the air-gap envelope (SURFACE-003):
+// `aegis rtmx|code|model <args>` exec rtmx / opencode / ollama respectively, hiding
+// no capability. code/model inherit the hardened launch env (loopback model,
+// telemetry/autoupdate off); rtmx runs as-is (it is already local-only).
+func cmdPassthrough(ns string, args []string, stdout, stderr io.Writer) int {
+	cfg, err := config.Load("")
+	if err != nil {
+		cfg = config.Default()
+	}
+	var bin string
+	var env []string
+	switch ns {
+	case "rtmx":
+		bin = "rtmx"
+	case "model":
+		bin = "ollama"
+	case "code":
+		b, err := opencode.ResolveBinary("")
+		if err != nil {
+			fmt.Fprintln(stderr, opencode.MissingGuidance)
+			return 1
+		}
+		bin, env = b, opencode.HardenedEnv(cfg)
+	}
+	path := bin
+	if !strings.ContainsRune(bin, '/') {
+		p, err := exec.LookPath(bin)
+		if err != nil {
+			fmt.Fprintf(stderr, "aegis: %s not found on PATH (pass-through for %q)\n", bin, ns)
+			return 1
+		}
+		path = p
+	}
+	c := exec.Command(path, args...)
+	c.Stdin, c.Stdout, c.Stderr = os.Stdin, stdout, stderr
+	if env != nil {
+		c.Env = append(os.Environ(), env...)
+	}
+	if err := c.Run(); err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			return ee.ExitCode()
+		}
+		fmt.Fprintf(stderr, "aegis: %s: %v\n", ns, err)
+		return 1
+	}
+	return 0
+}
+
 // cmdTUI launches the centerpiece OpenCode TUI under the air-gap-hardened config
 // + the local loopback model + rtmx as the intent layer. It loads the config
 // from the default path if present, otherwise offline-safe defaults.
@@ -323,12 +383,12 @@ func cmdTUI(stdout, stderr io.Writer) int {
 	return 0
 }
 
-// cmdSolve implements `aegis solve` (BENCH-001): a headless agent run that drives
-// OpenCode's serve API to autonomously complete a prompt in a workdir against the
-// local model, then writes an intent-bench transcript. This is the benchmarkable
-// surface (and the proof the local stack actually codes).
-func cmdSolve(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("solve", flag.ContinueOnError)
+// cmdRun implements `aegis run <prompt>` (SURFACE-002 / BENCH-001): a one-shot
+// headless agent task — drives the classic `opencode run` against the local model
+// in a workdir and writes an intent-bench transcript. Consistent with
+// opencode/ollama `run`. (`aegis solve` is a back-compat alias.)
+func cmdRun(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	workdir := fs.String("workdir", ".", "project directory the agent works in")
 	promptFile := fs.String("prompt-file", "", "file with the task prompt (or use --prompt)")

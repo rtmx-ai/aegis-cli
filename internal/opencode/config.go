@@ -22,13 +22,14 @@ func RenderConfig(cfg config.Config) string {
 		model = "local-moe"
 	}
 	baseURL := cfg.Endpoint + "/v1"
+	// Classic opencode.json schema: provider + model + mcp. Air-gap hardening is
+	// enforced via env markers (OPENCODE_TELEMETRY/AUTOUPDATE/DISABLE_SHARE),
+	// `opencode run --pure` (no external plugins), and the egress gate — the
+	// classic schema rejects unknown top-level keys like offline/telemetry.
 	return fmt.Sprintf(`{
   "$schema": "https://opencode.ai/config.json",
-  "offline": true,
   "share": "disabled",
   "autoupdate": false,
-  "telemetry": false,
-  "analytics": false,
   "provider": {
     "local": {
       "npm": "@ai-sdk/openai-compatible",

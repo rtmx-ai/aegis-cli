@@ -97,7 +97,7 @@ func TestRenderConfig(t *testing.T) {
 		"phi4-mini:latest",                       // operator model
 		`"model": "local/phi4-mini:latest"`,
 		"mcp-server", "rtmx", // intent layer
-		`"offline": true`, `"telemetry": false`, // hardening
+		`"autoupdate": false`, `"share": "disabled"`, // hardening (classic schema)
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("rendered config must contain %q\n--- got ---\n%s", want, got)
@@ -114,7 +114,7 @@ func TestLaunchIsHardened(t *testing.T) {
 		}
 	}
 	cfg := repoFile(t, DefaultConfigPath)
-	for _, want := range []string{`"offline": true`, `"telemetry": false`, `"autoupdate": false`} {
+	for _, want := range []string{`"autoupdate": false`, `"share": "disabled"`} {
 		if !strings.Contains(cfg, want) {
 			t.Errorf("hardened config must set %s", want)
 		}
@@ -157,7 +157,7 @@ func TestResolveStaged(t *testing.T) {
 // opencode schema with a loopback provider, rtmx MCP, and offline hardening.
 func TestOpenCodeConfigConforms(t *testing.T) {
 	cfg := repoFile(t, DefaultConfigPath)
-	for _, want := range []string{"opencode.ai/config.json", "127.0.0.1", "rtmx", `"offline": true`} {
+	for _, want := range []string{"opencode.ai/config.json", "127.0.0.1", "rtmx", `"autoupdate": false`} {
 		if !strings.Contains(cfg, want) {
 			t.Errorf("hardened opencode config must contain %q", want)
 		}

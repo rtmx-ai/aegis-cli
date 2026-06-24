@@ -126,9 +126,9 @@ func TestRunRefusesOpenEnv(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, errBuf bytes.Buffer
-	code := run([]string{"run", "--once", "--config", cfgPath}, &out, &errBuf)
+	code := run([]string{"loop", "--once", "--config", cfgPath}, &out, &errBuf)
 	if code == 0 {
-		t.Error("run must refuse an egress-enabled config")
+		t.Error("loop must refuse an egress-enabled config")
 	}
 	if !strings.Contains(errBuf.String(), "egress") {
 		t.Errorf("error must mention egress, got: %s", errBuf.String())

@@ -34,6 +34,10 @@ import (
 // headless run; see docs/requirements/intent-bench.md. We drive OpenCode; we do
 // not reimplement it.
 
+// HardenedEnv returns the air-gap launch environment (exported for the
+// pass-through namespaces, SURFACE-003).
+func HardenedEnv(cfg config.Config) []string { return airgapEnv(cfg) }
+
 // airgapEnv is the hardened launch environment shared by the TUI launch and the
 // serve API: air-gap markers + the operator's model rendered inline (OC-006).
 func airgapEnv(cfg config.Config) []string {

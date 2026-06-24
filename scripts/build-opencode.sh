@@ -43,14 +43,16 @@ echo "build-opencode: building anomalyco/opencode @ $REF"
 # shipped deploy/opencode/opencode.json config).
 export OPENCODE_TELEMETRY=0 OPENCODE_AUTOUPDATE=0 OPENCODE_DISABLE_SHARE=1 OPENCODE_DISABLE_ANALYTICS=1
 
-# OpenCode's own build script compiles packages/cli to a single self-contained
-# binary; --single targets just THIS platform. Validated against the real source:
-# the artifact lands at dist/cli-<os>-<arch>/bin/lildax (a standalone ELF/Mach-O,
+# Build the CLASSIC CLI (packages/opencode) — it ships the headless `opencode run`
+# command (non-interactive: one prompt, streams events, exits on idle) and the
+# documented provider config. packages/cli is the 2.0-preview `lildax`, which
+# lacks `run` and whose HTTP run is an unimplemented stub. --single targets this
+# platform; the artifact is dist/opencode-<os>-<arch>/bin/opencode (standalone,
 # no Bun/Node runtime needed).
-( cd "$SRC/packages/cli" && bun run script/build.ts --single )
-built="$(find "$SRC/packages/cli/dist" -path '*/bin/lildax' -type f | head -1)"
+( cd "$SRC/packages/opencode" && bun run script/build.ts --single )
+built="$(find "$SRC/packages/opencode/dist" -path '*/bin/opencode' -type f | head -1)"
 if [ -z "$built" ]; then
-	echo "build-opencode: build produced no binary under packages/cli/dist" >&2
+	echo "build-opencode: build produced no binary under packages/opencode/dist" >&2
 	exit 1
 fi
 install -m 0755 "$built" "$OUT"
