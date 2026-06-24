@@ -88,3 +88,23 @@ All five COMPLETE via `rtmx verify`, `rtmx health` HEALTHY, `make ci` green.
 Build order: OC-001 → OC-002 → OC-003 ∥ OC-004 → OC-005. A real hardened build on
 a Bun host (producing `deploy/opencode/bin/opencode`, EGRESS=0) is the gated
 validation, then bundled into the next signed release.
+
+## Addendum — OpenCode 2.0 preview finding (post-build validation)
+
+Building `anomalyco/opencode @ v1.17.9` for real revealed it is **OpenCode 2.0
+preview** (CLI: `serve`/`service`/`debug`/`migrate`; binary `lildax`, 128 MB,
+self-contained, EGRESS=0 verified). Two follow-ups (PLANNED):
+
+- **REQ-OC-006 — v2 model/rtmx wiring.** OpenCode 2.0 reads `opencode.json` and
+  `opencode serve` starts cleanly with our config (config accepted), but the v2
+  provider schema (`providers` record, Effect-Schema, AISDK/Native model API
+  variants) is undocumented and differs from the v1 `provider.options.baseURL`
+  style our config uses. The config must be aligned to v2 and validated by a real
+  completion routed to the loopback model via `opencode serve` (non-interactive,
+  testable) — gated, like real-model validation.
+- **REQ-OC-007 — CI build + bundle.** `release.yml` must install Bun and run
+  `build-opencode.sh` so the signed release bundles the self-built OpenCode per
+  ship platform (today's `--single` build covers the build host's platform only).
+
+Decision pending: stay on the 2.0 preview (do the v2 wiring) vs. pin a config-
+stable OpenCode line. The self-built/hardened/EGRESS-0 foundation holds either way.
