@@ -43,9 +43,16 @@ echo "build-opencode: building anomalyco/opencode @ $REF"
 # shipped deploy/opencode/opencode.json config).
 export OPENCODE_TELEMETRY=0 OPENCODE_AUTOUPDATE=0 OPENCODE_DISABLE_SHARE=1 OPENCODE_DISABLE_ANALYTICS=1
 
-# Compile packages/cli to a single self-contained binary. (Exact entrypoint is
-# validated on a Bun host; opencode's cli package is the agent entry.)
-( cd "$SRC/packages/cli" && bun build --compile ./src/index.ts --outfile "$REPO_ROOT/$OUT" )
-chmod +x "$OUT"
+# OpenCode's own build script compiles packages/cli to a single self-contained
+# binary; --single targets just THIS platform. Validated against the real source:
+# the artifact lands at dist/cli-<os>-<arch>/bin/lildax (a standalone ELF/Mach-O,
+# no Bun/Node runtime needed).
+( cd "$SRC/packages/cli" && bun run script/build.ts --single )
+built="$(find "$SRC/packages/cli/dist" -path '*/bin/lildax' -type f | head -1)"
+if [ -z "$built" ]; then
+	echo "build-opencode: build produced no binary under packages/cli/dist" >&2
+	exit 1
+fi
+install -m 0755 "$built" "$OUT"
 
-echo "build-opencode: built $OUT from $REF (hardened, offline frozen deps)"
+echo "build-opencode: built $OUT from $REF (hardened, single self-contained binary)"

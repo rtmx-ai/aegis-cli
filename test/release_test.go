@@ -134,7 +134,7 @@ func TestOpenCodePinned(t *testing.T) {
 // TestBuildOpenCodeConfigured → REQ-OC-002: a hardened build from pinned source.
 func TestBuildOpenCodeConfigured(t *testing.T) {
 	b := readRepoFile(t, "scripts/build-opencode.sh")
-	for _, want := range []string{"OPENCODE_REF", "bun build", "--compile",
+	for _, want := range []string{"OPENCODE_REF", "script/build.ts", "--single",
 		"OPENCODE_TELEMETRY=0", "OPENCODE_AUTOUPDATE=0", "OPENCODE_DISABLE_SHARE=1"} {
 		if !strings.Contains(b, want) {
 			t.Errorf("build-opencode.sh must configure %q", want)
