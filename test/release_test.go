@@ -164,3 +164,14 @@ func TestReleaseBuildsOpenCode(t *testing.T) {
 		}
 	}
 }
+
+// TestOpenCodePinTracksStable → REQ-OC-008: the pin tracks the latest STABLE
+// upstream release, surfaced by a check helper (deliberate bumps, never floating).
+func TestOpenCodePinTracksStable(t *testing.T) {
+	chk := readRepoFile(t, "scripts/check-opencode-latest.sh")
+	for _, want := range []string{"OPENCODE_REF", "prerelease", "anomalyco/opencode"} {
+		if !strings.Contains(chk, want) {
+			t.Errorf("check-opencode-latest.sh must reference %q", want)
+		}
+	}
+}
