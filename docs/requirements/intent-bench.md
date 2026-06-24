@@ -98,3 +98,25 @@ entropy. *Test:* `test::TestBenchRunbook`. *Depends on:* REQ-BENCH-003.
 BENCH-001..005 COMPLETE via `rtmx verify`; a real profiling run produces a
 populated `results/summary.csv` comparing local-aegis (control + rtmx treatment)
 to the Sonnet-4 baseline on at least one experiment (e.g. `url-shortener`).
+
+## Addendum — upstream headless-run gap (validated against v1.17.9)
+
+Reverse-engineered + tested the real serve API end to end against the self-built
+OpenCode v1.17.9: routes under `/api`, readiness `GET /openapi.json`, HTTP Basic
+auth with the password OpenCode generates into `Global.Path.state/password`
+(username `opencode`). **Working:** create session (`POST /api/session` with
+`agent:"build"`, model, location), prompt admission (`POST /api/session/{id}/prompt`
+→ 200). **Blocked upstream:** the admitted prompt does **not** run through the
+public HTTP surface — `GET /api/session/{id}/message` never populates, and
+`POST /api/session/{id}/wait` returns `503 "Session wait is not available yet"`
+(an explicit stub). Attaching the SSE `/api/event` stream did not start the run
+either.
+
+So **REQ-BENCH-001 is blocked on an OpenCode 2.0-preview gap**, not on aegis. The
+serve client (`internal/opencode/serve.go`) is built to the correct contract and
+unit-tested; `internal/bench` transcript export is done. Options (decision
+pending): (a) file an upstream issue/PR to implement `/wait` + headless prompt
+execution; (b) pin an OpenCode release whose headless surface works (classic v1
+had a one-shot `opencode run <prompt>`), trading off the "latest stable" policy;
+(c) revisit when upstream lands it. The client + transcript + adapter scaffolding
+are ready to light up the moment the run executes.

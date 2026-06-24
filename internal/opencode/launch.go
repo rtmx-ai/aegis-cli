@@ -46,12 +46,12 @@ func isExecutable(path string) bool {
 func ResolveBinary(explicit string) (string, error) {
 	if explicit != "" {
 		if isExecutable(explicit) {
-			return explicit, nil
+			return absOf(explicit), nil
 		}
 		return "", fmt.Errorf("%w: %s is not executable", ErrMissing, explicit)
 	}
 	if p, err := exec.LookPath("opencode"); err == nil {
-		return p, nil
+		return absOf(p), nil
 	}
 	// Candidate locations, in order: alongside the aegis binary (bundled release),
 	// alongside it under the staged path, and the staged path relative to cwd.
@@ -63,10 +63,19 @@ func ResolveBinary(explicit string) (string, error) {
 	cands = append(cands, StagedRelPath)
 	for _, c := range cands {
 		if isExecutable(c) {
-			return c, nil
+			return absOf(c), nil
 		}
 	}
 	return "", ErrMissing
+}
+
+// absOf returns an absolute path (the serve API runs with cmd.Dir set to the
+// workdir, so a relative opencode path would not resolve).
+func absOf(p string) string {
+	if a, err := filepath.Abs(p); err == nil {
+		return a
+	}
+	return p
 }
 
 // Command builds the exec.Cmd that launches the OpenCode TUI under the hardened
@@ -76,20 +85,11 @@ func ResolveBinary(explicit string) (string, error) {
 // env markers asserted here.
 func Command(cfg config.Config, bin, configPath string) *exec.Cmd {
 	cmd := exec.Command(bin)
-	env := append(os.Environ(),
-		"OPENCODE_AUTOUPDATE=0",               // air-gap: never self-update
-		"OPENCODE_TELEMETRY=0",                // air-gap: no telemetry
-		"OPENCODE_DISABLE_SHARE=1",            // air-gap: no share/upload
-		"OPENAI_BASE_URL="+cfg.Endpoint+"/v1", // local loopback model
-		"OPENAI_API_KEY=not-needed-loopback",
-	)
-	// OC-006: point OpenCode at the operator's endpoint+model. An explicit config
-	// path overrides; otherwise render the hardened config inline (OpenCode 2.0
-	// honors OPENCODE_CONFIG_CONTENT) so the launch targets the configured model.
+	// airgapEnv carries the air-gap markers + the operator's model rendered inline
+	// (OPENCODE_CONFIG_CONTENT, OC-006). An explicit config path overrides it.
+	env := append(os.Environ(), airgapEnv(cfg)...)
 	if configPath != "" {
 		env = append(env, "OPENCODE_CONFIG="+configPath)
-	} else {
-		env = append(env, "OPENCODE_CONFIG_CONTENT="+RenderConfig(cfg))
 	}
 	cmd.Env = env
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr

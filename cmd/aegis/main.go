@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/rtmx-ai/aegis-cli/internal/audit"
+	"github.com/rtmx-ai/aegis-cli/internal/bench"
 	"github.com/rtmx-ai/aegis-cli/internal/config"
 	"github.com/rtmx-ai/aegis-cli/internal/framing"
 	"github.com/rtmx-ai/aegis-cli/internal/harness"
@@ -66,6 +67,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	switch cmd {
 	case "code", "tui":
 		return cmdTUI(stdout, stderr)
+	case "solve":
+		return cmdSolve(rest, stdout, stderr)
 	case "init":
 		return cmdInit(rest, stdout, stderr)
 	case "run":
@@ -317,6 +320,75 @@ func cmdTUI(stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "aegis: opencode: %v\n", err)
 		return 1
 	}
+	return 0
+}
+
+// cmdSolve implements `aegis solve` (BENCH-001): a headless agent run that drives
+// OpenCode's serve API to autonomously complete a prompt in a workdir against the
+// local model, then writes an intent-bench transcript. This is the benchmarkable
+// surface (and the proof the local stack actually codes).
+func cmdSolve(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("solve", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	workdir := fs.String("workdir", ".", "project directory the agent works in")
+	promptFile := fs.String("prompt-file", "", "file with the task prompt (or use --prompt)")
+	promptStr := fs.String("prompt", "", "the task prompt (inline)")
+	model := fs.String("model", "", "model id (defaults to config model_id)")
+	out := fs.String("out", "", "write the intent-bench transcript here (default stdout)")
+	port := fs.Int("port", 8099, "loopback port for the opencode serve API")
+	cfgPath := fs.String("config", "", "config file path")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	prompt := *promptStr
+	if *promptFile != "" {
+		b, err := os.ReadFile(*promptFile)
+		if err != nil {
+			fmt.Fprintf(stderr, "aegis: solve: %v\n", err)
+			return 1
+		}
+		prompt = string(b)
+	}
+	if strings.TrimSpace(prompt) == "" {
+		fmt.Fprintln(stderr, "aegis: solve: a --prompt or --prompt-file is required")
+		return 2
+	}
+	cfg, ok := loadConfig(*cfgPath, stderr)
+	if !ok {
+		cfg = config.Default()
+	}
+	if cfg.AllowEgress {
+		fmt.Fprintln(stderr, "aegis: refusing to solve: egress is enabled (closed-environment gate)")
+		return 1
+	}
+
+	res, err := opencode.Solve(context.Background(), cfg, "", opencode.SolveOptions{
+		Workdir: *workdir, Prompt: prompt, Model: *model, Port: *port,
+	})
+	if err != nil {
+		if opencode.IsMissing(err) {
+			fmt.Fprintln(stderr, opencode.MissingGuidance)
+			return 1
+		}
+		fmt.Fprintf(stderr, "aegis: solve: %v\n", err)
+		return 1
+	}
+
+	w := stdout
+	if *out != "" {
+		f, err := os.Create(*out)
+		if err != nil {
+			fmt.Fprintf(stderr, "aegis: solve: %v\n", err)
+			return 1
+		}
+		defer f.Close()
+		w = f
+	}
+	if err := bench.WriteTranscript(w, res.Messages); err != nil {
+		fmt.Fprintf(stderr, "aegis: solve: transcript: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stderr, "aegis: solve: session %s, %d messages\n", res.SessionID, len(res.Messages))
 	return 0
 }
 
