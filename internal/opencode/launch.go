@@ -75,18 +75,23 @@ func ResolveBinary(explicit string) (string, error) {
 // aegis controls the hardened config, the loopback endpoint, and the air-gap
 // env markers asserted here.
 func Command(cfg config.Config, bin, configPath string) *exec.Cmd {
-	if configPath == "" {
-		configPath = DefaultConfigPath
-	}
 	cmd := exec.Command(bin)
-	cmd.Env = append(os.Environ(),
-		"OPENCODE_CONFIG="+configPath,         // hardened, offline config (rtmx MCP + loopback model)
+	env := append(os.Environ(),
 		"OPENCODE_AUTOUPDATE=0",               // air-gap: never self-update
 		"OPENCODE_TELEMETRY=0",                // air-gap: no telemetry
 		"OPENCODE_DISABLE_SHARE=1",            // air-gap: no share/upload
 		"OPENAI_BASE_URL="+cfg.Endpoint+"/v1", // local loopback model
 		"OPENAI_API_KEY=not-needed-loopback",
 	)
+	// OC-006: point OpenCode at the operator's endpoint+model. An explicit config
+	// path overrides; otherwise render the hardened config inline (OpenCode 2.0
+	// honors OPENCODE_CONFIG_CONTENT) so the launch targets the configured model.
+	if configPath != "" {
+		env = append(env, "OPENCODE_CONFIG="+configPath)
+	} else {
+		env = append(env, "OPENCODE_CONFIG_CONTENT="+RenderConfig(cfg))
+	}
+	cmd.Env = env
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd
 }

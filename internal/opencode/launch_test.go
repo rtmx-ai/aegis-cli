@@ -67,15 +67,41 @@ func TestLaunchUsesLoopbackModel(t *testing.T) {
 	}
 }
 
-// TestLaunchWiresRtmxMCP → REQ-TUI-003: rtmx is wired as the MCP intent layer.
+// TestLaunchWiresRtmxMCP → REQ-TUI-003: rtmx is wired as the MCP intent layer,
+// via the inline rendered config OpenCode 2.0 honors (OPENCODE_CONFIG_CONTENT).
 func TestLaunchWiresRtmxMCP(t *testing.T) {
 	cmd := Command(config.Default(), fakeOpenCode(t), "")
-	if !envHas(cmd.Env, "OPENCODE_CONFIG="+DefaultConfigPath) {
-		t.Errorf("launch must use the hardened config %q", DefaultConfigPath)
+	var content string
+	for _, e := range cmd.Env {
+		if strings.HasPrefix(e, "OPENCODE_CONFIG_CONTENT=") {
+			content = e
+		}
 	}
-	cfg := repoFile(t, DefaultConfigPath)
-	if !strings.Contains(cfg, "rtmx") || !strings.Contains(cfg, "mcp-server") {
-		t.Error("hardened opencode config must register the rtmx MCP server")
+	if content == "" {
+		t.Fatal("launch must pass the rendered config via OPENCODE_CONFIG_CONTENT")
+	}
+	if !strings.Contains(content, "rtmx") || !strings.Contains(content, "mcp-server") {
+		t.Error("rendered opencode config must register the rtmx MCP server")
+	}
+}
+
+// TestRenderConfig → REQ-OC-006: the rendered config targets the operator's
+// loopback endpoint + model, with rtmx MCP and offline hardening.
+func TestRenderConfig(t *testing.T) {
+	cfg := config.Default()
+	cfg.Endpoint = "http://127.0.0.1:11434"
+	cfg.ModelID = "phi4-mini:latest"
+	got := RenderConfig(cfg)
+	for _, want := range []string{
+		`"baseURL": "http://127.0.0.1:11434/v1"`, // operator endpoint
+		"phi4-mini:latest",                       // operator model
+		`"model": "local/phi4-mini:latest"`,
+		"mcp-server", "rtmx", // intent layer
+		`"offline": true`, `"telemetry": false`, // hardening
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("rendered config must contain %q\n--- got ---\n%s", want, got)
+		}
 	}
 }
 
