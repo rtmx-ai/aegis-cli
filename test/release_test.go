@@ -250,10 +250,15 @@ func TestReleaseInstallsBun(t *testing.T) {
 // is cited in the README.
 func TestSetupScript(t *testing.T) {
 	s := readRepoFile(t, "setup.sh")
-	for _, want := range []string{"make ci-full", "stage-model.sh", "bench.sh", "integration-smoke.sh"} {
+	// chains the full bring-up: build the stack -> stage -> calibrate -> smoke
+	for _, want := range []string{"build-opencode.sh", "build-llama.sh", "stage-model.sh", "bench.sh", "integration-smoke.sh"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("setup.sh must chain %q", want)
 		}
+	}
+	// robustness: auto-install Bun (the gap that bailed the first run), no bail-on-first
+	if !strings.Contains(s, "bun.sh/install") {
+		t.Error("setup.sh must auto-install Bun (user-local, no sudo)")
 	}
 	if !strings.Contains(readRepoFile(t, "README.md"), "setup.sh") {
 		t.Error("README must cite setup.sh")
