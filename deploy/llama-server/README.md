@@ -16,25 +16,39 @@ uncalibrated launch is a hard error (`SERVE-004`).
 
 ## Build from source (no telemetry, no network at runtime)
 
-llama.cpp performs no phone-home, but build it deliberately and pin the source:
+Use **`scripts/build-llama.sh`** (SERVE-017) — it pins the source via
+`deploy/llama-server/LLAMA_REF`, builds target-aware (native CPU opts on
+`linux-cpu`, Metal on `darwin-metal`), and is air-gapped (`-DLLAMA_CURL=OFF` strips
+libcurl so the server cannot fetch models/URLs):
 
 ```bash
-git clone https://github.com/ggml-org/llama.cpp     # do this on a connected staging box
-cd llama.cpp
-
-# linux-cpu (Ryzen): CPU only, no CUDA/Vulkan, OpenMP threading.
-cmake -B build -DGGML_NATIVE=ON -DLLAMA_CURL=OFF
-cmake --build build -j --target llama-server
-# -DLLAMA_CURL=OFF is load-bearing: it strips libcurl so the server cannot fetch
-# models/URLs over the network. Side-load the GGUF; never let the server pull it.
-
-# darwin-metal (M5 Max): all layers on Metal.
-cmake -B build -DGGML_METAL=ON -DLLAMA_CURL=OFF
-cmake --build build -j --target llama-server
+scripts/build-llama.sh          # -> deploy/llama-server/bin/llama-server
 ```
 
-Carry the built `llama-server` binary + the side-loaded GGUF into the enclave.
-Nothing fetches anything at runtime.
+It is the codified form of (do this on a connected staging box):
+
+```bash
+# linux-cpu (Ryzen): CPU only, OpenMP threading.
+cmake -B build -DGGML_NATIVE=ON -DLLAMA_CURL=OFF && cmake --build build -j --target llama-server
+# darwin-metal (M5 Max): all layers on Metal.
+cmake -B build -DGGML_METAL=ON -DLLAMA_CURL=OFF && cmake --build build -j --target llama-server
+```
+
+`-DLLAMA_CURL=OFF` is load-bearing. Side-load the GGUF; never let the server pull
+it. Carry the built `llama-server` + the GGUF into the enclave; nothing fetches at
+runtime.
+
+## SERVE-017 — bring up + validate parity (host steps)
+
+1. **Build:** `scripts/build-llama.sh` → `deploy/llama-server/bin/llama-server`.
+2. **Model:** side-load the selected GGUF; set its path + the bake-off winner in
+   `calibration.json` (`model`, `target`).
+3. **Calibrate:** `scripts/bench.sh --model /models/<winner>.gguf` → fills in the
+   measured `threads`/`batch`.
+4. **Serve + validate parity:** launch via `internal/serving.LaunchArgs` (loopback
+   `:8080`), then confirm `serving.Client.PreflightSmoke` passes and a real
+   completion matches the Ollama spike — point `aegis run`'s config endpoint at
+   `:8080` and re-run the keystone task. EGRESS=0 must hold.
 
 ## Launch (driven by `internal/serving.LaunchArgs`)
 

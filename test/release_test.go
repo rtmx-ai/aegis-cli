@@ -175,3 +175,18 @@ func TestOpenCodePinTracksStable(t *testing.T) {
 		}
 	}
 }
+
+// TestLlamaServerBuildConfigured → REQ-SERVE-018: the production llama.cpp build
+// is pinned, air-gapped (no libcurl), and target-aware.
+func TestLlamaServerBuildConfigured(t *testing.T) {
+	b := readRepoFile(t, "scripts/build-llama.sh")
+	for _, want := range []string{"LLAMA_REF", "LLAMA_CURL=OFF", "llama-server", "GGML_METAL", "GGML_NATIVE"} {
+		if !strings.Contains(b, want) {
+			t.Errorf("build-llama.sh must configure %q", want)
+		}
+	}
+	ref := strings.TrimSpace(readRepoFile(t, "deploy/llama-server/LLAMA_REF"))
+	if ref == "" || ref == "master" {
+		t.Errorf("LLAMA_REF must pin a concrete release tag, got %q", ref)
+	}
+}
