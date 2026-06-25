@@ -91,7 +91,7 @@ func TestRenderConfig(t *testing.T) {
 	cfg := config.Default()
 	cfg.Endpoint = "http://127.0.0.1:11434"
 	cfg.ModelID = "phi4-mini:latest"
-	got := RenderConfig(cfg)
+	got := RenderConfig(cfg, true)
 	for _, want := range []string{
 		`"baseURL": "http://127.0.0.1:11434/v1"`, // operator endpoint
 		"phi4-mini:latest",                       // operator model

@@ -19,13 +19,13 @@ import (
 // idle. It runs in workdir against the operator's local model, under the air-gap
 // env + the inline hardened config, with --pure (no external plugins). All
 // traffic is loopback. This is the engine behind `aegis run <prompt>`.
-func RunHeadless(ctx context.Context, bin string, cfg config.Config, workdir, model, prompt string) (*SolveResult, error) {
+func RunHeadless(ctx context.Context, bin string, cfg config.Config, workdir, model, prompt string, intent bool) (*SolveResult, error) {
 	if model == "" {
 		model = cfg.ModelID
 	}
 	args := []string{"run", "--pure", "--format", "json", "--model", "local/" + model, "--dir", workdir, prompt}
 	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Env = append(os.Environ(), airgapEnv(cfg)...)
+	cmd.Env = append(os.Environ(), airgapEnv(cfg, intent)...)
 	// RUNQ-001: on budget expiry, force the run down promptly even if a child holds
 	// the output pipe open — bound the post-cancel wait, then kill + close pipes.
 	cmd.WaitDelay = 3 * time.Second

@@ -34,20 +34,21 @@ import (
 // headless run; see docs/requirements/intent-bench.md. We drive OpenCode; we do
 // not reimplement it.
 
-// HardenedEnv returns the air-gap launch environment (exported for the
-// pass-through namespaces, SURFACE-003).
-func HardenedEnv(cfg config.Config) []string { return airgapEnv(cfg) }
+// HardenedEnv returns the air-gap launch environment with the rtmx intent layer
+// wired (exported for the pass-through namespaces, SURFACE-003).
+func HardenedEnv(cfg config.Config) []string { return airgapEnv(cfg, true) }
 
 // airgapEnv is the hardened launch environment shared by the TUI launch and the
 // serve API: air-gap markers + the operator's model rendered inline (OC-006).
-func airgapEnv(cfg config.Config) []string {
+// intent controls whether rtmx is wired as the MCP intent layer (BENCH-004).
+func airgapEnv(cfg config.Config, intent bool) []string {
 	return []string{
 		"OPENCODE_AUTOUPDATE=0",
 		"OPENCODE_TELEMETRY=0",
 		"OPENCODE_DISABLE_SHARE=1",
 		"OPENAI_BASE_URL=" + cfg.Endpoint + "/v1",
 		"OPENAI_API_KEY=not-needed-loopback",
-		"OPENCODE_CONFIG_CONTENT=" + RenderConfig(cfg),
+		"OPENCODE_CONFIG_CONTENT=" + RenderConfig(cfg, intent),
 	}
 }
 
@@ -216,7 +217,7 @@ func statePassword() string {
 func StartServe(ctx context.Context, bin string, cfg config.Config, workdir string, port int) (*ServeClient, func(), error) {
 	cmd := exec.CommandContext(ctx, bin, "serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port))
 	cmd.Dir = workdir
-	cmd.Env = append(os.Environ(), airgapEnv(cfg)...)
+	cmd.Env = append(os.Environ(), airgapEnv(cfg, true)...)
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 	if err := cmd.Start(); err != nil {
 		return nil, nil, fmt.Errorf("opencode serve: start: %w", err)

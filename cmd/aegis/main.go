@@ -403,6 +403,7 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 	model := fs.String("model", "", "model id (defaults to config model_id)")
 	out := fs.String("out", "", "write the intent-bench transcript here (default stdout)")
 	timeout := fs.Duration("timeout", 5*time.Minute, "wall-clock budget for the run (RUNQ-001)")
+	noIntent := fs.Bool("no-intent", false, "omit the rtmx MCP intent layer (intent-bench control condition)")
 	cfgPath := fs.String("config", "", "config file path")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -434,7 +435,7 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 	res, err := opencode.Solve(ctx, cfg, "", opencode.SolveOptions{
-		Workdir: *workdir, Prompt: prompt, Model: *model,
+		Workdir: *workdir, Prompt: prompt, Model: *model, NoIntent: *noIntent,
 	})
 	if err != nil {
 		if opencode.IsMissing(err) {

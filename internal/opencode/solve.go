@@ -8,10 +8,11 @@ import (
 
 // SolveOptions configures one headless agent run.
 type SolveOptions struct {
-	Workdir string // project directory the agent works in
-	Prompt  string // the task prompt
-	Model   string // model id (defaults to cfg.ModelID)
-	Port    int    // retained for the serve-API path; unused by the `opencode run` engine
+	Workdir  string // project directory the agent works in
+	Prompt   string // the task prompt
+	Model    string // model id (defaults to cfg.ModelID)
+	Port     int    // retained for the serve-API path; unused by the `opencode run` engine
+	NoIntent bool   // omit the rtmx MCP intent layer (intent-bench "control", BENCH-004)
 }
 
 // SolveResult is the outcome of a headless run.
@@ -32,5 +33,5 @@ func Solve(ctx context.Context, cfg config.Config, explicitBin string, opts Solv
 	if err != nil {
 		return nil, err
 	}
-	return RunHeadless(ctx, bin, cfg, opts.Workdir, opts.Model, opts.Prompt)
+	return RunHeadless(ctx, bin, cfg, opts.Workdir, opts.Model, opts.Prompt, !opts.NoIntent)
 }

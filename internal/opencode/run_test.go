@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,7 +24,7 @@ func TestRunHeadless(t *testing.T) {
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	res, err := RunHeadless(context.Background(), bin, config.Default(), dir, "phi4-mini", "do it")
+	res, err := RunHeadless(context.Background(), bin, config.Default(), dir, "phi4-mini", "do it", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +51,7 @@ func TestRunHeadlessTimeout(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 	defer cancel()
-	res, err := RunHeadless(ctx, bin, config.Default(), dir, "phi4-mini", "do it")
+	res, err := RunHeadless(ctx, bin, config.Default(), dir, "phi4-mini", "do it", true)
 	if err != nil {
 		t.Fatalf("timeout must not be a hard error: %v", err)
 	}
@@ -59,5 +60,19 @@ func TestRunHeadlessTimeout(t *testing.T) {
 	}
 	if len(res.Messages) != 1 || res.Messages[0].Text != "partial" {
 		t.Errorf("partial transcript must be returned, got %+v", res.Messages)
+	}
+}
+
+// TestRenderConfigControl → REQ-BENCH-004: with intent off (control condition) the
+// rendered config OMITS the rtmx MCP, so a run reports zero intent-tool tokens.
+func TestRenderConfigControl(t *testing.T) {
+	cfg := config.Default()
+	treatment := RenderConfig(cfg, true)
+	control := RenderConfig(cfg, false)
+	if !strings.Contains(treatment, "rtmx") {
+		t.Error("treatment config must wire rtmx")
+	}
+	if strings.Contains(control, "rtmx") || strings.Contains(control, "mcp") {
+		t.Errorf("control config must omit rtmx/mcp:\n%s", control)
 	}
 }

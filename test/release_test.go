@@ -304,3 +304,14 @@ func TestBenchRunbook(t *testing.T) {
 		}
 	}
 }
+
+// TestBenchIntentTreatment → REQ-BENCH-004: the adapter wires control vs treatment
+// — control omits the rtmx intent layer (--no-intent) so intent-tool tokens are 0.
+func TestBenchIntentTreatment(t *testing.T) {
+	a := readRepoFile(t, "scripts/intent-bench/aegis.sh")
+	for _, want := range []string{".intent-bench", ".mcp.json", "--no-intent", "AEGIS_INTENT"} {
+		if !strings.Contains(a, want) {
+			t.Errorf("adapter must handle the intent treatment (%q)", want)
+		}
+	}
+}

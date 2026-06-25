@@ -16,16 +16,26 @@ import (
 // (deploy/opencode/opencode.json is the reference template): an openai-compatible
 // loopback provider, offline + telemetry/share/analytics off, and rtmx as the MCP
 // intent layer.
-func RenderConfig(cfg config.Config) string {
+// When intent is true, rtmx is wired as the MCP intent layer; when false it is
+// omitted — the "control" condition for intent-bench (BENCH-004), so a run reports
+// zero intent-tool tokens.
+func RenderConfig(cfg config.Config, intent bool) string {
 	model := cfg.ModelID
 	if model == "" {
 		model = "local-moe"
 	}
 	baseURL := cfg.Endpoint + "/v1"
-	// Classic opencode.json schema: provider + model + mcp. Air-gap hardening is
-	// enforced via env markers (OPENCODE_TELEMETRY/AUTOUPDATE/DISABLE_SHARE),
-	// `opencode run --pure` (no external plugins), and the egress gate — the
-	// classic schema rejects unknown top-level keys like offline/telemetry.
+	mcp := ""
+	if intent {
+		mcp = `,
+  "mcp": {
+    "rtmx": { "type": "local", "enabled": true, "command": ["rtmx", "mcp-server", "--stdio"] }
+  }`
+	}
+	// Classic opencode.json schema: provider + model (+ optional mcp). Air-gap
+	// hardening is enforced via env markers (OPENCODE_TELEMETRY/AUTOUPDATE/
+	// DISABLE_SHARE), `opencode run --pure` (no external plugins), and the egress
+	// gate — the classic schema rejects unknown top-level keys like offline/telemetry.
 	return fmt.Sprintf(`{
   "$schema": "https://opencode.ai/config.json",
   "share": "disabled",
@@ -37,9 +47,6 @@ func RenderConfig(cfg config.Config) string {
       "models": { %q: { "name": %q } }
     }
   },
-  "model": %q,
-  "mcp": {
-    "rtmx": { "type": "local", "enabled": true, "command": ["rtmx", "mcp-server", "--stdio"] }
-  }
-}`, baseURL, model, model, "local/"+model)
+  "model": %q%s
+}`, baseURL, model, model, "local/"+model, mcp)
 }

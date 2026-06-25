@@ -86,8 +86,9 @@ func absOf(p string) string {
 func Command(cfg config.Config, bin, configPath string) *exec.Cmd {
 	cmd := exec.Command(bin)
 	// airgapEnv carries the air-gap markers + the operator's model rendered inline
-	// (OPENCODE_CONFIG_CONTENT, OC-006). An explicit config path overrides it.
-	env := append(os.Environ(), airgapEnv(cfg)...)
+	// (OPENCODE_CONFIG_CONTENT, OC-006), with rtmx wired as the intent layer. An
+	// explicit config path overrides it.
+	env := append(os.Environ(), airgapEnv(cfg, true)...)
 	if configPath != "" {
 		env = append(env, "OPENCODE_CONFIG="+configPath)
 	}

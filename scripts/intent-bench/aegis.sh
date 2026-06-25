@@ -26,12 +26,21 @@ if [ -z "$AEGIS" ]; then
 	else AEGIS="$(cd "$(dirname "$0")/../.." && pwd)/bin/aegis"; fi
 fi
 
-# Config: AEGIS_CONFIG points aegis at the local serving endpoint (loopback). The
-# control vs rtmx-treatment distinction is handled by aegis's intent wiring
-# (see docs/intent-bench-profiling.md + BENCH-004).
+# Config: AEGIS_CONFIG points aegis at the local serving endpoint (loopback).
 cfg_args=""
 [ -n "${AEGIS_CONFIG:-}" ] && cfg_args="--config ${AEGIS_CONFIG}"
 timeout="${INTENT_BENCH_TIMEOUT:-10m}"
+
+# Control vs treatment (BENCH-004): intent-bench seeds the treatment into the
+# workdir (treatments/rtmx.sh creates .intent-bench/ + .mcp.json). CONTROL runs
+# omit the rtmx MCP intent layer (--no-intent) so intent-tool tokens are zero (the
+# intent-bench ledger rule). AEGIS_INTENT={0,1} forces it.
+intent_args=""
+case "${AEGIS_INTENT:-auto}" in
+0) intent_args="--no-intent" ;;
+1) intent_args="" ;;
+*) { [ -d "$workdir/.intent-bench" ] || [ -f "$workdir/.mcp.json" ]; } || intent_args="--no-intent" ;;
+esac
 
 # shellcheck disable=SC2086
 "$AEGIS" run \
@@ -39,7 +48,7 @@ timeout="${INTENT_BENCH_TIMEOUT:-10m}"
 	--model "$model" \
 	--prompt-file "$prompt_file" \
 	--timeout "$timeout" \
-	$cfg_args \
+	$cfg_args $intent_args \
 	--out "$result_dir/transcript.jsonl" \
 	2>"$result_dir/stderr.log"
 exit $?
