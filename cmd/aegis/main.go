@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"errors"
 	"flag"
 	"fmt"
@@ -79,6 +80,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cmdInit(rest, stdout, stderr)
 	case "status":
 		return cmdStatus(rest, stdout, stderr)
+	case "models":
+		return cmdModels(rest, stdout, stderr)
+	case "serve":
+		return cmdServe(rest, stdout, stderr)
 	case "verify-env":
 		return cmdVerifyEnv(rest, stdout, stderr)
 	case "propose":
@@ -115,7 +120,9 @@ orchestration (aegis's own):
                 drain the rtmx backlog (was: aegis run)
   init [--dry-run] [--force] [--config PATH]
                 detect host capabilities + write an offline-safe config
-  status        report backlog + endpoint status
+  status        unified: config + model endpoint + rtmx backlog
+  models        list the local model inventory (loopback endpoint)
+  serve         bring the local model server up (calibrated, loopback)
   frame         classify the backlog + surface reframe/unframed lists
   propose <prefix>   emit atomic children of a requirement (human approves)
   verify-env    report egress + traceability status before a run
@@ -506,7 +513,145 @@ func cmdStatus(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "endpoint=%s harness=%s target=%s audit=%s\n",
 		cfg.Endpoint, cfg.Harness, cfg.Target, cfg.AuditPath)
+	// SURFACE-004: unify health/inventory across the stack — the model endpoint
+	// and the rtmx intent backlog, alongside config.
+	if c, err := serving.NewClient(cfg.Endpoint); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if mi, err := c.ModelInfo(ctx); err == nil {
+			fmt.Fprintf(stdout, "model: %s (endpoint reachable)\n", mi.ID)
+		} else {
+			fmt.Fprintf(stdout, "model: endpoint unreachable (%s)\n", cfg.Endpoint)
+		}
+	}
+	if total, complete, err := rtmxCounts(defaultRTMXDB); err == nil {
+		fmt.Fprintf(stdout, "rtmx: %d/%d requirements complete\n", complete, total)
+	}
 	return 0
+}
+
+// rtmxCounts reads the rtmx CSV and returns total + COMPLETE requirement counts.
+func rtmxCounts(db string) (total, complete int, err error) {
+	f, err := os.Open(db)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer f.Close()
+	rows, err := csv.NewReader(f).ReadAll()
+	if err != nil || len(rows) < 1 {
+		return 0, 0, err
+	}
+	statusCol := -1
+	for i, hdr := range rows[0] {
+		if hdr == "status" {
+			statusCol = i
+		}
+	}
+	for _, row := range rows[1:] {
+		total++
+		if statusCol >= 0 && statusCol < len(row) && row[statusCol] == "COMPLETE" {
+			complete++
+		}
+	}
+	return total, complete, nil
+}
+
+// cmdModels implements `aegis models` (SURFACE-004): the local model inventory,
+// queried from the configured loopback endpoint (hardened — loopback only).
+func cmdModels(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("models", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	cfgPath := fs.String("config", "", "config file path")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	cfg, ok := loadConfig(*cfgPath, stderr)
+	if !ok {
+		return 1
+	}
+	c, err := serving.NewClient(cfg.Endpoint)
+	if err != nil {
+		fmt.Fprintf(stderr, "aegis: models: %v\n", err)
+		return 1
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	models, err := c.Models(ctx)
+	if err != nil {
+		fmt.Fprintf(stderr, "aegis: models: %s unreachable: %v\n", cfg.Endpoint, err)
+		return 1
+	}
+	for _, m := range models {
+		if m.Digest != "" {
+			fmt.Fprintf(stdout, "%s\t%s\n", m.ID, m.Digest)
+		} else {
+			fmt.Fprintln(stdout, m.ID)
+		}
+	}
+	return 0
+}
+
+// cmdServe implements `aegis serve` (SURFACE-004): bring the local model server up
+// on loopback under the calibrated launch args (internal/serving.LaunchArgs), with
+// the self-built llama-server resolved from deploy/llama-server/bin.
+func cmdServe(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	calPath := fs.String("calibration", "deploy/llama-server/calibration.json", "calibration file")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	cmd, err := buildServeCommand(*calPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "aegis: serve: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stderr, "aegis: serve: launching %s (loopback)\n", cmd.Path)
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(stderr, "aegis: serve: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+// buildServeCommand builds the calibrated llama-server launch command, resolving
+// the self-built binary. Separated for testing.
+func buildServeCommand(calPath string) (*exec.Cmd, error) {
+	cal, err := serving.LoadCalibration(calPath)
+	if err != nil {
+		return nil, fmt.Errorf("calibration: %w (run scripts/bench.sh)", err)
+	}
+	argv, err := serving.LaunchArgs(cal)
+	if err != nil {
+		return nil, err
+	}
+	bin := resolveLlamaServer()
+	for i, a := range argv {
+		if a == "llama-server" {
+			argv[i] = bin
+			break
+		}
+	}
+	if len(argv) == 0 {
+		return nil, fmt.Errorf("empty launch command")
+	}
+	return exec.Command(argv[0], argv[1:]...), nil
+}
+
+// resolveLlamaServer prefers the self-built binary, then PATH.
+func resolveLlamaServer() string {
+	staged := "deploy/llama-server/bin/llama-server"
+	if fi, err := os.Stat(staged); err == nil && fi.Mode().Perm()&0o111 != 0 {
+		if abs, err := filepath.Abs(staged); err == nil {
+			return abs
+		}
+		return staged
+	}
+	if p, err := exec.LookPath("llama-server"); err == nil {
+		return p
+	}
+	return "llama-server"
 }
 
 // cmdVerifyEnv implements `aegis verify-env`: it reports whether the
