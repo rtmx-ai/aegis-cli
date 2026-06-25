@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/rtmx-ai/aegis-cli/internal/config"
 )
@@ -32,5 +33,31 @@ func TestRunHeadless(t *testing.T) {
 	m := res.Messages[0]
 	if m.Text != "hello world" || m.Finish != "stop" || m.Tokens.Output != 7 {
 		t.Errorf("parsed event stream wrong: %+v", m)
+	}
+}
+
+// TestRunHeadlessTimeout → REQ-RUNQ-001: a run that exceeds its wall-clock budget
+// is aborted and returns the partial transcript (TimedOut), not a hard error.
+func TestRunHeadlessTimeout(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "opencode")
+	// Emits a partial event, then hangs past the deadline.
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' '{\"type\":\"text\",\"part\":{\"text\":\"partial\"}}'\n" +
+		"sleep 30\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+	res, err := RunHeadless(ctx, bin, config.Default(), dir, "phi4-mini", "do it")
+	if err != nil {
+		t.Fatalf("timeout must not be a hard error: %v", err)
+	}
+	if !res.TimedOut {
+		t.Error("result must be marked TimedOut")
+	}
+	if len(res.Messages) != 1 || res.Messages[0].Text != "partial" {
+		t.Errorf("partial transcript must be returned, got %+v", res.Messages)
 	}
 }

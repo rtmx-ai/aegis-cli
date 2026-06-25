@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/rtmx-ai/aegis-cli/internal/config"
 )
@@ -25,13 +26,24 @@ func RunHeadless(ctx context.Context, bin string, cfg config.Config, workdir, mo
 	args := []string{"run", "--pure", "--format", "json", "--model", "local/" + model, "--dir", workdir, prompt}
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = append(os.Environ(), airgapEnv(cfg)...)
+	// RUNQ-001: on budget expiry, force the run down promptly even if a child holds
+	// the output pipe open — bound the post-cancel wait, then kill + close pipes.
+	cmd.WaitDelay = 3 * time.Second
+	setProcGroup(cmd)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	msgs := parseRunEvents(out.String()) // parse whatever was captured (partial on kill)
+	if err != nil {
+		// RUNQ-001: a deadline/cancel is not a hard error — the child is killed and
+		// we return the partial transcript so the caller can record it.
+		if ctx.Err() != nil {
+			return &SolveResult{Messages: msgs, TimedOut: ctx.Err() == context.DeadlineExceeded}, nil
+		}
 		return nil, fmt.Errorf("opencode run: %w", err)
 	}
-	return &SolveResult{Messages: parseRunEvents(out.String())}, nil
+	return &SolveResult{Messages: msgs}, nil
 }
 
 // parseRunEvents flattens `opencode run --format json` NDJSON events into a single

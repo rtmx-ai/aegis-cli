@@ -18,6 +18,9 @@ type SolveOptions struct {
 type SolveResult struct {
 	SessionID string
 	Messages  []TranscriptMessage
+	// TimedOut is set when the run hit its wall-clock budget and was aborted;
+	// Messages then holds the partial transcript (RUNQ-001).
+	TimedOut bool
 }
 
 // Solve runs OpenCode headlessly for one prompt and returns the transcript +

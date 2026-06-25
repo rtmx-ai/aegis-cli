@@ -395,7 +395,7 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 	promptStr := fs.String("prompt", "", "the task prompt (inline)")
 	model := fs.String("model", "", "model id (defaults to config model_id)")
 	out := fs.String("out", "", "write the intent-bench transcript here (default stdout)")
-	port := fs.Int("port", 8099, "loopback port for the opencode serve API")
+	timeout := fs.Duration("timeout", 5*time.Minute, "wall-clock budget for the run (RUNQ-001)")
 	cfgPath := fs.String("config", "", "config file path")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -404,13 +404,13 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 	if *promptFile != "" {
 		b, err := os.ReadFile(*promptFile)
 		if err != nil {
-			fmt.Fprintf(stderr, "aegis: solve: %v\n", err)
+			fmt.Fprintf(stderr, "aegis: run: %v\n", err)
 			return 1
 		}
 		prompt = string(b)
 	}
 	if strings.TrimSpace(prompt) == "" {
-		fmt.Fprintln(stderr, "aegis: solve: a --prompt or --prompt-file is required")
+		fmt.Fprintln(stderr, "aegis: run: a --prompt or --prompt-file is required")
 		return 2
 	}
 	cfg, ok := loadConfig(*cfgPath, stderr)
@@ -418,19 +418,23 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 		cfg = config.Default()
 	}
 	if cfg.AllowEgress {
-		fmt.Fprintln(stderr, "aegis: refusing to solve: egress is enabled (closed-environment gate)")
+		fmt.Fprintln(stderr, "aegis: refusing to run: egress is enabled (closed-environment gate)")
 		return 1
 	}
 
-	res, err := opencode.Solve(context.Background(), cfg, "", opencode.SolveOptions{
-		Workdir: *workdir, Prompt: prompt, Model: *model, Port: *port,
+	// RUNQ-001: bound the run by a wall-clock budget; a partial transcript is still
+	// written on timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+	res, err := opencode.Solve(ctx, cfg, "", opencode.SolveOptions{
+		Workdir: *workdir, Prompt: prompt, Model: *model,
 	})
 	if err != nil {
 		if opencode.IsMissing(err) {
 			fmt.Fprintln(stderr, opencode.MissingGuidance)
 			return 1
 		}
-		fmt.Fprintf(stderr, "aegis: solve: %v\n", err)
+		fmt.Fprintf(stderr, "aegis: run: %v\n", err)
 		return 1
 	}
 
@@ -438,17 +442,21 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 	if *out != "" {
 		f, err := os.Create(*out)
 		if err != nil {
-			fmt.Fprintf(stderr, "aegis: solve: %v\n", err)
+			fmt.Fprintf(stderr, "aegis: run: %v\n", err)
 			return 1
 		}
 		defer f.Close()
 		w = f
 	}
 	if err := bench.WriteTranscript(w, res.Messages); err != nil {
-		fmt.Fprintf(stderr, "aegis: solve: transcript: %v\n", err)
+		fmt.Fprintf(stderr, "aegis: run: transcript: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stderr, "aegis: solve: session %s, %d messages\n", res.SessionID, len(res.Messages))
+	if res.TimedOut {
+		fmt.Fprintf(stderr, "aegis: run: timed out after %s — partial transcript (%d messages) written\n", *timeout, len(res.Messages))
+		return 124
+	}
+	fmt.Fprintf(stderr, "aegis: run: %d messages\n", len(res.Messages))
 	return 0
 }
 
