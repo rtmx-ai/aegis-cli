@@ -66,3 +66,15 @@ MODEL-001/002 + BUILD-010/011 COMPLETE via `rtmx verify` (inspection); BUILD-012
 gated on a staged model (runs at the release tier / on the validation host).
 `make ci-full` builds aegis + OpenCode + llama-server from pinned source on a
 toolchain-equipped host.
+
+## REQ-MODEL-003 — Curated model catalog + menu (setup.sh chooses for the user)
+
+`deploy/models/catalog.json` lists curated GGUFs (`id, name, url, sha256, size,
+recommended`); `sha256` is the HuggingFace LFS oid (verified). With no
+`--model`/`--model-choice` on a terminal, `setup.sh` shows a numbered menu
+(catalog entries + any discovered local GGUF + enter-path + skip) and
+**auto-selects the recommended entry after `MODEL_TIMEOUT`** (default 30s).
+`--model-choice <id>` is the non-interactive form; a non-tty run defaults to the
+recommended entry. `scripts/fetch-model.sh` downloads the selection (connected
+host only — never the enclave) and **sha256-verifies** it before pin + stage.
+Recommended default: `gemma-4-26b-a4b`.

@@ -1,0 +1,35 @@
+{
+  "note": "Curated GGUF catalog for setup.sh (MODEL-003). Connected-host downloads only; the enclave never fetches. sha256 = the HuggingFace LFS oid (verified). Add entries as the SERVE-016 bake-off evolves.",
+  "models": [
+    {
+      "id": "gemma-4-26b-a4b",
+      "name": "Gemma-4-26B-A4B (QAT Q4_K_XL)",
+      "file": "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf",
+      "url": "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF/resolve/main/gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf",
+      "sha256": "dcf179a91153e3a7ece792e48ef872180d9d6ef9b7677f0a0bd3e83cfe624d5e",
+      "size": 14249045120,
+      "recommended": true,
+      "note": "Primary candidate — MoE ~4B active, quantization-aware."
+    },
+    {
+      "id": "qwen3.6-35b-a3b",
+      "name": "Qwen3.6-35B-A3B (Q4_K_M)",
+      "file": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+      "url": "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+      "sha256": "ac0e2c1189e055faa36eff361580e79c5bd6f8e76bffb4ce547f167d53e31a61",
+      "size": 22134528992,
+      "recommended": false,
+      "note": "Larger MoE contender."
+    },
+    {
+      "id": "phi-4-mini",
+      "name": "Phi-4-mini (Q4_K_M, fast)",
+      "file": "Phi-4-mini-instruct-Q4_K_M.gguf",
+      "url": "https://huggingface.co/unsloth/Phi-4-mini-instruct-GGUF/resolve/main/Phi-4-mini-instruct-Q4_K_M.gguf",
+      "sha256": "88c00229914083cd112853aab84ed51b87bdf6b9ce42f532d8c85c7c63b1730a",
+      "size": 2491874272,
+      "recommended": false,
+      "note": "Small + fast; weaker tool-calling (screening only)."
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 package offline
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -266,8 +267,14 @@ func TestSetupScript(t *testing.T) {
 			t.Errorf("setup.sh must automate model setup (%q)", want)
 		}
 	}
-	// default action on skip + re-prompt on a bad path
-	for _, want := range []string{"discover_gguf", "auto-detect", "try again"} {
+	// curated catalog menu (MODEL-003): --model-choice + timeout default + fetch
+	for _, want := range []string{"--model-choice", "select_model", "fetch-model.sh", "MODEL_TIMEOUT"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("setup.sh must offer the catalog menu (%q)", want)
+		}
+	}
+	// re-prompt on a bad path
+	for _, want := range []string{"try again"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("setup.sh must default-detect on skip + re-prompt on a bad path (%q)", want)
 		}
@@ -334,6 +341,42 @@ func TestEnclaveRunbook(t *testing.T) {
 	for _, want := range []string{"setup.sh", "verify-release", "SHA256SUMS", "transfer", "verify-airgap", "EGRESS=0", "loopback"} {
 		if !strings.Contains(d, want) {
 			t.Errorf("enclave runbook must cover %q", want)
+		}
+	}
+}
+
+// TestModelCatalog → REQ-MODEL-003: a valid curated catalog (one recommended) +
+// a fetch tool that sha256-verifies downloads.
+func TestModelCatalog(t *testing.T) {
+	var cat struct {
+		Models []struct {
+			ID, Name, URL, Sha256 string
+			Size                  int64
+			Recommended           bool
+		}
+	}
+	if err := json.Unmarshal([]byte(readRepoFile(t, "deploy/models/catalog.json")), &cat); err != nil {
+		t.Fatalf("catalog.json invalid: %v", err)
+	}
+	if len(cat.Models) == 0 {
+		t.Fatal("catalog must list models")
+	}
+	rec := 0
+	for _, m := range cat.Models {
+		if m.ID == "" || m.URL == "" || m.Sha256 == "" || m.Size == 0 {
+			t.Errorf("catalog entry incomplete: %+v", m)
+		}
+		if m.Recommended {
+			rec++
+		}
+	}
+	if rec != 1 {
+		t.Errorf("catalog must have exactly one recommended entry, got %d", rec)
+	}
+	f := readRepoFile(t, "scripts/fetch-model.sh")
+	for _, w := range []string{"catalog.json", "sha256", "MISMATCH"} {
+		if !strings.Contains(f, w) {
+			t.Errorf("fetch-model.sh must reference %q", w)
 		}
 	}
 }

@@ -35,7 +35,9 @@ llama.cpp), stages + verifies the model, calibrates serving to the host, and
 smoke-tests the whole stack — run it on a connected build host:
 
 ```bash
-./setup.sh --model /path/to/model.gguf
+./setup.sh                                  # menu of catalog models (auto-selects the recommended one)
+./setup.sh --model-choice gemma-4-26b-a4b   # download a specific catalog model
+./setup.sh --model /path/to/model.gguf      # or use a local GGUF
 ```
 
 Then install + run in the closed enclave per [docs/operator-guide.md](docs/operator-guide.md):

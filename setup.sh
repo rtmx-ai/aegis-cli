@@ -18,24 +18,32 @@ REPO="$PWD"
 LOG="$REPO/setup.log"
 VERBOSE=0
 CONF="$REPO/setup.conf"             # persisted init choices (gitignored)
+CATALOG="$REPO/deploy/models/catalog.json"
 MODEL_GGUF="${MODEL_GGUF:-${AEGIS_MODEL_GGUF:-}}"
+MODEL_CHOICE="${MODEL_CHOICE:-${AEGIS_MODEL_CHOICE:-}}"
+MODEL_TIMEOUT="${MODEL_TIMEOUT:-30}"
 
 usage() {
 	cat <<-USAGE
 	aegis setup — build + bring up the full stack (aegis + OpenCode + llama.cpp + model)
 
-	usage: ./setup.sh [-m <path.gguf>] [-v|--verbose] [-h|--help]
-	  -m, --model <p>  path to the model GGUF — pinned (sha256) + staged automatically
-	  -v, --verbose    also stream build output to the terminal
-	  (default)        quiet: per-step progress bar; full output -> setup.log
+	usage: ./setup.sh [-m <path.gguf> | --model-choice <id>] [-v|--verbose] [-h]
+	  -m, --model <p>        use a local model GGUF (pinned by sha256 + staged)
+	      --model-choice <id>  download a CATALOG model (deploy/models/catalog.json)
+	  -v, --verbose          also stream build output to the terminal
+	  (default)              quiet: per-step progress bar; full output -> setup.log
 	env:
-	  MODEL_GGUF=<p>   same as --model (or MODEL_SRC=<dir> for an already-pinned model)
+	  MODEL_TIMEOUT=<s>      menu auto-select countdown (default 30)
 	  Choices are saved to setup.conf so re-runs are non-interactive.
+
+	With no model given on a terminal, setup.sh shows a menu of catalog models and
+	auto-selects the recommended one after the timeout.
 	USAGE
 }
 while [ $# -gt 0 ]; do
 	case "$1" in
 	-m | --model) MODEL_GGUF="${2:?--model needs a path}" && shift ;;
+	--model-choice) MODEL_CHOICE="${2:?--model-choice needs a catalog id}" && shift ;;
 	-v | --verbose) VERBOSE=1 ;;
 	-q | --quiet) VERBOSE=0 ;;
 	-h | --help) usage && exit 0 ;;
@@ -45,9 +53,10 @@ while [ $# -gt 0 ]; do
 done
 
 already_pinned() { grep -q '"sha256": "[0-9a-f]' deploy/models/MODEL_REF 2>/dev/null; }
+rec_id() { python3 -c "import json;[print(m['id']) for m in json.load(open('$CATALOG'))['models'] if m.get('recommended')]" 2>/dev/null | head -1; }
 
-# discover_gguf — the DEFAULT ACTION on skip: find the largest .gguf under common
-# model locations and use it on the user's behalf (announced; Ctrl-C to override).
+# discover_gguf — find the largest .gguf already on the host (a menu option: use a
+# local model, no download).
 discover_gguf() {
 	local d f
 	for d in "${MODEL_SRC:-}" "$REPO/models" "$HOME/models" "$HOME/Downloads" \
@@ -61,35 +70,72 @@ discover_gguf() {
 	return 1
 }
 
-# Resolve the model GGUF: flag/env > saved setup.conf > interactive prompt
-# (re-prompt on a bad path) > default action (auto-detect a host GGUF on skip).
-[ -z "$MODEL_GGUF" ] && [ -f "$CONF" ] && . "$CONF" && MODEL_GGUF="${MODEL_GGUF:-${AEGIS_MODEL_GGUF:-}}"
-# A flag/env/conf path that doesn't exist: warn + clear (re-prompt / default below).
+# select_model — a numbered menu of catalog models (+ any discovered local one)
+# with a countdown that AUTO-SELECTS the recommended entry. Sets MODEL_CHOICE
+# (catalog id → download) or MODEL_GGUF (local path).
+select_model() {
+	local ids=() kinds=() labels=() recidx=1 i=0 star
+	while IFS='|' read -r cid cname cgb crec; do
+		i=$((i + 1)); star='  '
+		[ "$crec" = "True" ] && { star=' ★'; recidx=$i; }
+		ids+=("$cid"); kinds+=("catalog"); labels+=("$star $cname  ~${cgb}GB  download")
+	done < <(python3 -c "
+import json
+for m in json.load(open('$CATALOG'))['models']:
+    print('%s|%s|%d|%s' % (m['id'], m['name'], round(m.get('size',0)/1073741824), m.get('recommended')))
+")
+	local loc
+	loc="$(discover_gguf || true)"
+	[ -n "$loc" ] && { i=$((i + 1)); ids+=("$loc"); kinds+=("local"); labels+=("   $loc  (local, no download)"); }
+	i=$((i + 1)); ids+=(""); kinds+=("path"); labels+=("   enter a path…")
+	i=$((i + 1)); ids+=(""); kinds+=("skip"); labels+=("   skip — build the stack only")
+
+	echo "No model selected — choose one (auto-selects #$recidx in ${MODEL_TIMEOUT}s; Ctrl-C aborts):" >&2
+	local n=1 l
+	for l in "${labels[@]}"; do printf '  %d)%s\n' "$n" "$l" >&2; n=$((n + 1)); done
+	printf '> ' >&2
+	local choice
+	read -t "$MODEL_TIMEOUT" -r choice || choice=''
+	case "$choice" in '' | *[!0-9]*) choice="$recidx" ;; esac
+	local idx=$((choice - 1))
+	{ [ "$idx" -ge 0 ] && [ "$idx" -lt "${#kinds[@]}" ]; } || idx=$((recidx - 1))
+	case "${kinds[$idx]}" in
+	catalog) MODEL_CHOICE="${ids[$idx]}"; echo "setup: selected ${ids[$idx]} (download)" >&2 ;;
+	local) MODEL_GGUF="${ids[$idx]}" ;;
+	path)
+		while :; do
+			printf 'Path to the model GGUF: ' >&2
+			read -r MODEL_GGUF || MODEL_GGUF=''
+			[ -z "$MODEL_GGUF" ] && break
+			[ -f "$MODEL_GGUF" ] && break
+			echo "  not found: $MODEL_GGUF — try again." >&2
+		done
+		;;
+	skip) MODEL_GGUF=''; MODEL_CHOICE='' ;;
+	esac
+}
+
+# Resolve the model: --model > --model-choice > setup.conf > menu (tty) >
+# recommended catalog default (non-tty). Then persist for non-interactive re-runs.
+[ -z "$MODEL_GGUF" ] && [ -z "$MODEL_CHOICE" ] && [ -f "$CONF" ] && . "$CONF" &&
+	MODEL_GGUF="${MODEL_GGUF:-${AEGIS_MODEL_GGUF:-}}" && MODEL_CHOICE="${MODEL_CHOICE:-${AEGIS_MODEL_CHOICE:-}}"
 if [ -n "$MODEL_GGUF" ] && [ ! -f "$MODEL_GGUF" ]; then
 	echo "setup: model not found: $MODEL_GGUF" >&2
 	MODEL_GGUF=''
 fi
-# Interactive: keep prompting until a valid path or an explicit Enter (skip).
-if [ -z "$MODEL_GGUF" ] && [ -t 0 ] && ! already_pinned; then
-	while :; do
-		printf 'Path to the model GGUF (Enter to auto-detect one on this host): '
-		read -r MODEL_GGUF || MODEL_GGUF=''
-		[ -z "$MODEL_GGUF" ] && break  # Enter -> default action
-		[ -f "$MODEL_GGUF" ] && break  # valid -> use it
-		echo "  not found: $MODEL_GGUF — try again, or Enter to auto-detect." >&2
-		MODEL_GGUF=''
-	done
-fi
-# Default action on skip: auto-detect a GGUF on the host (do it on their behalf).
-if [ -z "$MODEL_GGUF" ] && ! already_pinned; then
-	if MODEL_GGUF="$(discover_gguf)" && [ -n "$MODEL_GGUF" ]; then
-		echo "setup: auto-detected model: $MODEL_GGUF (Ctrl-C to choose a different one)"
+if [ -z "$MODEL_GGUF" ] && [ -z "$MODEL_CHOICE" ] && ! already_pinned; then
+	if [ -t 0 ]; then
+		select_model
 	else
-		MODEL_GGUF=''
-		echo "setup: no GGUF found on this host — building stack only; pass --model <path.gguf> to add one." >&2
+		MODEL_CHOICE="$(rec_id)"
+		[ -n "$MODEL_CHOICE" ] && echo "setup: no tty — defaulting to the recommended model: $MODEL_CHOICE" >&2
 	fi
 fi
-[ -n "$MODEL_GGUF" ] && [ -f "$MODEL_GGUF" ] && printf 'AEGIS_MODEL_GGUF=%s\n' "$MODEL_GGUF" >"$CONF"
+{
+	[ -n "$MODEL_GGUF" ] && [ -f "$MODEL_GGUF" ] && printf 'AEGIS_MODEL_GGUF=%s\n' "$MODEL_GGUF"
+	[ -n "$MODEL_CHOICE" ] && printf 'AEGIS_MODEL_CHOICE=%s\n' "$MODEL_CHOICE"
+	true
+} >"$CONF"
 
 # --- palette (interactive terminal only; respects NO_COLOR) ------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -226,6 +272,12 @@ run "llama-server" scripts/build-llama.sh || true
 begin "Staging the model"
 if [ -n "$FAILED" ]; then
 	done_skip "skipped — a build failed (see Next)"
+elif [ -n "$MODEL_CHOICE" ]; then
+	# Download the catalog model (sha256-verified), then pin + stage it.
+	if run "download + pin + stage $MODEL_CHOICE (sha256-verified)" \
+		sh -c 'p="$(scripts/fetch-model.sh "$1")" && scripts/pin-model.sh "$p" && MODEL_SRC="$(dirname "$p")" scripts/stage-model.sh' _ "$MODEL_CHOICE"; then
+		STAGED=1
+	fi
 elif [ -n "$MODEL_GGUF" ]; then
 	# Hash the provided GGUF -> deploy/models/MODEL_REF, then stage from its dir.
 	if run "pin + stage model (sha256-verified)" \
