@@ -8,7 +8,7 @@ is built from a pinned source and verified by digest/signature before transfer.
 ## 1. Stage (connected build host)
 
 ```bash
-MODEL_SRC=/path/to/gguf-dir ./setup.sh
+./setup.sh --model /path/to/model.gguf
 ```
 
 `setup.sh` builds the full stack from pinned source (aegis + OpenCode + llama.cpp),

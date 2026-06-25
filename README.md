@@ -35,7 +35,7 @@ llama.cpp), stages + verifies the model, calibrates serving to the host, and
 smoke-tests the whole stack — run it on a connected build host:
 
 ```bash
-MODEL_SRC=/path/to/gguf-dir ./setup.sh
+./setup.sh --model /path/to/model.gguf
 ```
 
 Then install + run in the closed enclave per [docs/operator-guide.md](docs/operator-guide.md):

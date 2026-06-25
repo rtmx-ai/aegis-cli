@@ -260,6 +260,12 @@ func TestSetupScript(t *testing.T) {
 	if !strings.Contains(s, "bun.sh/install") {
 		t.Error("setup.sh must auto-install Bun (user-local, no sudo)")
 	}
+	// one-shot model setup: --model pins (sha256) via pin-model.sh, then stages
+	for _, want := range []string{"--model", "pin-model.sh", "setup.conf"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("setup.sh must automate model setup (%q)", want)
+		}
+	}
 	// UI contract (REL-004): quiet-by-default to a log, a verbose flag, and
 	// status-aware next-steps.
 	for _, want := range []string{"setup.log", "--verbose", "Artifacts", "Next"} {

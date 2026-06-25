@@ -10,7 +10,7 @@ One command builds the full stack from pinned source, stages + verifies the
 model, calibrates serving, and smoke-tests the whole stack:
 
 ```bash
-MODEL_SRC=/path/to/gguf-dir ./setup.sh
+./setup.sh --model /path/to/model.gguf
 ```
 
 `setup.sh` (see REL-004) runs: `make ci-full` (aegis + OpenCode + llama-server

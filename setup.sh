@@ -17,20 +17,25 @@ cd "$(dirname "$0")"
 REPO="$PWD"
 LOG="$REPO/setup.log"
 VERBOSE=0
+CONF="$REPO/setup.conf"             # persisted init choices (gitignored)
+MODEL_GGUF="${MODEL_GGUF:-${AEGIS_MODEL_GGUF:-}}"
 
 usage() {
 	cat <<-USAGE
 	aegis setup — build + bring up the full stack (aegis + OpenCode + llama.cpp + model)
 
-	usage: ./setup.sh [-v|--verbose] [-h|--help]
-	  (default)        quiet: per-step progress bar; full output -> setup.log
+	usage: ./setup.sh [-m <path.gguf>] [-v|--verbose] [-h|--help]
+	  -m, --model <p>  path to the model GGUF — pinned (sha256) + staged automatically
 	  -v, --verbose    also stream build output to the terminal
+	  (default)        quiet: per-step progress bar; full output -> setup.log
 	env:
-	  MODEL_SRC=<dir>  directory holding the pinned GGUF (enables stage/calibrate/smoke)
+	  MODEL_GGUF=<p>   same as --model (or MODEL_SRC=<dir> for an already-pinned model)
+	  Choices are saved to setup.conf so re-runs are non-interactive.
 	USAGE
 }
 while [ $# -gt 0 ]; do
 	case "$1" in
+	-m | --model) MODEL_GGUF="${2:?--model needs a path}" && shift ;;
 	-v | --verbose) VERBOSE=1 ;;
 	-q | --quiet) VERBOSE=0 ;;
 	-h | --help) usage && exit 0 ;;
@@ -38,6 +43,15 @@ while [ $# -gt 0 ]; do
 	esac
 	shift
 done
+
+# Resolve the model GGUF: flag/env > saved setup.conf > interactive prompt. Then
+# persist it so the next run is fully non-interactive.
+[ -z "$MODEL_GGUF" ] && [ -f "$CONF" ] && . "$CONF" && MODEL_GGUF="${MODEL_GGUF:-${AEGIS_MODEL_GGUF:-}}"
+if [ -z "$MODEL_GGUF" ] && [ -t 0 ] && ! grep -q '"sha256": "[0-9a-f]' deploy/models/MODEL_REF 2>/dev/null; then
+	printf 'Path to the model GGUF (Enter to skip model setup for now): '
+	read -r MODEL_GGUF || MODEL_GGUF=''
+fi
+if [ -n "$MODEL_GGUF" ]; then printf 'AEGIS_MODEL_GGUF=%s\n' "$MODEL_GGUF" >"$CONF"; fi
 
 # --- palette (interactive terminal only; respects NO_COLOR) ------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -170,16 +184,22 @@ run "opencode" scripts/build-opencode.sh || true
 begin "Building llama.cpp from pinned source"
 run "llama-server" scripts/build-llama.sh || true
 
-# [5/7] model
+# [5/7] model — pin-as-output (--model) then stage; auto-verified by sha256.
 begin "Staging the model"
-model_path="deploy/models/$(model_name)"
-if [ -n "${FAILED}" ]; then
+if [ -n "$FAILED" ]; then
 	done_skip "skipped — a build failed (see Next)"
+elif [ -n "$MODEL_GGUF" ]; then
+	# Hash the provided GGUF -> deploy/models/MODEL_REF, then stage from its dir.
+	if run "pin + stage model (sha256-verified)" \
+		sh -c 'scripts/pin-model.sh "$1" && MODEL_SRC="$(dirname "$1")" scripts/stage-model.sh' _ "$MODEL_GGUF"; then
+		STAGED=1
+	fi
 elif [ -n "${MODEL_SRC:-}" ]; then
 	if run "model staged + sha256-verified" scripts/stage-model.sh; then STAGED=1; fi
 else
-	done_skip "set MODEL_SRC=<dir with the pinned GGUF>; finalize the SERVE-016 winner + sha256 in deploy/models/MODEL_REF"
+	done_skip "no model: pass --model <path.gguf> (or MODEL_SRC=<dir>) to stage -> calibrate -> smoke"
 fi
+model_path="deploy/models/$(model_name)"
 
 # [6/7] calibrate
 begin "Calibrating the serving to this host"
@@ -224,7 +244,7 @@ elif [ "$SMOKE" = 1 ]; then
 elif [ "$STAGED" = 1 ]; then
 	printf '  %s✓ stack built + model staged; smoke incomplete — see setup.log.%s\n' "$Y" "$X"
 else
-	printf '  %s✓ stack built.%s to finish the bring-up:\n' "$G" "$X"
-	printf '    1. finalize the model + sha256 in %sdeploy/models/MODEL_REF%s\n' "$B" "$X"
-	printf '    2. run %sMODEL_SRC=<gguf-dir> ./setup.sh%s  (stages -> calibrates -> integration smoke)\n' "$B" "$X"
+	printf '  %s✓ stack built.%s one step to finish the bring-up:\n' "$G" "$X"
+	printf '    run %s./setup.sh --model <path/to/model.gguf>%s\n' "$B" "$X"
+	printf '    %s(pins it by sha256, stages, calibrates, and runs the integration smoke)%s\n' "$D" "$X"
 fi
