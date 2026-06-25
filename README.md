@@ -28,6 +28,23 @@ configures and drives it, and never reimplements the harness.
 
 ---
 
+## Setup
+
+One command builds the full stack from pinned source (aegis + OpenCode +
+llama.cpp), stages + verifies the model, calibrates serving to the host, and
+smoke-tests the whole stack — run it on a connected build host:
+
+```bash
+MODEL_SRC=/path/to/gguf-dir ./setup.sh
+```
+
+Then install + run in the closed enclave per [docs/operator-guide.md](docs/operator-guide.md):
+`aegis` (the OpenCode TUI), `aegis run "<prompt>"` (one headless task), or
+`aegis loop` (drain the rtmx backlog). Prerequisites + the tiered build cadence
+are in [docs/requirements/build-cadence.md](docs/requirements/build-cadence.md).
+
+---
+
 ## ⚠️ DEPRECATION NOTICE
 
 The previous implementation was a **Rust** orchestrator built for the

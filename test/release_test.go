@@ -245,3 +245,27 @@ func TestReleaseInstallsBun(t *testing.T) {
 		t.Error("release.yml must add Bun to PATH")
 	}
 }
+
+// TestSetupScript → REQ-REL-004: top-level setup.sh chains the full bring-up and
+// is cited in the README.
+func TestSetupScript(t *testing.T) {
+	s := readRepoFile(t, "setup.sh")
+	for _, want := range []string{"make ci-full", "stage-model.sh", "bench.sh", "integration-smoke.sh"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("setup.sh must chain %q", want)
+		}
+	}
+	if !strings.Contains(readRepoFile(t, "README.md"), "setup.sh") {
+		t.Error("README must cite setup.sh")
+	}
+}
+
+// TestOperatorGuide → REQ-REL-003: the operator guide covers install -> run -> verify.
+func TestOperatorGuide(t *testing.T) {
+	g := readRepoFile(t, "docs/operator-guide.md")
+	for _, want := range []string{"setup.sh", "verify-env", "aegis run", "aegis loop", "verify-airgap", "MODEL_REF"} {
+		if !strings.Contains(g, want) {
+			t.Errorf("operator-guide must cover %q", want)
+		}
+	}
+}
