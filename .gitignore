@@ -50,3 +50,5 @@ rtmx-results.json
 /setup.log
 /setup.conf
 /.setup-profile.json
+__pycache__/
+*.pyc
