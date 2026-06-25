@@ -49,3 +49,4 @@ rtmx-results.json
 # setup.sh run log
 /setup.log
 /setup.conf
+/.setup-profile.json

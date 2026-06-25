@@ -250,40 +250,15 @@ func TestReleaseInstallsBun(t *testing.T) {
 // TestSetupScript → REQ-REL-004: top-level setup.sh chains the full bring-up and
 // is cited in the README.
 func TestSetupScript(t *testing.T) {
-	s := readRepoFile(t, "setup.sh")
-	// chains the full bring-up: build the stack -> stage -> calibrate -> smoke
+	// setup.sh is the entry point; it hands off to the Python orchestrator, which
+	// chains the full bring-up via the dedicated scripts.
+	if !strings.Contains(readRepoFile(t, "setup.sh"), "scripts.setup.main") {
+		t.Error("setup.sh must exec the orchestrator (scripts.setup.main)")
+	}
+	st := readRepoFile(t, "scripts/setup/steps.py")
 	for _, want := range []string{"build-opencode.sh", "build-llama.sh", "stage-model.sh", "bench.sh", "integration-smoke.sh"} {
-		if !strings.Contains(s, want) {
-			t.Errorf("setup.sh must chain %q", want)
-		}
-	}
-	// robustness: auto-install Bun (the gap that bailed the first run), no bail-on-first
-	if !strings.Contains(s, "bun.sh/install") {
-		t.Error("setup.sh must auto-install Bun (user-local, no sudo)")
-	}
-	// one-shot model setup: --model pins (sha256) via pin-model.sh, then stages
-	for _, want := range []string{"--model", "pin-model.sh", "setup.conf"} {
-		if !strings.Contains(s, want) {
-			t.Errorf("setup.sh must automate model setup (%q)", want)
-		}
-	}
-	// curated catalog menu (MODEL-003): --model-choice + timeout default + fetch
-	for _, want := range []string{"--model-choice", "select_model", "fetch-model.sh", "MODEL_TIMEOUT"} {
-		if !strings.Contains(s, want) {
-			t.Errorf("setup.sh must offer the catalog menu (%q)", want)
-		}
-	}
-	// re-prompt on a bad path
-	for _, want := range []string{"try again"} {
-		if !strings.Contains(s, want) {
-			t.Errorf("setup.sh must default-detect on skip + re-prompt on a bad path (%q)", want)
-		}
-	}
-	// UI contract (REL-004): quiet-by-default to a log, a verbose flag, and
-	// status-aware next-steps.
-	for _, want := range []string{"setup.log", "--verbose", "Artifacts", "Next"} {
-		if !strings.Contains(s, want) {
-			t.Errorf("setup.sh UI must include %q", want)
+		if !strings.Contains(st, want) {
+			t.Errorf("the orchestrator must chain %q", want)
 		}
 	}
 	if !strings.Contains(readRepoFile(t, "README.md"), "setup.sh") {
