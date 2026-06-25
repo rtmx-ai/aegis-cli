@@ -51,7 +51,13 @@ if [ -z "$MODEL_GGUF" ] && [ -t 0 ] && ! grep -q '"sha256": "[0-9a-f]' deploy/mo
 	printf 'Path to the model GGUF (Enter to skip model setup for now): '
 	read -r MODEL_GGUF || MODEL_GGUF=''
 fi
-if [ -n "$MODEL_GGUF" ]; then printf 'AEGIS_MODEL_GGUF=%s\n' "$MODEL_GGUF" >"$CONF"; fi
+# A provided-but-missing path is a SKIP (with a warning), not a hard failure —
+# the build still stands; the model phases just skip with guidance.
+if [ -n "$MODEL_GGUF" ] && [ ! -f "$MODEL_GGUF" ]; then
+	echo "setup: model not found: $MODEL_GGUF — skipping model setup (re-run with a valid --model path)" >&2
+	MODEL_GGUF=''
+fi
+[ -n "$MODEL_GGUF" ] && printf 'AEGIS_MODEL_GGUF=%s\n' "$MODEL_GGUF" >"$CONF"
 
 # --- palette (interactive terminal only; respects NO_COLOR) ------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
