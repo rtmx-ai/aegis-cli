@@ -315,3 +315,13 @@ func TestBenchIntentTreatment(t *testing.T) {
 		}
 	}
 }
+
+// TestEnclaveRunbook → REQ-ENCLAVE-002: the stage-then-disconnect runbook.
+func TestEnclaveRunbook(t *testing.T) {
+	d := readRepoFile(t, "docs/enclave-deployment.md")
+	for _, want := range []string{"setup.sh", "verify-release", "SHA256SUMS", "transfer", "verify-airgap", "EGRESS=0", "loopback"} {
+		if !strings.Contains(d, want) {
+			t.Errorf("enclave runbook must cover %q", want)
+		}
+	}
+}
