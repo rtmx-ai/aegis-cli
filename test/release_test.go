@@ -355,3 +355,17 @@ func TestModelCatalog(t *testing.T) {
 		}
 	}
 }
+
+// TestSiteAssets → REQ-SITE-001: aegis exposes a site-consumable entry (product
+// paragraph + docs) so rtmx.ai can reference rather than duplicate it.
+func TestSiteAssets(t *testing.T) {
+	r := readRepoFile(t, "README.md")
+	for _, want := range []string{"air-gap-native", "OpenCode TUI", "rtmx as the intent layer"} {
+		if !strings.Contains(r, want) {
+			t.Errorf("README must carry the site-consumable product description (%q)", want)
+		}
+	}
+	if !strings.Contains(readRepoFile(t, "docs/requirements/site-exposure.md"), "rtmx.ai") {
+		t.Error("the rtmx.ai exposure spec must exist")
+	}
+}

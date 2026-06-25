@@ -83,7 +83,7 @@ loopback. Do not port Rust assumptions forward; the architecture changed.
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Model | Gemma 4 26B A4B **or** Qwen3.6-35B-A3B | MoE, ~4B active. Decide by bake-off. |
+| Model | Gemma-4-26B-A4B (default) + a curated catalog | `deploy/models/catalog.json` (Qwen3-Coder-30B-A3B, Laguna-XS.2, …); `setup.sh` strikes models that won't fit host RAM. Bake-off (SERVE-016) decides. |
 | Serving (spike) | Ollama | Fast iteration; localhost-bound; side-loaded GGUF. |
 | Serving (prod) | llama.cpp `llama-server` | From source, no telemetry. CPU on Ryzen; Metal on Mac. |
 | Harness | opencode (default) / Goose | Swappable behind `internal/harness`. Decide by bake-off. |
@@ -105,14 +105,17 @@ make build           # GOFLAGS=-mod=vendor go build ./cmd/aegis
 # run the exact pipeline CI runs: build → vet → unit → airgap gate → golden metrics
 make ci
 
-# run one loop iteration against the configured harness + endpoint
-aegis run --once
+# one headless task, one-shot (≡ opencode/ollama run)
+aegis run "add a health endpoint and a test"
 
 # verify the environment is closed + traceable before a real run
 aegis verify-env
 
+# one loop iteration over the rtmx backlog
+aegis loop --once
+
 # drain the backlog unattended (bounded): park-on-escalation, breaker, run budget
-aegis run --max 40 --break-after 3
+aegis loop --max 40 --break-after 3
 ```
 
 ---
