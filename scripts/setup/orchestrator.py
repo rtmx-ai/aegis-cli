@@ -21,6 +21,7 @@ class Orchestrator:
         self.failed = []
         self.staged = False
         self.smoke = False
+        self.installed = None
 
     def run(self, steps):
         open(LOG, "w").close()
@@ -44,7 +45,7 @@ class Orchestrator:
         if self.failed and step.id in ("model", "calibrate", "smoke"):
             return self._skip("skipped — an earlier step failed (see Next)")
         if step.is_done():
-            return self._ok(step, 0, note=step.title + " (already done)")
+            return self._ok(step, 0, already=True)
         if hasattr(step, "run_inproc"):
             return self._run_inproc(step)
         cmd = step.cmd()
@@ -59,6 +60,8 @@ class Orchestrator:
         dt = time.time() - start
         if ok:
             profile.record(step.id, dt)
+            if step.id == "install":
+                self.installed = step
             return self._ok(step, dt)
         self._fail(step, dt, "missing: " + " ".join(missing))
         return 1
@@ -99,8 +102,18 @@ class Orchestrator:
         self._fail(step, dt)
         return rc
 
-    def _ok(self, step, dt, note=None):
-        self.ui.write("  %s✓%s %s %s(%s)%s\n" % (self.ui.G, self.ui.X, note or step.title, self.ui.D, fmt_dur(dt), self.ui.X))
+    def _ok(self, step, dt, already=False):
+        try:
+            summ = step.done_summary()
+        except Exception:
+            summ = ""
+        if already:
+            # The header already names the step; don't echo it — report the result.
+            msg = "Already done." + (" " + summ if summ else "")
+            self.ui.write("  %s✓%s %s%s%s\n" % (self.ui.G, self.ui.X, self.ui.D, msg, self.ui.X))
+        else:
+            body = summ if summ else "done"
+            self.ui.write("  %s✓%s %s %s(%s)%s\n" % (self.ui.G, self.ui.X, body, self.ui.D, fmt_dur(dt), self.ui.X))
         return 0
 
     def _skip(self, reason):
@@ -140,6 +153,18 @@ class Orchestrator:
         else:
             u.write("  %s✓ stack built.%s re-run with %s--model <path>%s or pick a catalog model to finish.\n"
                     % (u.G, u.X, u.B, u.X))
+
+        if self.installed:
+            st = self.installed
+            u.write("\n%sRun aegis%s\n" % (u.B, u.X))
+            u.write("  %sinstalled:%s %s\n" % (u.D, u.X, st.dest))
+            if not st.on_path:
+                u.write("  %sthis shell:%s source %s   %s(new shells pick it up automatically)%s\n"
+                        % (u.D, u.X, st.profile, u.D, u.X))
+            u.write("  %saegis%s               launch the hardened OpenCode TUI\n" % (u.B, u.X))
+            u.write("  %saegis run \"<task>\"%s   one-shot headless task\n" % (u.B, u.X))
+            u.write("  %saegis loop%s          drain the rtmx backlog unattended\n" % (u.B, u.X))
+            u.write("  %saegis verify-env%s    confirm the enclave is closed + traceable\n" % (u.B, u.X))
         return 0
 
 

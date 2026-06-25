@@ -53,6 +53,8 @@ def main(argv=None):
     p.add_argument("-m", "--model", help="path to a local model GGUF (pinned by sha256 + staged)")
     p.add_argument("--model-choice", help="download a CATALOG model by id (deploy/models/catalog.json)")
     p.add_argument("-v", "--verbose", action="store_true", help="stream build output to the terminal too")
+    p.add_argument("-i", "--install", action="store_true",
+                   help="install the built aegis binary to ~/.local/bin and put it on PATH")
     p.add_argument("--timeout", type=int, default=int(os.environ.get("MODEL_TIMEOUT", "30")),
                    help="menu auto-select countdown (default 30s)")
     args = p.parse_args(argv)
@@ -62,7 +64,7 @@ def main(argv=None):
     u = ui_mod.UI(verbose=args.verbose)
     decision = catalog.resolve(args, load_conf(), u)
     save_conf(decision)
-    return Orchestrator(u).run(build_steps(decision))
+    return Orchestrator(u).run(build_steps(decision, install=args.install))
 
 
 if __name__ == "__main__":

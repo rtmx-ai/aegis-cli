@@ -38,7 +38,12 @@ smoke-tests the whole stack — run it on a connected build host:
 ./setup.sh                                  # menu of catalog models (auto-selects the recommended one)
 ./setup.sh --model-choice gemma-4-26b-a4b   # download a specific catalog model
 ./setup.sh --model /path/to/model.gguf      # or use a local GGUF
+./setup.sh --install                        # also install `aegis` to ~/.local/bin (on PATH)
 ```
+
+The catalog menu strikes through any model that won't fit the host's RAM, and
+auto-selects the largest one that will. `--install` ends with clear instructions
+on how to run `aegis`.
 
 Then install + run in the closed enclave per [docs/operator-guide.md](docs/operator-guide.md):
 `aegis` (the OpenCode TUI), `aegis run "<prompt>"` (one headless task), or

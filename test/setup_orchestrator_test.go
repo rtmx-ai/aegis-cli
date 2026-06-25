@@ -45,7 +45,7 @@ func TestSetupOrchestratorModules(t *testing.T) {
 // TestSetupIdempotent → REQ-SETUP-003: steps are gated on is_done (skip when done).
 func TestSetupIdempotent(t *testing.T) {
 	code := readRepoFile(t, "scripts/setup/orchestrator.py") + readRepoFile(t, "scripts/setup/steps.py")
-	for _, want := range []string{"is_done", "already done"} {
+	for _, want := range []string{"is_done", "Already done"} {
 		if !strings.Contains(code, want) {
 			t.Errorf("the orchestrator must gate steps on idempotency (%q)", want)
 		}
@@ -79,5 +79,34 @@ func TestSetupUI(t *testing.T) {
 		if !strings.Contains(u, want) {
 			t.Errorf("ui.py must provide %q", want)
 		}
+	}
+}
+
+// TestModelResourceFit → REQ-MODEL-004: the menu is resource-aware (struck non-fits).
+func TestModelResourceFit(t *testing.T) {
+	c := readRepoFile(t, "scripts/setup/catalog.py")
+	for _, want := range []string{"host_ram_bytes", "required_ram", "def fits(", "default_choice"} {
+		if !strings.Contains(c, want) {
+			t.Errorf("catalog.py must implement resource-fit (%q)", want)
+		}
+	}
+	if !strings.Contains(readRepoFile(t, "scripts/setup/ui.py"), "def strike(") {
+		t.Error("ui.py must provide strike() for non-fitting models")
+	}
+}
+
+// TestSetupInstall → REQ-SETUP-007: --install puts aegis on PATH + prints run steps.
+func TestSetupInstall(t *testing.T) {
+	if !strings.Contains(readRepoFile(t, "scripts/setup/main.py"), "--install") {
+		t.Error("main.py must offer --install")
+	}
+	st := readRepoFile(t, "scripts/setup/steps.py")
+	for _, want := range []string{"class InstallStep", ".local/bin", "bin/aegis"} {
+		if !strings.Contains(st, want) {
+			t.Errorf("InstallStep must install the binary (%q)", want)
+		}
+	}
+	if !strings.Contains(readRepoFile(t, "scripts/setup/orchestrator.py"), "Run aegis") {
+		t.Error("the summary must print run instructions after --install")
 	}
 }

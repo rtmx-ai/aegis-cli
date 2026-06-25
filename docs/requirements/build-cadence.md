@@ -78,3 +78,12 @@ recommended`); `sha256` is the HuggingFace LFS oid (verified). With no
 recommended entry. `scripts/fetch-model.sh` downloads the selection (connected
 host only — never the enclave) and **sha256-verifies** it before pin + stage.
 Recommended default: `gemma-4-26b-a4b`.
+
+## REQ-MODEL-004 — Resource-aware catalog menu
+
+The menu sizes each model against host RAM (`catalog.host_ram_bytes()`:
+`/proc/meminfo` | `sysctl hw.memsize`). `required_ram(size) = size*1.1 + 2GB`
+(weights + KV/context/OS headroom). Models that don't fit are shown
+**struck-through + non-selectable** (`ui.strike()`); the timeout/non-tty default is
+`default_choice()` — the recommended model if it fits, else the largest that does.
+Unknown RAM filters nothing.

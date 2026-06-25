@@ -54,6 +54,17 @@ def _model_ref():
         return None
 
 
+def _human(path):
+    try:
+        n = os.path.getsize(path)
+    except OSError:
+        return "?"
+    for u in ("B", "K", "M", "G"):
+        if n < 1024 or u == "G":
+            return "%d%s" % (n, u)
+        n //= 1024
+
+
 class Step:
     id = ""
     title = ""
@@ -64,6 +75,10 @@ class Step:
 
     def cmd(self):
         return None
+
+    def done_summary(self):
+        """A short description of the already-present result (for 'Already done.')."""
+        return ""
 
     def progress(self, tail, elapsed):
         return profile.pct_from_time(elapsed, profile.estimate(self.id))
@@ -113,6 +128,18 @@ class Toolchain(Step):
             missing.append("cc (%s)" % _pkg_hint("build-essential"))
         return (not missing, missing)
 
+    def done_summary(self):
+        parts = []
+        try:
+            parts.append(subprocess.run(["go", "version"], capture_output=True, text=True).stdout.split()[2])
+        except Exception:
+            pass
+        try:
+            parts.append("bun " + subprocess.run(["bun", "--version"], capture_output=True, text=True).stdout.strip())
+        except Exception:
+            pass
+        return ", ".join(parts)
+
 
 class ScriptStep(Step):
     """Reuse a dedicated shell script as the step body (DRY, SETUP-005)."""
@@ -125,6 +152,11 @@ class ScriptStep(Step):
 
     def cmd(self):
         return self.argv
+
+    def done_summary(self):
+        if self.done_path and os.path.exists(self.done_path):
+            return "%s (%s)" % (self.done_path, _human(self.done_path))
+        return ""
 
     def progress(self, tail, elapsed):
         if self.progress_kind == "cmake":
@@ -153,6 +185,13 @@ class ModelStep(Step):
             return False
         return os.path.isfile(os.path.join("deploy/models", ref.get("name", "")))
 
+    def done_summary(self):
+        ref = _model_ref()
+        if ref and ref.get("name"):
+            p = os.path.join("deploy/models", ref["name"])
+            return "%s (%s)" % (ref["name"], _human(p)) if os.path.exists(p) else ref["name"]
+        return ""
+
     def cmd(self):
         if self.kind == "choice":
             return ["sh", "-c",
@@ -174,14 +213,57 @@ class ModelStep(Step):
         return super().progress(tail, elapsed)
 
 
-def build_steps(model_decision):
+def _shell_profile():
+    home = os.path.expanduser("~")
+    return os.path.join(home, ".zshrc") if "zsh" in os.environ.get("SHELL", "") else os.path.join(home, ".bashrc")
+
+
+class InstallStep(Step):
+    """Install the built aegis binary to a user-local bin dir and ensure it's on PATH."""
+
+    id, title = "install", "Installing aegis to PATH"
+
+    def __init__(self):
+        self.dest, self.on_path, self.profile = "", False, ""
+
+    def is_done(self):
+        return False  # always (re)install on --install; the copy is idempotent
+
+    def run_inproc(self, log):
+        if not os.path.isfile("bin/aegis"):
+            return (False, ["bin/aegis not built"])
+        dest_dir = os.environ.get("AEGIS_BIN_DIR") or os.path.expanduser("~/.local/bin")
+        os.makedirs(dest_dir, exist_ok=True)
+        self.dest = os.path.join(dest_dir, "aegis")
+        shutil.copy2("bin/aegis", self.dest)
+        os.chmod(self.dest, 0o755)
+        log.write("installed bin/aegis -> %s\n" % self.dest)
+        self.on_path = dest_dir in os.environ.get("PATH", "").split(os.pathsep)
+        if not self.on_path:
+            self.profile = _shell_profile()
+            marker = 'export PATH="%s:$PATH"' % dest_dir
+            try:
+                existing = open(self.profile).read() if os.path.exists(self.profile) else ""
+                if marker not in existing:  # idempotent: don't append twice
+                    with open(self.profile, "a") as pf:
+                        pf.write("\n# added by aegis setup --install\n%s\n" % marker)
+                    log.write("added %s to PATH via %s\n" % (dest_dir, self.profile))
+            except OSError as e:
+                log.write("could not update %s: %s\n" % (self.profile, e))
+        return (True, [])
+
+    def done_summary(self):
+        return self.dest
+
+
+def build_steps(model_decision, install=False):
     """The ordered step list. model_decision is (kind, value) from catalog.resolve."""
     kind, value = model_decision
     model_path = ""
     ref = _model_ref()
     if ref and not str(ref.get("sha256", "")).startswith("PENDING"):
         model_path = os.path.join("deploy/models", ref.get("name", ""))
-    return [
+    steps = [
         Toolchain(),
         ScriptStep("aegis", "Building aegis (Go, vendored/offline)", ["make", "build"], "bin/aegis"),
         ScriptStep("opencode", "Building OpenCode from pinned source",
@@ -195,3 +277,6 @@ def build_steps(model_decision):
         ScriptStep("smoke", "Full-stack integration smoke (EGRESS=0)",
                    ["scripts/integration-smoke.sh"] if model_path else None, ""),
     ]
+    if install:
+        steps.append(InstallStep())
+    return steps

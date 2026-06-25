@@ -104,3 +104,11 @@ SETUP-001..006 COMPLETE via `rtmx verify`; `rtmx health` HEALTHY; `make ci` gree
 `setup.sh` is a thin shim; `scripts/setup/` is std-lib Python with isolated
 UI/steps; `make ci-full`/`release.sh` still call the same shell scripts (no
 duplication); a re-run on a built tree is all-skips; a killed run resumes cleanly.
+
+## REQ-SETUP-007 — `--install` (install to PATH + run instructions)
+
+`setup.sh --install` appends an `InstallStep`: it copies `bin/aegis` to
+`~/.local/bin` (`AEGIS_BIN_DIR` override), `chmod +x`, and ensures that dir is on
+PATH (idempotent append to the shell profile if absent). The final summary prints a
+**Run aegis** block — `aegis` (TUI), `aegis run "<task>"`, `aegis loop`,
+`aegis verify-env` — plus a `source <profile>` hint when PATH needs reloading.

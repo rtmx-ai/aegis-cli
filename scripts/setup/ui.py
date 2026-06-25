@@ -68,6 +68,10 @@ class UI:
         if self.tty:
             self.write("\033[?25h")
 
+    def strike(self, s):
+        """Strike-through + dim (tty); plain text otherwise."""
+        return ("\033[9m\033[2m%s\033[0m" % s) if self.tty else s
+
 
 class Panel:
     """A live, in-place multi-line region: a progress line + the step's last N
