@@ -266,6 +266,12 @@ func TestSetupScript(t *testing.T) {
 			t.Errorf("setup.sh must automate model setup (%q)", want)
 		}
 	}
+	// default action on skip + re-prompt on a bad path
+	for _, want := range []string{"discover_gguf", "auto-detect", "try again"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("setup.sh must default-detect on skip + re-prompt on a bad path (%q)", want)
+		}
+	}
 	// UI contract (REL-004): quiet-by-default to a log, a verbose flag, and
 	// status-aware next-steps.
 	for _, want := range []string{"setup.log", "--verbose", "Artifacts", "Next"} {

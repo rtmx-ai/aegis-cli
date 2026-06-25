@@ -44,20 +44,52 @@ while [ $# -gt 0 ]; do
 	shift
 done
 
-# Resolve the model GGUF: flag/env > saved setup.conf > interactive prompt. Then
-# persist it so the next run is fully non-interactive.
+already_pinned() { grep -q '"sha256": "[0-9a-f]' deploy/models/MODEL_REF 2>/dev/null; }
+
+# discover_gguf — the DEFAULT ACTION on skip: find the largest .gguf under common
+# model locations and use it on the user's behalf (announced; Ctrl-C to override).
+discover_gguf() {
+	local d f
+	for d in "${MODEL_SRC:-}" "$REPO/models" "$HOME/models" "$HOME/Downloads" \
+		"$HOME/.cache/huggingface" "$HOME/.cache/lm-studio/models" /models /opt/models /srv/models; do
+		[ -n "$d" ] && [ -d "$d" ] || continue
+		f="$(find "$d" -maxdepth 3 -iname '*.gguf' -type f 2>/dev/null |
+			while IFS= read -r p; do printf '%s\t%s\n' "$(wc -c <"$p" 2>/dev/null || echo 0)" "$p"; done |
+			sort -rn | head -1 | cut -f2-)"
+		[ -n "$f" ] && { printf '%s' "$f"; return 0; }
+	done
+	return 1
+}
+
+# Resolve the model GGUF: flag/env > saved setup.conf > interactive prompt
+# (re-prompt on a bad path) > default action (auto-detect a host GGUF on skip).
 [ -z "$MODEL_GGUF" ] && [ -f "$CONF" ] && . "$CONF" && MODEL_GGUF="${MODEL_GGUF:-${AEGIS_MODEL_GGUF:-}}"
-if [ -z "$MODEL_GGUF" ] && [ -t 0 ] && ! grep -q '"sha256": "[0-9a-f]' deploy/models/MODEL_REF 2>/dev/null; then
-	printf 'Path to the model GGUF (Enter to skip model setup for now): '
-	read -r MODEL_GGUF || MODEL_GGUF=''
-fi
-# A provided-but-missing path is a SKIP (with a warning), not a hard failure —
-# the build still stands; the model phases just skip with guidance.
+# A flag/env/conf path that doesn't exist: warn + clear (re-prompt / default below).
 if [ -n "$MODEL_GGUF" ] && [ ! -f "$MODEL_GGUF" ]; then
-	echo "setup: model not found: $MODEL_GGUF — skipping model setup (re-run with a valid --model path)" >&2
+	echo "setup: model not found: $MODEL_GGUF" >&2
 	MODEL_GGUF=''
 fi
-[ -n "$MODEL_GGUF" ] && printf 'AEGIS_MODEL_GGUF=%s\n' "$MODEL_GGUF" >"$CONF"
+# Interactive: keep prompting until a valid path or an explicit Enter (skip).
+if [ -z "$MODEL_GGUF" ] && [ -t 0 ] && ! already_pinned; then
+	while :; do
+		printf 'Path to the model GGUF (Enter to auto-detect one on this host): '
+		read -r MODEL_GGUF || MODEL_GGUF=''
+		[ -z "$MODEL_GGUF" ] && break  # Enter -> default action
+		[ -f "$MODEL_GGUF" ] && break  # valid -> use it
+		echo "  not found: $MODEL_GGUF — try again, or Enter to auto-detect." >&2
+		MODEL_GGUF=''
+	done
+fi
+# Default action on skip: auto-detect a GGUF on the host (do it on their behalf).
+if [ -z "$MODEL_GGUF" ] && ! already_pinned; then
+	if MODEL_GGUF="$(discover_gguf)" && [ -n "$MODEL_GGUF" ]; then
+		echo "setup: auto-detected model: $MODEL_GGUF (Ctrl-C to choose a different one)"
+	else
+		MODEL_GGUF=''
+		echo "setup: no GGUF found on this host — building stack only; pass --model <path.gguf> to add one." >&2
+	fi
+fi
+[ -n "$MODEL_GGUF" ] && [ -f "$MODEL_GGUF" ] && printf 'AEGIS_MODEL_GGUF=%s\n' "$MODEL_GGUF" >"$CONF"
 
 # --- palette (interactive terminal only; respects NO_COLOR) ------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -202,8 +234,10 @@ elif [ -n "$MODEL_GGUF" ]; then
 	fi
 elif [ -n "${MODEL_SRC:-}" ]; then
 	if run "model staged + sha256-verified" scripts/stage-model.sh; then STAGED=1; fi
+elif already_pinned && [ -f "deploy/models/$(model_name)" ]; then
+	done_ok "model already staged" 0 && STAGED=1
 else
-	done_skip "no model: pass --model <path.gguf> (or MODEL_SRC=<dir>) to stage -> calibrate -> smoke"
+	done_skip "no model found or provided — pass --model <path.gguf> to add one"
 fi
 model_path="deploy/models/$(model_name)"
 
