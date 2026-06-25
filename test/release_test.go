@@ -281,3 +281,26 @@ func TestOperatorGuide(t *testing.T) {
 		}
 	}
 }
+
+// TestBenchAdapterContract → REQ-BENCH-003: the intent-bench SUT adapter conforms
+// to the agent contract and drives `aegis run`.
+func TestBenchAdapterContract(t *testing.T) {
+	a := readRepoFile(t, "scripts/intent-bench/aegis.sh")
+	for _, want := range []string{`workdir="$1"`, `model="$2"`, `prompt_file="$3"`, `result_dir="$4"`,
+		"aegis", "run", "transcript.jsonl", "stderr.log"} {
+		if !strings.Contains(a, want) {
+			t.Errorf("intent-bench adapter must use %q", want)
+		}
+	}
+}
+
+// TestBenchRunbook → REQ-BENCH-005: the profiling runbook documents the A/B.
+func TestBenchRunbook(t *testing.T) {
+	d := readRepoFile(t, "docs/intent-bench-profiling.md")
+	for _, want := range []string{"bench.sh run", "--agent aegis", "control", "treatment",
+		"claude-sonnet-4", "completion rate", "INTENT_TOOL_PREFIX"} {
+		if !strings.Contains(d, want) {
+			t.Errorf("profiling runbook must cover %q", want)
+		}
+	}
+}
