@@ -45,3 +45,6 @@ rtmx-results.json
 # Locally-built llama-server binary (scripts/build-llama.sh)
 /deploy/llama-server/bin/
 /build/llama.cpp/
+
+# setup.sh run log
+/setup.log

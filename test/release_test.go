@@ -260,6 +260,13 @@ func TestSetupScript(t *testing.T) {
 	if !strings.Contains(s, "bun.sh/install") {
 		t.Error("setup.sh must auto-install Bun (user-local, no sudo)")
 	}
+	// UI contract (REL-004): quiet-by-default to a log, a verbose flag, and
+	// status-aware next-steps.
+	for _, want := range []string{"setup.log", "--verbose", "Artifacts", "Next"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("setup.sh UI must include %q", want)
+		}
+	}
 	if !strings.Contains(readRepoFile(t, "README.md"), "setup.sh") {
 		t.Error("README must cite setup.sh")
 	}
