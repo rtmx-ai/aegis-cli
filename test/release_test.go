@@ -233,3 +233,15 @@ func TestReleaseBuildsFullStack(t *testing.T) {
 		}
 	}
 }
+
+// TestReleaseInstallsBun → REQ-OC-007: the release workflow installs Bun so
+// `make release` builds + bundles the self-built OpenCode (full-stack release tier).
+func TestReleaseInstallsBun(t *testing.T) {
+	wf := readRepoFile(t, ".github/workflows/release.yml")
+	if !strings.Contains(wf, "bun.sh/install") {
+		t.Error("release.yml must install Bun so build-opencode.sh runs")
+	}
+	if !strings.Contains(wf, ".bun/bin") {
+		t.Error("release.yml must add Bun to PATH")
+	}
+}

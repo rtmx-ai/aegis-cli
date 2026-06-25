@@ -25,7 +25,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Go 1.23
+      - name: Set up Go 1.25.11
         uses: actions/setup-go@v5
         with:
           go-version: "1.25.11"
@@ -34,6 +34,17 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3"
+
+      # OC-007: install Bun via `run:` (the org allowlists Actions, so third-party
+      # setup actions like oven-sh/setup-bun are blocked) so `make release` ->
+      # scripts/build-opencode.sh builds + bundles the self-built OpenCode. cmake/cc
+      # are preinstalled on ubuntu-latest, so scripts/build-llama.sh also runs
+      # (BUILD-011 — the release tier builds the full stack). This is the heavy
+      # full-stack tier; the per-push gate (make ci) stays Go-only.
+      - name: Install Bun (for the OpenCode build)
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
 
       # Single build step — the same `make release` an operator runs locally.
       # The build itself is offline (GOPROXY=off, -mod=vendor); only checkout +
