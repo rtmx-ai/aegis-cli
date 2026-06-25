@@ -87,6 +87,21 @@ else
 	echo "release: NOTE — OpenCode not built/bundled; run scripts/build-opencode.sh on a Bun-equipped build host." >&2
 fi
 
+# BUILD-011: build + bundle the production llama.cpp llama-server from pinned source
+# (the full-stack release tier). Built for the build host's platform; covered by
+# the checksums + signature alongside aegis + opencode.
+llama_bin="deploy/llama-server/bin/llama-server"
+if [ ! -x "$llama_bin" ]; then
+	scripts/build-llama.sh || true
+fi
+if [ -x "$llama_bin" ]; then
+	cp "$llama_bin" "$DIST/llama-server"
+	cp deploy/llama-server/LLAMA_REF "$DIST/llama-server.VERSION" 2>/dev/null || true
+	echo "release: bundled self-built llama-server (llama.cpp $(tr -d ' \n' <deploy/llama-server/LLAMA_REF 2>/dev/null))"
+else
+	echo "release: NOTE — llama-server not built/bundled; run scripts/build-llama.sh on a toolchain-equipped host." >&2
+fi
+
 # BUILD-004: SHA-256 checksums manifest over every artifact (aegis binaries,
 # .exe, .deb, the bundled opencode if present, and the SBOM).
 (

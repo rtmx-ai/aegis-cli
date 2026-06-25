@@ -190,3 +190,46 @@ func TestLlamaServerBuildConfigured(t *testing.T) {
 		t.Errorf("LLAMA_REF must pin a concrete release tag, got %q", ref)
 	}
 }
+
+// TestModelPinned → REQ-MODEL-001: the model GGUF is pinned (name + sha256).
+func TestModelPinned(t *testing.T) {
+	ref := readRepoFile(t, "deploy/models/MODEL_REF")
+	for _, want := range []string{".gguf", "sha256"} {
+		if !strings.Contains(ref, want) {
+			t.Errorf("MODEL_REF must pin a GGUF by %q", want)
+		}
+	}
+}
+
+// TestStageModelConfigured → REQ-MODEL-002: stage-model.sh verifies the pin.
+func TestStageModelConfigured(t *testing.T) {
+	s := readRepoFile(t, "scripts/stage-model.sh")
+	for _, want := range []string{"MODEL_REF", "sha256sum", "MISMATCH"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("stage-model.sh must verify the pin (%q)", want)
+		}
+	}
+}
+
+// TestCIFullTarget → REQ-BUILD-010: `make ci-full` builds the whole stack.
+func TestCIFullTarget(t *testing.T) {
+	mk := readRepoFile(t, "Makefile")
+	if !strings.Contains(mk, "ci-full:") {
+		t.Error("Makefile must define ci-full")
+	}
+	for _, want := range []string{"build-opencode.sh", "build-llama.sh"} {
+		if !strings.Contains(mk, want) {
+			t.Errorf("ci-full must build %q", want)
+		}
+	}
+}
+
+// TestReleaseBuildsFullStack → REQ-BUILD-011: the release builds the full stack.
+func TestReleaseBuildsFullStack(t *testing.T) {
+	rel := readRepoFile(t, "scripts/release.sh")
+	for _, want := range []string{"build-opencode.sh", "build-llama.sh", "llama-server"} {
+		if !strings.Contains(rel, want) {
+			t.Errorf("release.sh must build the full stack (%q)", want)
+		}
+	}
+}

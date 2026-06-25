@@ -136,6 +136,17 @@ ci: fmt-check lint vet build test race cover-gate vuln airgap health metrics
 ci-darwin: fmt-check lint vet build test race cover-gate vuln health metrics
 	@echo "ci-darwin: OK (darwin-metal build/test parity; EGRESS=0 proof runs on the linux leg)"
 
+## ci-full: BUILD-010 — the full-stack tier (release/nightly cadence) run locally.
+## `make ci` (Go gates) + build OpenCode + llama.cpp from pinned source + stage the
+## model if pinned. Heavy (minutes); NOT a per-commit gate — gives local parity
+## with the release/nightly build. Needs bun + a C/C++ toolchain on the host.
+ci-full: ci
+	@echo "ci-full: building the full stack from pinned source"
+	scripts/build-opencode.sh
+	scripts/build-llama.sh
+	@scripts/stage-model.sh 2>/dev/null || echo "ci-full: model pin pending (SERVE-016) — skipping stage-model"
+	@echo "ci-full: OK (aegis + OpenCode + llama-server built from pinned source)"
+
 ## hooks-install: install the pre-commit + pre-push git hooks (idempotent)
 hooks-install:
 	scripts/install-hooks.sh

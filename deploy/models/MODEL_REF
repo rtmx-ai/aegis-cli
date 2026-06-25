@@ -1,0 +1,5 @@
+{
+  "name": "gemma-4-26B-A4B-it-qat-Q4_K_XL.gguf",
+  "sha256": "PENDING-BAKEOFF-SERVE-016",
+  "note": "Pinned model GGUF (SERVE-016 bake-off winner). Side-load only — never fetched at runtime. Replace sha256 with the verified digest once the bake-off selects the model; stage-model.sh refuses until then."
+}
