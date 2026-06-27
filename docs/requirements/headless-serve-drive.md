@@ -72,6 +72,24 @@ opencode config dir ships a satisfying `node_modules` + `package-lock.json` for
 `registry.npmjs.org` request and does not stall on the install; EGRESS=0. *Test:*
 `internal/opencode::TestPluginInstallSuppressed`. *Depends on:* `REQ-OC-004`.
 
+> **Correction (2026-06-27).** First implemented via `OPENCODE_CONFIG_DIR`, but that only
+> overrides a service-level accessor — the bootstrap install uses `Global.Path.config`
+> (`xdg-basedir(XDG_CONFIG_HOME) + "opencode"`), so it still hit the unseeded
+> `~/.config/opencode` and reached the registry. The unit test passed but a real run showed
+> the egress. Fixed by setting **`XDG_CONFIG_HOME`** to the seed's parent (the seed IS the
+> `opencode` subdir), so `Global.Path.config` resolves to the seed; the test now asserts the
+> XDG mechanism, and a real run confirms the npm WARN is gone.
+
+### REQ-OC-011 — Disable the models.dev catalog fetch (no models.dev egress)
+**The launch shall** disable OpenCode's models.dev catalog fetch. OpenCode pulls the model
+registry from models.dev (Cloudflare) at startup — a third bootstrap egress vector found via
+the OC-010 real-run check (after ripgrep and npm). The operator's model is supplied inline in
+the rendered provider config, so the catalog is never needed. *Target:* `airgapEnv` sets
+`OPENCODE_DISABLE_MODELS_FETCH=1` (`core/src/models.ts`); a run makes no request to models.dev.
+*Test:* `internal/opencode::TestModelsFetchDisabled`. *Depends on:* `REQ-OC-004`. *Note:* the
+whole-process-group egress gate `REQ-ENCLAVE-001` is the umbrella that catches any remaining
+vectors — these per-vector fixes were each found one real run at a time.
+
 ### REQ-BENCH-006 — Drive the turn via `opencode serve` (synchronous executor)
 **aegis shall** drive a headless agent turn through `opencode serve`'s synchronous executor:
 create a session (`POST /session`), post the prompt (`POST /session/{id}/message` with a

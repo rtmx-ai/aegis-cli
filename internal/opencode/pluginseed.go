@@ -5,14 +5,18 @@ import (
 	"path/filepath"
 )
 
-// StagedConfigSeedRelPath is the OpenCode config dir aegis points OPENCODE_CONFIG_DIR
-// at (resolved alongside the aegis binary, then relative to cwd). It is pre-seeded so
-// OpenCode's bootstrap finds @opencode-ai/plugin already installed and performs NO
-// npm install — closing the registry.npmjs.org egress vector that otherwise fires
-// (and stalls the run) at startup (OC-010, air-gap). Pointing OPENCODE_CONFIG_DIR
-// here also makes it OpenCode's Global.Path.config, so it is the only config-scope
-// install target.
-const StagedConfigSeedRelPath = "deploy/opencode/config-seed"
+// StagedConfigSeedRelPath is OpenCode's config directory — the `opencode` subdir of
+// the XDG config home aegis controls. It is pre-seeded so OpenCode's bootstrap finds
+// @opencode-ai/plugin already installed and performs NO npm install, closing the
+// registry.npmjs.org egress vector that otherwise fires at startup (OC-010, air-gap).
+//
+// It MUST be named `opencode` and sit under an XDG base, because OpenCode derives its
+// config dir as `xdg-basedir(XDG_CONFIG_HOME) + "opencode"` (Global.Path.config). The
+// launch sets XDG_CONFIG_HOME to this dir's parent so that resolves here. (OPENCODE_
+// CONFIG_DIR does NOT redirect Global.Path.config — it only overrides a separate
+// service accessor — so the bootstrap install would still target ~/.config/opencode
+// and reach the registry. That was the OC-010 gap.)
+const StagedConfigSeedRelPath = "deploy/opencode/oc-config/opencode"
 
 // pluginSeedFiles are the minimal files that satisfy OpenCode's bootstrap check
 // "is @opencode-ai/plugin installed?" so it skips the npm install: a node_modules
@@ -53,7 +57,7 @@ func stagePluginSeed(dir string) error {
 func ConfigSeedDir() (string, bool) {
 	var cands []string
 	if self, err := os.Executable(); err == nil {
-		cands = append(cands, filepath.Join(filepath.Dir(self), "config-seed"))
+		cands = append(cands, filepath.Join(filepath.Dir(self), "oc-config", "opencode"))
 	}
 	cands = append(cands, StagedConfigSeedRelPath)
 	for _, c := range cands {

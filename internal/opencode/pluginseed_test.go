@@ -34,16 +34,22 @@ func TestPluginInstallSuppressed(t *testing.T) {
 		t.Error("seed package-lock.json does not list @opencode-ai/plugin")
 	}
 
-	// The hardened launch env must point OPENCODE_CONFIG_DIR at the seed so OpenCode
-	// installs there (a no-op) instead of fetching from registry.npmjs.org.
-	var got string
+	// The seed must BE OpenCode's config dir: its Global.Path.config is derived as
+	// XDG_CONFIG_HOME/opencode, so the seed must be named "opencode" and the hardened
+	// env must point XDG_CONFIG_HOME at its parent. (OPENCODE_CONFIG_DIR does not
+	// redirect that path — the OC-010 gap that left ~/.config/opencode unseeded and
+	// reaching the npm registry.)
+	if filepath.Base(seed) != "opencode" {
+		t.Errorf("seed dir must be named opencode (OpenCode's XDG config subdir); got %q", seed)
+	}
+	var xdg string
 	for _, e := range airgapEnv(config.Default(), true) {
-		if strings.HasPrefix(e, "OPENCODE_CONFIG_DIR=") {
-			got = strings.TrimPrefix(e, "OPENCODE_CONFIG_DIR=")
+		if strings.HasPrefix(e, "XDG_CONFIG_HOME=") {
+			xdg = strings.TrimPrefix(e, "XDG_CONFIG_HOME=")
 		}
 	}
-	if got != seed {
-		t.Errorf("airgapEnv OPENCODE_CONFIG_DIR = %q, want seed dir %q", got, seed)
+	if xdg != filepath.Dir(seed) {
+		t.Errorf("airgapEnv XDG_CONFIG_HOME = %q, want seed parent %q (so XDG_CONFIG_HOME/opencode == seed)", xdg, filepath.Dir(seed))
 	}
 
 	// Idempotent: a second stage over the same dir must not error or duplicate.

@@ -45,6 +45,12 @@ func airgapEnv(cfg config.Config, intent bool) []string {
 		"OPENCODE_AUTOUPDATE=0",
 		"OPENCODE_TELEMETRY=0",
 		"OPENCODE_DISABLE_SHARE=1",
+		// OC-011: disable OpenCode's models.dev catalog fetch — it pulls the model
+		// registry from models.dev (Cloudflare) at startup, a non-loopback egress
+		// (`OPENCODE_DISABLE_MODELS_FETCH`, core/src/models.ts). The operator's model
+		// is supplied inline via the rendered provider config, so the catalog is
+		// never needed.
+		"OPENCODE_DISABLE_MODELS_FETCH=1",
 		"OPENAI_BASE_URL=" + cfg.Endpoint + "/v1",
 		"OPENAI_API_KEY=not-needed-loopback",
 		"OPENCODE_CONFIG_CONTENT=" + RenderConfig(cfg, intent),
@@ -55,12 +61,14 @@ func airgapEnv(cfg config.Config, intent bool) []string {
 	if p := hardenedPath(); p != "" {
 		env = append(env, "PATH="+p)
 	}
-	// Point OpenCode's config dir at a pre-seeded directory so its bootstrap finds
-	// @opencode-ai/plugin already installed and makes no npm-registry request
-	// (OC-010). OPENCODE_CONFIG_DIR also becomes Global.Path.config, so the seed is
-	// the only config-scope install target.
+	// Redirect OpenCode's XDG config home to the pre-seeded sandbox so its
+	// Global.Path.config (= XDG_CONFIG_HOME/opencode) resolves to the seed, where
+	// @opencode-ai/plugin is already installed — so bootstrap makes no npm-registry
+	// request (OC-010). The seed dir IS the `opencode` subdir, so XDG_CONFIG_HOME is
+	// its parent. (OPENCODE_CONFIG_DIR alone does NOT redirect Global.Path.config, so
+	// the install would still hit ~/.config/opencode and reach the registry.)
 	if seed, ok := ConfigSeedDir(); ok {
-		env = append(env, "OPENCODE_CONFIG_DIR="+seed)
+		env = append(env, "XDG_CONFIG_HOME="+filepath.Dir(seed))
 	}
 	return env
 }

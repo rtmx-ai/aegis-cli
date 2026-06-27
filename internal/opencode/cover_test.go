@@ -22,6 +22,15 @@ func TestHardenedEnv(t *testing.T) {
 	}
 }
 
+// TestModelsFetchDisabled → REQ-OC-011: the hardened launch env disables OpenCode's
+// models.dev catalog fetch (a non-loopback egress to models.dev at startup).
+func TestModelsFetchDisabled(t *testing.T) {
+	joined := strings.Join(HardenedEnv(config.Default()), "\n")
+	if !strings.Contains(joined, "OPENCODE_DISABLE_MODELS_FETCH=1") {
+		t.Error("hardened env must disable the models.dev fetch (OPENCODE_DISABLE_MODELS_FETCH=1)")
+	}
+}
+
 func TestSetAuth(t *testing.T) {
 	c := NewServeClient("http://x")
 	c.SetAuth("opencode", "secret")
