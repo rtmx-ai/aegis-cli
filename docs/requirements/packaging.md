@@ -83,9 +83,17 @@ sudo apt install aegis                           # after adding the apt repo (se
 2. **Multi-platform needs a macOS CI runner.** The Linux runner builds linux-amd64 helpers;
    the formula's darwin tarballs stay placeholders until a `macos-latest` job builds them.
 
-**Remaining to close REL-007:** decide (1), add a macOS build job (2), create
-`github.com/rtmx-ai/homebrew-tap` + set `HOMEBREW_TAP_TOKEN`, and cut a signed tag so the
-workflow publishes for real.
+**Decision (2026-06-27): brew-only for now.** The Homebrew channel ships first (release
+assets handle the 190 MB tarball); the apt channel is **deferred** pending finding (1) — the
+`build-apt-repo.sh` generator stays as ready-but-unpublished tooling. So REL-007's scope is
+the **Homebrew tap**.
+
+**Remaining to close REL-007 (brew):** create `github.com/rtmx-ai/homebrew-tap`, set the
+`HOMEBREW_TAP_TOKEN` repo secret, and cut a signed `v*` tag — the workflow then fills +
+publishes `Formula/aegis.rb` and uploads the bundled tarball as a release asset. (For full
+macOS coverage, add a `macos-latest` job to build the darwin tarballs; linux-amd64 pins on
+the current runner.) Until that publish, REL-007 stays MISSING — the tooling is ready, but it
+is not yet installable from a public channel.
 
 ## 4. Notes
 
