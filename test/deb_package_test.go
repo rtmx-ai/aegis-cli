@@ -64,3 +64,29 @@ func TestDebBundlesHarness(t *testing.T) {
 		}
 	}
 }
+
+// TestBundleTarball → REQ-REL-007: scripts/build-bundle.sh assembles the Homebrew/release
+// bundle tarball (bin/aegis + libexec/{opencode,rg,llama-server}) the multi-platform
+// bundle-matrix workflow ships per platform. Gated/release-tier like the .deb test.
+func TestBundleTarball(t *testing.T) {
+	root := repoRoot(t)
+	aegisBin := filepath.Join(root, "bin", "aegis")
+	if !isExecFile(aegisBin) || !isExecFile(filepath.Join(root, "deploy", "opencode", "bin", "opencode")) {
+		t.Skip("aegis/opencode not built — REL-007 bundle is release-tier (make ci-full)")
+	}
+	dist := t.TempDir()
+	cmd := exec.Command("scripts/build-bundle.sh", "linux", "amd64", "0.0.0-test", dist, aegisBin)
+	cmd.Dir = root
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build-bundle.sh: %v\n%s", err, out)
+	}
+	out, err := exec.Command("tar", "tzf", filepath.Join(dist, "aegis-0.0.0-test-linux-amd64.tar.gz")).Output()
+	if err != nil {
+		t.Fatalf("tar tzf: %v", err)
+	}
+	for _, want := range []string{"bin/aegis", "libexec/opencode"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("bundle tarball must contain %s\n%s", want, out)
+		}
+	}
+}

@@ -93,21 +93,13 @@ fi
 build_deb amd64
 build_deb arm64
 
-# REL-006: a self-contained bundle tarball (aegis + libexec helpers) for the Homebrew
-# formula (deploy/homebrew/aegis.rb) — the build host's harness, installed to bin/ + libexec/.
-# Per-platform (helpers are host-built); macOS bottles come from a mac build host.
+# REL-006/007: the HOST-platform bundle tarball (aegis + libexec helpers) for the Homebrew
+# formula, via scripts/build-bundle.sh — shared with the multi-platform bundle-matrix workflow
+# (.github/workflows/bundle-matrix.yml), which builds the other platforms on native runners.
 host_os="$(go env GOOS)"; host_arch_go="$(go env GOARCH)"
-bundle_bin="$DIST/aegis-$VERSION-$host_os-$host_arch_go"
-if [ -x "$bundle_bin" ] && [ -x deploy/opencode/bin/opencode ]; then
-	bdir="$(mktemp -d)"; mkdir -p "$bdir/bin" "$bdir/libexec"
-	install -m 0755 "$bundle_bin" "$bdir/bin/aegis"
-	install -m 0755 deploy/opencode/bin/opencode "$bdir/libexec/opencode"
-	install -m 0755 deploy/opencode/bin/rg "$bdir/libexec/rg"
-	cp -r deploy/opencode/oc-config "$bdir/libexec/oc-config"
-	[ -x deploy/llama-server/bin/llama-server ] && install -m 0755 deploy/llama-server/bin/llama-server "$bdir/libexec/llama-server"
-	tar -C "$bdir" -czf "$DIST/aegis-$VERSION-$host_os-$host_arch_go.tar.gz" bin libexec
-	rm -rf "$bdir"
-	echo "release: bundled tarball $DIST/aegis-$VERSION-$host_os-$host_arch_go.tar.gz (bin + libexec)"
+if [ -x "$DIST/aegis-$VERSION-$host_os-$host_arch_go" ] && [ -x deploy/opencode/bin/opencode ]; then
+	scripts/build-bundle.sh "$host_os" "$host_arch_go" "$VERSION" "$DIST" >/dev/null \
+		&& echo "release: bundled tarball aegis-$VERSION-$host_os-$host_arch_go.tar.gz"
 fi
 
 # BUILD-004: SHA-256 checksums manifest over every artifact (aegis binaries,

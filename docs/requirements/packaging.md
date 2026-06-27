@@ -97,8 +97,12 @@ binary-only; the harness bundle is host-built, so full macOS/arm parity needs **
 CI runners** (a `macos-latest` + arm job building OpenCode/llama-server) — until then a
 release publishes the platforms it built (linux-amd64 today).
 
-**Remaining to close REL-007:** add the per-platform build jobs, set `HOMEBREW_TAP_TOKEN`,
-and cut a signed `v*` tag. Until that publish, REL-007 stays MISSING.
+**Remaining to close REL-007:** the per-platform build jobs are **drafted** in
+`.github/workflows/bundle-matrix.yml` (a `workflow_dispatch` matrix over ubuntu/macos runners
+calling `scripts/build-bundle.sh`) — validate on real macOS/arm runners, close the
+per-platform **ripgrep** pin gap (`RIPGREP_REF` pins only linux-x86_64-musl today), fold the
+jobs into `release.yml` so the `release` job consumes the tarball artifacts, then set
+`HOMEBREW_TAP_TOKEN` + cut a signed `v*` tag. Until that publish, REL-007 stays MISSING.
 
 ## 4. Notes
 

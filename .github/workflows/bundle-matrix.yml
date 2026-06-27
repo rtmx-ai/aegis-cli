@@ -1,0 +1,80 @@
+# bundle-matrix — DRAFT (REL-007 multi-platform Homebrew bundle tarballs).
+#
+# STATUS: WIP / not yet wired into release.yml. Manually triggered (workflow_dispatch) so it
+# can be validated on real macOS/arm runners WITHOUT affecting the working release flow. It
+# builds the per-platform bundle tarball (aegis + libexec/{opencode,rg,llama-server}) on a
+# NATIVE runner for each platform and uploads it as an artifact. Once validated, fold these
+# jobs into release.yml (as a `bundle` matrix that the `release` job consumes via
+# download-artifact, then fill-formula sees all platforms and the brew formula is full
+# multi-platform — superseding the prior binary-only v0.1.3 across macOS + Linux).
+#
+# KNOWN GAPS to close before this is real (do not mark REL-007 done until then):
+#   1. ripgrep is per-platform: deploy/opencode/RIPGREP_REF pins only x86_64-unknown-linux-musl.
+#      Each platform needs its own pinned rg (a per-platform RIPGREP_REF / staging) or the
+#      bundle ships without rg on non-linux-amd64 (OpenCode would fetch it — egress). MUST FIX.
+#   2. llama-server on macOS builds with Metal (scripts/build-llama.sh is target-aware) — verify.
+#   3. ubuntu-24.04-arm / macos-13 (Intel) runner availability in this org.
+#   4. Reproducibility/signing: these tarballs must be covered by SHA256SUMS + the signature in
+#      the consuming release job (don't sign per-runner).
+name: bundle-matrix (DRAFT)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "version, no v prefix (e.g. 0.3.0)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,    goos: linux,  goarch: amd64 }
+          - { os: ubuntu-24.04-arm, goos: linux,  goarch: arm64 }
+          - { os: macos-latest,     goos: darwin, goarch: arm64 }
+          - { os: macos-13,         goos: darwin, goarch: amd64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.11"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3"
+      - name: Install Bun (for the OpenCode build)
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+
+      # Native aegis binary (CGO off, vendored/offline — same flags as release.sh).
+      - name: Build aegis (native)
+        env:
+          CGO_ENABLED: "0"
+          GOFLAGS: "-mod=vendor"
+          GOPROXY: "off"
+        run: |
+          go build -trimpath -ldflags "-s -w -X main.version=${{ inputs.version }}" \
+            -o "dist/aegis-${{ inputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}" ./cmd/aegis
+
+      - name: Build OpenCode (native, air-gap-hardened)
+        run: scripts/build-opencode.sh
+
+      - name: Build llama-server (native; Metal on macOS, CPU on Linux)
+        run: scripts/build-llama.sh
+
+      # TODO(REL-007, gap #1): stage the PLATFORM's ripgrep here before assembling the bundle.
+      # Until per-platform rg is pinned, the non-linux-amd64 tarballs ship without rg.
+      - name: Assemble bundle tarball
+        run: scripts/build-bundle.sh "${{ matrix.goos }}" "${{ matrix.goarch }}" "${{ inputs.version }}" dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aegis-${{ inputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/aegis-${{ inputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+          if-no-files-found: error
