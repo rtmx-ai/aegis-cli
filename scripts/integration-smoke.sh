@@ -1,32 +1,57 @@
 #!/usr/bin/env bash
 # integration-smoke.sh — full-stack integration smoke (BUILD-012, gated): bring the
-# stack up on loopback (llama-server + the staged model) and run `aegis run` on a
-# tiny task, asserting EGRESS=0. Requires `make ci-full` + a staged model; exits
-# with clear guidance if prerequisites are missing.
+# whole stack up on loopback — llama-server (calibrated, --jinja) + the pinned model +
+# OpenCode — and drive `aegis run` on a tiny real task, asserting it completes under the
+# egress gate (EGRESS=0). This exercises the SAME path a user gets: aegis → opencode
+# serve-drive → llama-server → model. Requires the built stack (`make ci-full`) + a model
+# GGUF (MODEL_OUT or a staged deploy/models/<MODEL_REF name>); exits with guidance if missing.
 set -eu
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"; REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"; cd "$REPO_ROOT"
+
 LLAMA="deploy/llama-server/bin/llama-server"
 OPENCODE="deploy/opencode/bin/opencode"
-for f in "$LLAMA" "$OPENCODE"; do
-	[ -x "$f" ] || { echo "integration-smoke: missing $f — run 'make ci-full' first." >&2; exit 1; }
+AEGIS="./bin/aegis"
+for f in "$LLAMA" "$OPENCODE" "$AEGIS"; do
+	[ -x "$f" ] || { echo "integration-smoke: missing $f — run 'make ci-full' (or 'make build') first." >&2; exit 1; }
 done
 model="$(grep -o '"name"[^,]*' deploy/models/MODEL_REF | sed 's/.*: *"//; s/".*//')"
 staged="${MODEL_OUT:-deploy/models/$model}"
-[ -f "$staged" ] || { echo "integration-smoke: model $staged not staged — run scripts/stage-model.sh." >&2; exit 1; }
+[ -f "$staged" ] || { echo "integration-smoke: model not found at $staged — stage it (scripts/stage-model.sh) or set MODEL_OUT to a local GGUF." >&2; exit 1; }
 
-# Launch llama-server under the calibrated args (loopback), wait for health.
-port=8080
-"$LLAMA" --model "$staged" --host 127.0.0.1 --port "$port" >/tmp/llama-smoke.log 2>&1 &
-LL=$!; trap 'kill $LL 2>/dev/null' EXIT
-for _ in $(seq 1 60); do curl -sf "http://127.0.0.1:$port/health" >/dev/null 2>&1 && break; sleep 1; done
+port="${SMOKE_PORT:-8091}"
+threads=$(nproc); [ "$threads" -gt 16 ] && threads=16
 
-# Run the keystone task under the egress gate (EGRESS=0 must hold across the group).
+# Bring the model server up under the calibrated launch args (taskset/nice, --jinja,
+# --ctx-size) via `aegis serve` — the real production launch path (SERVE-017).
+cal="$(mktemp)"
+printf '{"target":"linux-cpu","threads":%s,"batch":512,"ngl":0,"model":"%s","port":%s,"ctx_size":16384}\n' \
+	"$threads" "$staged" "$port" > "$cal"
+"$AEGIS" serve --calibration "$cal" >/tmp/llama-smoke.log 2>&1 &
+LL=$!
+trap 'kill $LL 2>/dev/null; rm -f "$cal"' EXIT
+echo "integration-smoke: bringing up llama-server (model=$model, port=$port, --jinja)…"
+up=no
+for _ in $(seq 1 60); do
+	curl -s -m2 "http://127.0.0.1:$port/health" 2>/dev/null | grep -qi '"status":"ok"' && { up=yes; break; }
+	sleep 2
+done
+[ "$up" = yes ] || { echo "integration-smoke: llama-server did not become healthy (see /tmp/llama-smoke.log)" >&2; exit 1; }
+
+# Drive a tiny real task through the full stack under the egress gate (EGRESS=0 must hold).
+# Use the reliable pattern (edit an EXISTING file in the workdir, explicit tool) so the smoke
+# is deterministic — it validates stack integration, not a model's tool-call luck.
 work="$(mktemp -d)"
-printf '{"endpoint":"http://127.0.0.1:%s","model_id":"%s","harness":"builtin","allow_egress":false,"target":"linux-cpu"}\n' "$port" "$model" > "$work/aegis.json"
-scripts/verify-airgap.sh -- ./bin/aegis run --workdir "$work" --config "$work/aegis.json" \
-	--timeout 240s --prompt "Create hello.txt containing exactly: hello world" --out "$work/transcript.jsonl"
-if [ -f "$work/hello.txt" ]; then
-	echo "integration-smoke: PASS — full stack completed the task (EGRESS=0)"
+printf 'REPLACE_ME\n' > "$work/greeting.txt"
+printf '{"endpoint":"http://127.0.0.1:%s","model_id":"%s","harness":"opencode","allow_egress":false,"target":"linux-cpu"}\n' \
+	"$port" "$model" > "$work/aegis.json"
+scripts/verify-airgap.sh -- "$AEGIS" run --workdir "$work" --config "$work/aegis.json" \
+	--timeout "${SMOKE_TIMEOUT:-300s}" \
+	--prompt "Use the edit/write tool to change the file greeting.txt in the working directory so its entire contents are exactly the two words: hello world (replacing REPLACE_ME). Then you are done." \
+	--out "$work/transcript.jsonl"
+
+if [ -f "$work/greeting.txt" ] && grep -qi "hello world" "$work/greeting.txt"; then
+	echo "integration-smoke: PASS — full stack (aegis + llama-server + model + opencode) completed the task (EGRESS=0)"
 else
-	echo "integration-smoke: task did not complete (see $work/transcript.jsonl)"; exit 1
+	echo "integration-smoke: FAIL — task did not complete; see $work/transcript.jsonl" >&2
+	exit 1
 fi

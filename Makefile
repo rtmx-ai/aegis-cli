@@ -45,7 +45,7 @@ GO_BUILD_ENV  := GOFLAGS=-mod=vendor
 endif
 
 .PHONY: all build fmt fmt-check vet test cover cover-gate lint race vuln \
-        airgap airgap-run origin-gate metrics badges release verify-release ci ci-fast ci-darwin hooks-install clean help
+        airgap airgap-run origin-gate integration-smoke metrics badges release verify-release ci ci-fast ci-darwin hooks-install clean help
 
 all: build
 
@@ -129,6 +129,12 @@ airgap-run: build
 ## The policy file is the explicit, auditable override (set a country to "allow").
 origin-gate: build
 	$(BIN) verify-env --check-origin
+
+## integration-smoke: BUILD-012 full-stack smoke — bring up llama-server (--jinja) + the
+## model + OpenCode and drive `aegis run` on a tiny task under the egress gate (EGRESS=0).
+## Release-tier + gated: needs the built stack + a model GGUF (set MODEL_OUT to a local one).
+integration-smoke: build
+	scripts/integration-smoke.sh
 
 ## metrics: compute golden-set dashboard metrics + enforce the ACR-regression gate
 metrics:
