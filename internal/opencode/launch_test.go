@@ -163,3 +163,34 @@ func TestOpenCodeConfigConforms(t *testing.T) {
 		}
 	}
 }
+
+// TestRunAgentCoaching → REQ-RUNQ-002: the rendered config wires a tool-call
+// coaching instruction into the agent's system prompt, and that instruction is
+// staged with explicit tool-use directives — so small local models call tools
+// instead of emitting prose (the failure observed in the bake-off).
+func TestRunAgentCoaching(t *testing.T) {
+	t.Chdir(t.TempDir())
+	got := RenderConfig(config.Default(), true)
+
+	// The rendered config must wire the coaching instruction file.
+	if !strings.Contains(got, `"instructions"`) || !strings.Contains(got, toolCoachingFile) {
+		t.Fatalf("rendered config must wire the tool-coaching instruction:\n%s", got)
+	}
+
+	// The instruction file must be staged with concrete tool-use directives.
+	seed, ok := ConfigSeedDir()
+	if !ok {
+		t.Fatal("ConfigSeedDir did not stage")
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(seed) })
+	b, err := os.ReadFile(filepath.Join(seed, toolCoachingFile))
+	if err != nil {
+		t.Fatalf("coaching file not staged: %v", err)
+	}
+	body := strings.ToLower(string(b))
+	for _, want := range []string{"edit", "write", "bash", "tool", "prose"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("coaching file missing directive %q", want)
+		}
+	}
+}

@@ -57,9 +57,18 @@ func ConfigSeedDir() (string, bool) {
 	}
 	cands = append(cands, StagedConfigSeedRelPath)
 	for _, c := range cands {
-		if err := stagePluginSeed(c); err == nil {
-			return absOf(c), true
+		if err := stagePluginSeed(c); err != nil {
+			continue
 		}
+		// RUNQ-002: stage the tool-call coaching instruction alongside the plugin
+		// seed so the rendered config can reference it (idempotent).
+		coaching := filepath.Join(c, toolCoachingFile)
+		if _, err := os.Stat(coaching); err != nil {
+			if err := os.WriteFile(coaching, []byte(toolCoachingContent), 0o644); err != nil {
+				continue
+			}
+		}
+		return absOf(c), true
 	}
 	return "", false
 }
