@@ -114,7 +114,7 @@ rate. *Test:* `test::TestIntentBenchSuiteRun` — gated (needs an intent-bench c
 `AEGIS_REAL_ENDPOINT`/`AEGIS_REAL_MODEL`; skipped in CI), asserts a populated `results/summary.csv`
 covering every experiment for control + treatment. *Depends on:* `REQ-BENCH-008`, `REQ-SERVE-016`.
 
-**Proposed decomposition (machine-authored, awaiting human approval — `PROPOSED`, not claimable):**
+**Decomposition (machine-authored, human-approved 2026-06-27 — now active):**
 A decomposition pass split BENCH-009 into two atomic children that separate the buildable-now
 capability from the model-gated run:
 - `REQ-BENCH-009-P01` — the full-suite *runner* (drives the adapter over every experiment ×
