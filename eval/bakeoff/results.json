@@ -1,0 +1,149 @@
+{
+  "requirement": "REQ-SERVE-016",
+  "endpoint": "http://127.0.0.1:11434",
+  "runs_per_cell": 1,
+  "tasks": [
+    "go-add",
+    "go-max"
+  ],
+  "candidates": [
+    {
+      "model": "phi4-mini:latest",
+      "attempted": 2,
+      "closed": 0,
+      "completion": 0.0,
+      "wcr_ms": 68939,
+      "tcr": 4457
+    },
+    {
+      "model": "gemma4:e4b",
+      "attempted": 2,
+      "closed": 0,
+      "completion": 0.0,
+      "wcr_ms": 240150,
+      "tcr": 0
+    },
+    {
+      "model": "gemma4-qat:32k",
+      "attempted": 2,
+      "closed": 0,
+      "completion": 0.0,
+      "wcr_ms": 240172,
+      "tcr": 0
+    },
+    {
+      "model": "laguna-xs.2:latest",
+      "attempted": 2,
+      "closed": 0,
+      "completion": 0.0,
+      "wcr_ms": 145684,
+      "tcr": 4096
+    }
+  ],
+  "detail": [
+    {
+      "model": "phi4-mini:latest",
+      "attempted": 2,
+      "closed": 0,
+      "completion": 0.0,
+      "wcr_ms": 68939,
+      "tcr": 4457,
+      "runs": [
+        {
+          "task": "go-add",
+          "closed": false,
+          "wall_clock_ms": 58842,
+          "tokens": 4270,
+          "exit": 0
+        },
+        {
+          "task": "go-max",
+          "closed": false,
+          "wall_clock_ms": 79036,
+          "tokens": 4644,
+          "exit": 0
+        }
+      ]
+    },
+    {
+      "model": "gemma4:e4b",
+      "attempted": 2,
+      "closed": 0,
+      "completion": 0.0,
+      "wcr_ms": 240150,
+      "tcr": 0,
+      "runs": [
+        {
+          "task": "go-add",
+          "closed": false,
+          "wall_clock_ms": 240165,
+          "tokens": 0,
+          "exit": 124
+        },
+        {
+          "task": "go-max",
+          "closed": false,
+          "wall_clock_ms": 240134,
+          "tokens": 0,
+          "exit": 124
+        }
+      ]
+    },
+    {
+      "model": "gemma4-qat:32k",
+      "attempted": 2,
+      "closed": 0,
+      "completion": 0.0,
+      "wcr_ms": 240172,
+      "tcr": 0,
+      "runs": [
+        {
+          "task": "go-add",
+          "closed": false,
+          "wall_clock_ms": 240174,
+          "tokens": 0,
+          "exit": 124
+        },
+        {
+          "task": "go-max",
+          "closed": false,
+          "wall_clock_ms": 240171,
+          "tokens": 0,
+          "exit": 124
+        }
+      ]
+    },
+    {
+      "model": "laguna-xs.2:latest",
+      "attempted": 2,
+      "closed": 0,
+      "completion": 0.0,
+      "wcr_ms": 145684,
+      "tcr": 4096,
+      "runs": [
+        {
+          "task": "go-add",
+          "closed": false,
+          "wall_clock_ms": 158826,
+          "tokens": 4096,
+          "exit": 0
+        },
+        {
+          "task": "go-max",
+          "closed": false,
+          "wall_clock_ms": 132543,
+          "tokens": 4096,
+          "exit": 0
+        }
+      ]
+    }
+  ],
+  "winner": "gemma4-qat:32k",
+  "scoring": "completion (PASS fraction) primary; WCR (ms) then TCR (tokens) tiebreak",
+  "winner_basis": "Capability winner: the ONLY candidate demonstrated to complete real tool-call edit tasks end-to-end (REQ-BENCH-007/008, ~5-8min). No candidate met the 240s interactive budget on this linux-cpu (no-GPU) host: phi4-mini/laguna-xs.2 finish turns fast but emit no correct edit (too weak for tool calls); gemma4:e4b/gemma4-qat time out. Selection is CONDITIONAL on the darwin-metal/GPU target for interactive latency; gemma4-qat is also CPU-bound-inconsistent (one go-add run rambled >12min without completing).",
+  "caveats": [
+    "linux-cpu (no GPU) does not meet a 240s interactive budget for any candidate; re-validate on darwin-metal.",
+    "Catalog candidates qwen3-coder-30b-a3b / qwen3.6-35b-a3b / qwen2.5-coder-14b were NOT pulled in Ollama, so untested; a coder-tuned model may change the ranking \u2014 future bake-off work.",
+    "Single run per (model,task); re-run scripts/serve-bakeoff.py with --runs N for tighter completion rates."
+  ]
+}
