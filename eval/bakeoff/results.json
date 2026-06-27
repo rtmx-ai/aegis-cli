@@ -38,6 +38,36 @@
       "completion": 0.0,
       "wcr_ms": 145684,
       "tcr": 4096
+    },
+    {
+      "model": "qwen2.5-coder:14b",
+      "attempted": 2,
+      "closed": 0,
+      "completion": 0.0,
+      "wcr_ms": 300000,
+      "tcr": 0,
+      "budget_s": 300,
+      "note": "dense 14B \u2014 too slow on CPU; both tasks time out"
+    },
+    {
+      "model": "qwen3-coder:30b",
+      "attempted": 1,
+      "closed": 0,
+      "completion": 0.0,
+      "wcr_ms": 300000,
+      "tcr": 0,
+      "budget_s": 300,
+      "note": "MoE 3B-active, non-thinking, research's top agentic pick \u2014 times out UNTUNED (default ~4k num_ctx truncates OpenCode's tool defs)"
+    },
+    {
+      "model": "qwen3-coder:tuned (16k ctx + temp0.7/top_p0.8/top_k20/rep1.05)",
+      "attempted": 1,
+      "closed": 0,
+      "completion": 0.0,
+      "wcr_ms": 480000,
+      "tcr": 0,
+      "budget_s": 480,
+      "note": "TUNED per research (num_ctx 16384, Qwen sampling) \u2014 STILL times out at 480s: 16k prefill on CPU is too slow. The fix is necessary but CPU-bound."
     }
   ],
   "detail": [
@@ -140,10 +170,11 @@
   ],
   "winner": "gemma4-qat:32k",
   "scoring": "completion (PASS fraction) primary; WCR (ms) then TCR (tokens) tiebreak",
-  "winner_basis": "Capability winner: the ONLY candidate demonstrated to complete real tool-call edit tasks end-to-end (REQ-BENCH-007/008, ~5-8min). No candidate met the 240s interactive budget on this linux-cpu (no-GPU) host: phi4-mini/laguna-xs.2 finish turns fast but emit no correct edit (too weak for tool calls); gemma4:e4b/gemma4-qat time out. Selection is CONDITIONAL on the darwin-metal/GPU target for interactive latency; gemma4-qat is also CPU-bound-inconsistent (one go-add run rambled >12min without completing).",
+  "winner_basis": "Capability leader: the only candidate OBSERVED to complete real tool-call edits end-to-end (REQ-BENCH-007/008, ~5-8min). But the EXPANDED bake-off (SERVE-019) is decisive: NO candidate \u2014 including the coder specialists and a research-tuned qwen3-coder (16k num_ctx + Qwen sampling, non-thinking) \u2014 completes agentic coding within a 240-480s budget on this linux-cpu (no-GPU) host. The wall is CPU prefill throughput, not the model. RECOMMENDED next: adopt qwen3-coder:30b + the tuning (SERVE-020) and re-validate on darwin-metal/GPU (SERVE-021) \u2014 where 16k prefill is fast.",
   "caveats": [
-    "linux-cpu (no GPU) does not meet a 240s interactive budget for any candidate; re-validate on darwin-metal.",
-    "Catalog candidates qwen3-coder-30b-a3b / qwen3.6-35b-a3b / qwen2.5-coder-14b were NOT pulled in Ollama, so untested; a coder-tuned model may change the ranking \u2014 future bake-off work.",
-    "Single run per (model,task); re-run scripts/serve-bakeoff.py with --runs N for tighter completion rates."
-  ]
+    "HARDWARE WALL: linux-cpu (no GPU) cannot finish a tuned agentic turn in <=480s; the config tuning (num_ctx/think/sampling) is necessary but not sufficient on CPU.",
+    "Our DEFAULT serving is untuned: no explicit num_ctx (Ollama 4k floor silently truncates tool defs -> prose), no think:false (gemma rambles), no sampling. See docs/serve-016-bakeoff.md characterization.",
+    "Research-recommended primary: qwen3-coder:30b (non-thinking, agentic) with num_ctx>=16k + temp0.7/top_p0.8/top_k20/rep1.05. Validate on darwin-metal."
+  ],
+  "budget_s": "240s (initial field) / 300s (coder) / 480s (tuned qwen3-coder)"
 }

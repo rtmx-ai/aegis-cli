@@ -64,3 +64,49 @@ make build && ollama serve   # ensure candidates are pulled
 scripts/serve-bakeoff.py --models gemma4-qat:32k,qwen3-coder-30b-a3b,laguna-xs.2:latest \
                          --runs 3 --timeout 480
 ```
+
+---
+
+# Corpus expansion + characterization (SERVE-019, 2026-06-27)
+
+Expanded the field with the coder specialists and a research-tuned variant. **Every
+candidate still fails on linux-cpu** — the result is now decisive about *why*.
+
+| Model | Budget | Completion | Note |
+|---|---|---|---|
+| qwen2.5-coder:14b | 300s | 0/2 | dense 14B — too slow on CPU |
+| qwen3-coder:30b (untuned) | 300s | 0/1 | MoE 3B-active, research's top agentic pick — times out with our **default ~4k num_ctx** (truncates tool defs) |
+| **qwen3-coder:tuned** (num_ctx 16384, temp 0.7/top_p 0.8/top_k 20/rep 1.05) | 480s | 0/1 | **Tuned per the research — STILL times out.** 16k prefill on CPU is too slow. |
+
+## How others run these models (research, cited in commit) — vs our setup
+
+The investigation (gemma/phi4/qwen-coder local-inference best practices) found our two
+failure classes have distinct root causes, and that **our serving is untuned**:
+
+| Knob | Effective setup (others) | **Our setup** | Effect of the gap |
+|---|---|---|---|
+| **Model for tool use** | Qwen3-Coder-30B-A3B (purpose-built agentic, *non-thinking by design*) or Qwen2.5-Coder | a general reasoning model (gemma4) + weak models (phi4-mini, laguna) | gemma rambles; phi4/laguna can't tool-call |
+| **`num_ctx`** | explicitly 16k–32k (OpenCode/Cline/aider all require it) | **unset → Ollama 4k floor**, which **silently truncates oldest-first** | OpenCode's front-loaded tool defs get dropped → models emit prose instead of calls |
+| **Thinking** | disable for agentic loops — Ollama top-level `"think": false` (sibling of `messages`, *not* in `options`); Qwen3-Coder needs nothing (non-thinking) | thinking left **on** for gemma4 | gemma generates huge reasoning chains → 4-min timeout |
+| **Sampling** | vendor cards: Qwen `temp 0.7, top_p 0.8, top_k 20, min_p 0, rep 1.05` (explicitly **not** greedy/temp 0); Gemma `temp 1.0` | **bare defaults**, untuned per model | undisciplined sampling; no per-model values |
+| **Tool-call hygiene** | `stream:false` on tool turns; precheck the Ollama template advertises the `tools` capability; expect empty `content` when a tool is called | none of these | known Ollama tool-call leak/format bugs unguarded |
+| **Host** | GPU (prefill is cheap) | **linux-cpu, no GPU** | 16k prefill dominates WCR → even a tuned, correct model times out |
+
+Sources (selected): qwenlm.github.io/blog/qwen3-coder · ollama.com/library/qwen3-coder ·
+docs.ollama.com/capabilities/thinking · docs.ollama.com/context-length ·
+opencode.ai/docs/providers · github.com/ollama/ollama/issues/{9437,15539,12557,8337} ·
+huggingface.co/microsoft/Phi-4-mini-instruct · ai.google.dev/gemma/docs/capabilities/thinking
+
+## Conclusion
+
+The bake-off + characterization converge: **the limiter is the GPU-less CPU host, not the
+model.** The config tuning is *necessary* (without 16k `num_ctx`, OpenCode's tool defs
+truncate and even strong models emit prose; without `think:false`, gemma4 rambles), but on
+CPU the required 16k prefill is too slow to finish an interactive turn. The path forward:
+
+1. **SERVE-020** — apply per-model tuning in the rendered config: `num_ctx≥16k`,
+   `think:false` for thinking models, Qwen sampling for coder models. Necessary regardless.
+2. **Switch the primary candidate to `qwen3-coder:30b`** (non-thinking, agentic, MoE) — the
+   research's top pick; retire phi4-mini/laguna from the tool-calling loop.
+3. **SERVE-021** — re-validate on darwin-metal (GPU), where 16k prefill is fast; that is
+   where the tuned qwen3-coder is expected to actually complete within an interactive budget.

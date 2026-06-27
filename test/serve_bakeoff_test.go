@@ -4,8 +4,40 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+// TestCoderCandidatesScored → REQ-SERVE-019: the bake-off corpus is expanded to the
+// coder-tuned candidates — eval/bakeoff/results.json includes the qwen coder models,
+// scored, so the model decision reflects the specialists (not only general/weak models).
+func TestCoderCandidatesScored(t *testing.T) {
+	p := filepath.Join(repoRoot(t), "eval", "bakeoff", "results.json")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("bake-off results missing at %s: %v", p, err)
+	}
+	var r struct {
+		Candidates []struct {
+			Model     string `json:"model"`
+			Attempted int    `json:"attempted"`
+		} `json:"candidates"`
+	}
+	if err := json.Unmarshal(b, &r); err != nil {
+		t.Fatalf("bake-off results.json malformed: %v", err)
+	}
+	for _, want := range []string{"qwen2.5-coder", "qwen3-coder"} {
+		found := false
+		for _, c := range r.Candidates {
+			if strings.Contains(c.Model, want) && c.Attempted > 0 {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("coder candidate %q not scored in the bake-off corpus", want)
+		}
+	}
+}
 
 // TestBakeoffRecorded → REQ-SERVE-016: a documented model bake-off over >=3 candidate
 // local models is recorded (eval/bakeoff/results.json), each scored on completion (the
