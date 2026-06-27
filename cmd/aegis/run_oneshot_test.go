@@ -2,34 +2,39 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/rtmx-ai/aegis-cli/internal/config"
+	"github.com/rtmx-ai/aegis-cli/internal/opencode"
 )
 
-// stageFakeOpencode writes a fake opencode at the staged path under dir and
-// chdirs there, so opencode.ResolveBinary finds it.
-func stageFakeOpencode(t *testing.T, dir, script string) {
-	t.Helper()
-	t.Chdir(dir)
-	staged := filepath.Join(dir, "deploy", "opencode", "bin", "opencode")
-	if err := os.MkdirAll(filepath.Dir(staged), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(staged, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// TestRunWritesTranscript → covers cmdRun's happy path: prompt -> Solve -> transcript.
+// TestRunWritesTranscript → covers cmdRun's happy path: prompt -> serve drive ->
+// transcript. The serve drive is injected here (the real one is covered by the
+// gated internal/opencode serve-drive integration test); this asserts the
+// command's transcript-writing path.
 func TestRunWritesTranscript(t *testing.T) {
 	dir := t.TempDir()
-	stageFakeOpencode(t, dir, "#!/bin/sh\nprintf '%s\\n' '{\"type\":\"step_finish\",\"part\":{\"reason\":\"stop\",\"text\":\"ok\"}}'\n")
+	t.Chdir(dir)
 	cfg := filepath.Join(dir, "aegis.json")
 	if err := os.WriteFile(cfg, []byte(`{"endpoint":"http://127.0.0.1:11434","model_id":"m","harness":"builtin","allow_egress":false,"target":"linux-cpu"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
+
+	orig := runSolve
+	t.Cleanup(func() { runSolve = orig })
+	runSolve = func(_ context.Context, _ config.Config, _ string, opts opencode.SolveOptions) (*opencode.SolveResult, error) {
+		if opts.Prompt != "x" {
+			t.Errorf("cmdRun passed wrong prompt: %q", opts.Prompt)
+		}
+		return &opencode.SolveResult{Messages: []opencode.TranscriptMessage{
+			{Role: "assistant", Tokens: opencode.Tokens{Total: 5}, Text: "ok"},
+		}}, nil
+	}
+
 	outp := filepath.Join(dir, "t.jsonl")
 	var o, e bytes.Buffer
 	code := run([]string{"run", "--workdir", dir, "--config", cfg, "--model", "m", "--prompt", "x", "--out", outp}, &o, &e)

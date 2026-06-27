@@ -394,6 +394,11 @@ func cmdTUI(stdout, stderr io.Writer) int {
 // headless agent task — drives the classic `opencode run` against the local model
 // in a workdir and writes an intent-bench transcript. Consistent with
 // opencode/ollama `run`. (`aegis solve` is a back-compat alias.)
+// runSolve is the seam between cmdRun and the headless serve drive, overridable in
+// tests so the command's transcript-writing path is unit-testable without a real
+// OpenCode binary (the real drive is covered by the gated serve-drive integration).
+var runSolve = opencode.Solve
+
 func cmdRun(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -434,7 +439,7 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 	// written on timeout.
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
-	res, err := opencode.Solve(ctx, cfg, "", opencode.SolveOptions{
+	res, err := runSolve(ctx, cfg, "", opencode.SolveOptions{
 		Workdir: *workdir, Prompt: prompt, Model: *model, NoIntent: *noIntent,
 	})
 	if err != nil {

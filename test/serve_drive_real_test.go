@@ -64,7 +64,7 @@ func TestServeDriveRealBinary(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	client, stop, err := opencode.StartServe(ctx, bin, cfg, ws, freePort(t))
+	client, stop, err := opencode.StartServe(ctx, bin, cfg, ws, freePort(t), true)
 	if err != nil {
 		t.Fatalf("StartServe (real opencode): %v", err)
 	}

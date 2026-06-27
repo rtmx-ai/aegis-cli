@@ -196,6 +196,12 @@ func (c *ServeClient) Drive(ctx context.Context, model Model, prompt string) (*S
 		return nil, err
 	}
 	if err := c.SendMessage(ctx, id, model, prompt); err != nil {
+		// RUNQ-001: a wall-clock budget expiry mid-turn is not a hard error — the
+		// serve process is torn down by the caller and we return the partial
+		// transcript collected so far, with TimedOut set.
+		if ctx.Err() != nil {
+			return &SolveResult{SessionID: id, Messages: c.partialMessages(id), TimedOut: ctx.Err() == context.DeadlineExceeded}, nil
+		}
 		return nil, err
 	}
 	msgs, err := c.Messages(ctx, id)
@@ -203,6 +209,15 @@ func (c *ServeClient) Drive(ctx context.Context, model Model, prompt string) (*S
 		return nil, err
 	}
 	return &SolveResult{SessionID: id, Messages: msgs}, nil
+}
+
+// partialMessages fetches the transcript-so-far on its own short deadline, since
+// the run's own budget has already expired (so its context is no longer usable).
+func (c *ServeClient) partialMessages(id string) []TranscriptMessage {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	msgs, _ := c.Messages(ctx, id)
+	return msgs
 }
 
 // Messages returns the session transcript, flattened to role + usage + text.
@@ -255,10 +270,10 @@ func statePassword() string {
 // StartServe launches `opencode serve` rooted at workdir under the hardened,
 // operator-rendered config, waits for readiness, and authenticates with the
 // generated state password. The returned stop function terminates the server.
-func StartServe(ctx context.Context, bin string, cfg config.Config, workdir string, port int) (*ServeClient, func(), error) {
+func StartServe(ctx context.Context, bin string, cfg config.Config, workdir string, port int, intent bool) (*ServeClient, func(), error) {
 	cmd := exec.CommandContext(ctx, bin, "serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port))
 	cmd.Dir = workdir
-	cmd.Env = append(os.Environ(), airgapEnv(cfg, true)...)
+	cmd.Env = append(os.Environ(), airgapEnv(cfg, intent)...)
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 	if err := cmd.Start(); err != nil {
 		return nil, nil, fmt.Errorf("opencode serve: start: %w", err)

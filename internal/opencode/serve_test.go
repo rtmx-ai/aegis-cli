@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // mockServe stands in for `opencode serve`: readiness + the real /session routes
@@ -83,5 +84,46 @@ func TestServeDriveSynchronous(t *testing.T) {
 	a := res.Messages[1]
 	if a.Role != "assistant" || a.Tokens.Total != 142 || a.Text != "done" || a.Finish != "stop" {
 		t.Errorf("assistant message not parsed (incl. usage): %+v", a)
+	}
+}
+
+// TestServeDriveBudgetPartial → REQ-BENCH-008 (RUNQ-001 preserved on the serve
+// path): when the run's wall-clock budget expires mid-turn, Drive does not error —
+// it returns the partial transcript with TimedOut set.
+func TestServeDriveBudgetPartial(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/session", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "ses_b"})
+	})
+	mux.HandleFunc("/session/ses_b/message", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			// Don't answer before the run's (much shorter) budget expires, so
+			// SendMessage times out; then return promptly so Close doesn't stall.
+			time.Sleep(300 * time.Millisecond)
+			return
+		}
+		// GET: the partial transcript collected so far.
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"info": map[string]any{"role": "user"}, "parts": []map[string]any{{"type": "text", "text": "x"}}},
+			{"info": map[string]any{"role": "assistant", "tokens": map[string]any{"total": 9}},
+				"parts": []map[string]any{{"type": "text", "text": "partial"}}},
+		})
+	})
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+	c := NewServeClient(ts.URL)
+	c.dir = "/w"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	res, err := c.Drive(ctx, Model{ProviderID: "local", ModelID: "m"}, "x")
+	if err != nil {
+		t.Fatalf("budget expiry must not be a hard error: %v", err)
+	}
+	if !res.TimedOut {
+		t.Error("expected TimedOut=true on budget expiry")
+	}
+	if len(res.Messages) == 0 {
+		t.Error("expected a partial transcript on budget expiry")
 	}
 }

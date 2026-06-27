@@ -49,24 +49,41 @@ func TestStatePassword(t *testing.T) {
 	}
 }
 
-// TestSolveResolvesAndRuns covers Solve end-to-end against a fake opencode at the
-// staged path (resolve -> RunHeadless -> transcript).
-func TestSolveResolvesAndRuns(t *testing.T) {
+// TestSolveUsesServeDrive → REQ-BENCH-008: Solve resolves the binary and routes the
+// run through the serve drive (not the classic `opencode run` path), passing the
+// run options through. The real serve drive is covered end-to-end by the gated
+// TestServeDriveRealBinary; here we assert the routing via the seam.
+func TestSolveUsesServeDrive(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	staged := filepath.Join(dir, StagedRelPath)
 	if err := os.MkdirAll(filepath.Dir(staged), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	script := "#!/bin/sh\nprintf '%s\\n' '{\"type\":\"step_finish\",\"part\":{\"reason\":\"stop\",\"text\":\"ok\"}}'\n"
-	if err := os.WriteFile(staged, []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(staged, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	res, err := Solve(context.Background(), config.Default(), "", SolveOptions{Workdir: dir, Prompt: "x", Model: "m"})
+
+	var gotBin string
+	var gotOpts SolveOptions
+	orig := solveDrive
+	t.Cleanup(func() { solveDrive = orig })
+	solveDrive = func(_ context.Context, bin string, _ config.Config, opts SolveOptions) (*SolveResult, error) {
+		gotBin, gotOpts = bin, opts
+		return &SolveResult{SessionID: "ses_x", Messages: []TranscriptMessage{{Role: "assistant", Tokens: Tokens{Total: 5}}}}, nil
+	}
+
+	res, err := Solve(context.Background(), config.Default(), "", SolveOptions{Workdir: dir, Prompt: "do x", Model: "m"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Messages) == 0 || res.Messages[0].Finish != "stop" {
-		t.Errorf("Solve transcript wrong: %+v", res.Messages)
+	if gotBin == "" {
+		t.Error("Solve did not resolve the OpenCode binary before driving")
+	}
+	if gotOpts.Prompt != "do x" || gotOpts.Model != "m" || gotOpts.Workdir != dir {
+		t.Errorf("Solve did not pass the run options to the serve drive: %+v", gotOpts)
+	}
+	if res.SessionID != "ses_x" {
+		t.Errorf("Solve did not return the serve drive result: %+v", res)
 	}
 }
