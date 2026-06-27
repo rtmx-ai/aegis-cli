@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""intent-bench.py — REQ-BENCH-009 intent-bench suite runner.
+"""intent-bench.py — METHODOLOGY DEMO (not the real intent-bench).
+
+NOTE: This is a small control/treatment/baseline harness over toy single-function Go edits,
+used to exercise the mechanics. It does NOT run the real intent-bench corpus (multi-
+requirement project builds: url-shortener, task-manager) and does NOT use intent-bench's own
+run process / treatments/rtmx.sh / results-PR flow. REQ-BENCH-009 is run against the real
+intent-bench repo (checked out as a peer directory). See docs/requirements/intent-bench.md.
 
 Drives the FULL experiment suite across conditions and records the comparison:
 

@@ -1,8 +1,16 @@
-# intent-bench — aegis control vs rtmx-treatment vs cloud baseline
+# intent-bench methodology demo — aegis control vs rtmx-treatment vs cloud baseline
 
-**Requirement:** REQ-BENCH-009 (+P01 runner, +P02 real run) · **Runner:**
-`scripts/intent-bench.py` · **Data:** `eval/intent-bench/{summary.csv,comparison.json}` ·
-**Test:** `test::TestIntentBenchSuiteRun` · **Run:** 2026-06-27, linux-cpu (no GPU).
+> ⚠️ **This is a methodology DEMONSTRATION, not the real intent-bench.** The actual
+> [intent-bench](https://intent-bench.github.io/intent-bench/) corpus is two
+> **multi-requirement project builds** — `url-shortener` (10 reqs, depth 2) and
+> `task-manager` (13 reqs, depth 5) — with rtmx as a **treatment (`treatments/rtmx.sh`)**.
+> The run below uses **3 toy single-function Go edits** to exercise the control / treatment /
+> baseline harness end-to-end. It does **not** satisfy `REQ-BENCH-009` (which is MISSING
+> again — the over-claim was corrected). A real run is set up separately against the
+> intent-bench repo. See `docs/requirements/intent-bench.md`.
+
+**Runner:** `scripts/intent-bench.py` (toy demo set) · **Data:**
+`eval/intent-bench/{summary.csv,comparison.json}` · **Run:** 2026-06-27, linux-cpu (no GPU).
 
 ## Method
 

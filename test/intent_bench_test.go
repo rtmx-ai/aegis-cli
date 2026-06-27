@@ -34,12 +34,16 @@ func TestIntentBenchSuiteRun(t *testing.T) {
 		}
 		seen[r[0]][r[1]] = true
 	}
-	// The suite must cover EVERY experiment for control + treatment (not just one).
-	for _, exp := range []string{"go-add", "go-max", "go-fib"} {
-		for _, cond := range []string{"control", "treatment"} {
-			if !seen[exp][cond] {
-				t.Errorf("summary missing %s/%s — the suite must drive every experiment for control + treatment", exp, cond)
-			}
+	// BENCH-009 means the REAL intent-bench corpus — the multi-requirement project
+	// experiments (url-shortener: 10 reqs, task-manager: 13 reqs) with rtmx as the
+	// treatment (treatments/rtmx.sh) vs control. A toy single-function suite does NOT
+	// satisfy it. Skip (keeping the requirement MISSING) until the real corpus is run;
+	// scripts/intent-bench.py with the toy EXPERIMENTS is a methodology demo, not this.
+	for _, exp := range []string{"url-shortener", "task-manager"} {
+		if !seen[exp]["control"] || !seen[exp]["treatment"] {
+			t.Skipf("intent-bench corpus not run (missing %q for control+treatment) — the current "+
+				"eval/intent-bench data is a methodology demo only; BENCH-009 needs the real "+
+				"intent-bench experiments (url-shortener, task-manager) as the rtmx treatment", exp)
 		}
 	}
 	b, err := os.ReadFile(filepath.Join(root, "eval", "intent-bench", "comparison.json"))
