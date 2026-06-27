@@ -555,6 +555,15 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 		cfg.Tuning = loadCatalogTuning(effModel)
 	}
 
+	// RUNQ-003: bound a capable-but-rambling model with step/output limits (defaults
+	// applied unless the config sets them) so the run completes instead of running away.
+	if cfg.MaxSteps == 0 {
+		cfg.MaxSteps = config.DefaultMaxSteps
+	}
+	if cfg.MaxOutputTokens == 0 {
+		cfg.MaxOutputTokens = config.DefaultMaxOutputTokens
+	}
+
 	// RUNQ-001: bound the run by a wall-clock budget; a partial transcript is still
 	// written on timeout.
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)

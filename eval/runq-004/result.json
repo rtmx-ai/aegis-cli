@@ -1,0 +1,17 @@
+{
+  "requirement": "REQ-RUNQ-004",
+  "task": "go-fib",
+  "description": "implement an iterative Fibonacci (Fib(0)=0..Fib(20)=6765) so go test passes — a real coding task with edge cases, not a one-liner",
+  "model": "gemma4-qat:32k",
+  "endpoint": "http://127.0.0.1:11434 (Ollama loopback)",
+  "host": "linux-cpu (no GPU)",
+  "budget_s": 900,
+  "limits": {"max_steps": 40, "max_output_tokens": 8192},
+  "closed": true,
+  "wall_s": 350,
+  "turns": 5,
+  "tokens": 35920,
+  "implementation": "package task\n\n// Fib returns the nth Fibonacci number.\nfunc Fib(n int) int {\n\tif n <= 1 {\n\t\treturn n\n\t}\n\ta, b := 0, 1\n\tfor i := 2; i <= n; i++ {\n\t\ta, b = b, a+b\n\t}\n\treturn b\n}\n",
+  "also_tried": {"model": "qwen3-coder:30b", "closed": false, "wall_s": 244, "note": "the selected default fast-failed without a correct edit on CPU — gemma4-qat is the CPU-capable completer (consistent with SERVE-016)"},
+  "note": "RUNQ-004 functional-readiness proof: a real coding task completed end-to-end by the local air-gapped stack (aegis run -> opencode serve drive -> local model) on linux-cpu at a relaxed budget, with the RUNQ-003 step/output limits + SERVE-020 tuning applied. Reproduce: see docs/readiness.md."
+}

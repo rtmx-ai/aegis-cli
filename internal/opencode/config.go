@@ -64,11 +64,10 @@ func RenderConfig(cfg config.Config, intent bool) string {
 		instructions = fmt.Sprintf(`,
   "instructions": [%q]`, filepath.Join(seed, toolCoachingFile))
 	}
-	// SERVE-020: apply the per-model tuning to the build agent so the model emits
-	// reliable tool calls. temperature/top_p go on the agent (delivered by the
-	// harness); the Ollama extensions (top_k/min_p/repeat_penalty/num_ctx/think) ride
-	// `options` (forwarded best-effort — robust num_ctx/think is a serving-launch knob).
-	agent := renderTuning(cfg.Tuning)
+	// SERVE-020 (per-model tuning) + RUNQ-003 (step/output limits) on the build agent:
+	// tuning shapes sampling so the model tool-calls reliably; the limits bound a
+	// capable-but-rambling model so it completes instead of running away.
+	agent := renderAgent(cfg)
 	// Classic opencode.json schema: provider + model (+ optional mcp). Air-gap
 	// hardening is enforced via env markers (OPENCODE_TELEMETRY/AUTOUPDATE/
 	// DISABLE_SHARE), `opencode run --pure` (no external plugins), and the egress
@@ -88,35 +87,43 @@ func RenderConfig(cfg config.Config, intent bool) string {
 }`, baseURL, model, model, "local/"+model, mcp, instructions, agent)
 }
 
-// renderTuning emits the OpenCode `agent.build` tuning block for the per-model knobs
-// (SERVE-020), or "" when there is no tuning. Built via encoding/json so floats format
-// correctly. temperature/top_p are agent fields; the rest ride `options`.
-func renderTuning(t *config.ModelTuning) string {
-	if t == nil {
-		return ""
-	}
+// renderAgent emits the OpenCode `agent.build` block: per-model tuning (SERVE-020) plus the
+// run's step/output limits (RUNQ-003), or "" when none is set. Built via encoding/json so
+// floats format correctly. temperature/top_p/steps are agent fields; the Ollama extensions
+// (top_k/min_p/repeat_penalty/num_ctx/think/num_predict) ride `options` (forwarded
+// best-effort). `steps` is opencode-enforced (the reliable loop bound).
+func renderAgent(cfg config.Config) string {
 	build := map[string]any{}
-	if t.Temperature != nil {
-		build["temperature"] = *t.Temperature
-	}
-	if t.TopP != nil {
-		build["top_p"] = *t.TopP
-	}
 	opts := map[string]any{}
-	if t.TopK != nil {
-		opts["top_k"] = *t.TopK
+	if t := cfg.Tuning; t != nil {
+		if t.Temperature != nil {
+			build["temperature"] = *t.Temperature
+		}
+		if t.TopP != nil {
+			build["top_p"] = *t.TopP
+		}
+		if t.TopK != nil {
+			opts["top_k"] = *t.TopK
+		}
+		if t.MinP != nil {
+			opts["min_p"] = *t.MinP
+		}
+		if t.RepeatPenalty != nil {
+			opts["repeat_penalty"] = *t.RepeatPenalty
+		}
+		if t.NumCtx != nil {
+			opts["num_ctx"] = *t.NumCtx
+		}
+		if t.Think != nil {
+			opts["think"] = *t.Think
+		}
 	}
-	if t.MinP != nil {
-		opts["min_p"] = *t.MinP
+	// RUNQ-003 run-policy limits.
+	if cfg.MaxSteps > 0 {
+		build["steps"] = cfg.MaxSteps
 	}
-	if t.RepeatPenalty != nil {
-		opts["repeat_penalty"] = *t.RepeatPenalty
-	}
-	if t.NumCtx != nil {
-		opts["num_ctx"] = *t.NumCtx
-	}
-	if t.Think != nil {
-		opts["think"] = *t.Think
+	if cfg.MaxOutputTokens > 0 {
+		opts["num_predict"] = cfg.MaxOutputTokens
 	}
 	if len(opts) > 0 {
 		build["options"] = opts

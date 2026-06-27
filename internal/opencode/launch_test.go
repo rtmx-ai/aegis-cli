@@ -223,3 +223,24 @@ func TestPerModelTuning(t *testing.T) {
 		t.Error("no tuning must render no agent block (default behavior unchanged)")
 	}
 }
+
+// TestRunStepLimits → REQ-RUNQ-003: a run config with step/output limits renders them on
+// the build agent (steps + num_predict) so a rambling model is bounded, and they compose
+// with the per-model tuning in one agent block.
+func TestRunStepLimits(t *testing.T) {
+	cfg := config.Default()
+	cfg.MaxSteps = 30
+	cfg.MaxOutputTokens = 4096
+	got := RenderConfig(cfg, true)
+	for _, want := range []string{`"agent"`, `"build"`, `"steps":30`, `"options"`, `"num_predict":4096`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("rendered config must carry RUNQ-003 limit %q\n--- got ---\n%s", want, got)
+		}
+	}
+	temp := 0.7
+	cfg.Tuning = &config.ModelTuning{Temperature: &temp}
+	got = RenderConfig(cfg, true)
+	if !strings.Contains(got, `"temperature":0.7`) || !strings.Contains(got, `"steps":30`) {
+		t.Errorf("limits + tuning must compose in one agent block:\n%s", got)
+	}
+}

@@ -81,7 +81,21 @@ type Config struct {
 	// renders them so the model emits reliable tool calls. Populated from the model
 	// catalog by ModelID; nil means "use the harness/serving defaults".
 	Tuning *ModelTuning `json:"tuning,omitempty"`
+	// MaxSteps bounds the agent's tool-call rounds per requirement (RUNQ-003), so a
+	// capable-but-rambling model is stopped instead of looping. 0 -> DefaultMaxSteps at run.
+	MaxSteps int `json:"max_steps,omitempty"`
+	// MaxOutputTokens bounds per-turn generation (RUNQ-003) so runaway output is cut, not
+	// allowed to run away (best-effort via the Ollama num_predict option). Set it high
+	// enough that a normal turn is not truncated. 0 -> DefaultMaxOutputTokens at run.
+	MaxOutputTokens int `json:"max_output_tokens,omitempty"`
 }
+
+// Run-policy limit defaults (RUNQ-003): bound a slow/rambling local model without
+// truncating a normal coding turn. Applied by `aegis run` when the config leaves them 0.
+const (
+	DefaultMaxSteps        = 40
+	DefaultMaxOutputTokens = 8192
+)
 
 // ModelTuning is the per-model serving tuning the SERVE-016 bake-off characterization
 // recommends (SERVE-020): sampling, context window, and thinking control. Nil fields
