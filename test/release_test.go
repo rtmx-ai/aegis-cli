@@ -80,9 +80,17 @@ func TestReleaseWorkflowConfigured(t *testing.T) {
 // for the Linux targets.
 func TestDebianPackagingConfigured(t *testing.T) {
 	rel := readRepoFile(t, "scripts/release.sh")
-	for _, want := range []string{"dpkg-deb", "build_deb", "amd64", "arm64", "Architecture:"} {
+	for _, want := range []string{"build_deb", "amd64", "arm64"} {
 		if !strings.Contains(rel, want) {
 			t.Errorf("release.sh must build .deb packages (%q)", want)
+		}
+	}
+	// REL-006: the .deb builder bundles the harness into /usr/lib/aegis (control metadata
+	// + the dpkg-deb build live in the shared scripts/build-deb.sh).
+	deb := readRepoFile(t, "scripts/build-deb.sh")
+	for _, want := range []string{"dpkg-deb", "Architecture:", "usr/lib/aegis", "opencode", "llama-server"} {
+		if !strings.Contains(deb, want) {
+			t.Errorf("build-deb.sh must build a harness-bundling .deb (%q)", want)
 		}
 	}
 }

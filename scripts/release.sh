@@ -39,7 +39,8 @@ for t in $TARGETS; do
 	GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "$LDFLAGS" -o "$out" ./cmd/aegis
 done
 
-# BUILD-008: Debian (.deb) packages for the Linux targets.
+# BUILD-008 / REL-006: Debian packages that bundle the harness (scripts/build-deb.sh —
+# shared with test::TestDebBundlesHarness). Called below, AFTER the helpers are staged.
 build_deb() {
 	deb_arch="$1"
 	bin="$DIST/aegis-$VERSION-linux-$deb_arch"
@@ -47,24 +48,9 @@ build_deb() {
 		echo "release: NOTE — dpkg-deb not found; skipping .deb for $deb_arch (CI ubuntu has it)." >&2
 		return 0
 	fi
-	root="$(mktemp -d)"
-	mkdir -p "$root/usr/bin" "$root/DEBIAN"
-	install -m 0755 "$bin" "$root/usr/bin/aegis"
-	cat >"$root/DEBIAN/control" <<CTL
-Package: aegis
-Version: $VERSION
-Section: utils
-Priority: optional
-Architecture: $deb_arch
-Maintainer: ioTACTICAL LLC <dev@rtmx.ai>
-Description: aegis-cli — thin requirements-loop orchestrator for closed/air-gapped environments
-CTL
-	dpkg-deb --root-owner-group --build "$root" "$DIST/aegis_${VERSION}_${deb_arch}.deb" >/dev/null
-	rm -rf "$root"
-	echo "release: built $DIST/aegis_${VERSION}_${deb_arch}.deb"
+	scripts/build-deb.sh "$deb_arch" "$bin" "$DIST" "$VERSION" >/dev/null \
+		&& echo "release: built $DIST/aegis_${VERSION}_${deb_arch}.deb"
 }
-build_deb amd64
-build_deb arm64
 
 # BUILD-003: CycloneDX SBOM from the vendored module set.
 go list -m -json all >"$DIST/modules.json" 2>/dev/null || echo '{}' >"$DIST/modules.json"
@@ -100,6 +86,28 @@ if [ -x "$llama_bin" ]; then
 	echo "release: bundled self-built llama-server (llama.cpp $(tr -d ' \n' <deploy/llama-server/LLAMA_REF 2>/dev/null))"
 else
 	echo "release: NOTE — llama-server not built/bundled; run scripts/build-llama.sh on a toolchain-equipped host." >&2
+fi
+
+# REL-006: build the .deb packages now that the harness helpers are staged, so the
+# host-arch .deb bundles them under /usr/lib/aegis (a working `apt install`, not a bare bin).
+build_deb amd64
+build_deb arm64
+
+# REL-006: a self-contained bundle tarball (aegis + libexec helpers) for the Homebrew
+# formula (deploy/homebrew/aegis.rb) — the build host's harness, installed to bin/ + libexec/.
+# Per-platform (helpers are host-built); macOS bottles come from a mac build host.
+host_os="$(go env GOOS)"; host_arch_go="$(go env GOARCH)"
+bundle_bin="$DIST/aegis-$VERSION-$host_os-$host_arch_go"
+if [ -x "$bundle_bin" ] && [ -x deploy/opencode/bin/opencode ]; then
+	bdir="$(mktemp -d)"; mkdir -p "$bdir/bin" "$bdir/libexec"
+	install -m 0755 "$bundle_bin" "$bdir/bin/aegis"
+	install -m 0755 deploy/opencode/bin/opencode "$bdir/libexec/opencode"
+	install -m 0755 deploy/opencode/bin/rg "$bdir/libexec/rg"
+	cp -r deploy/opencode/oc-config "$bdir/libexec/oc-config"
+	[ -x deploy/llama-server/bin/llama-server ] && install -m 0755 deploy/llama-server/bin/llama-server "$bdir/libexec/llama-server"
+	tar -C "$bdir" -czf "$DIST/aegis-$VERSION-$host_os-$host_arch_go.tar.gz" bin libexec
+	rm -rf "$bdir"
+	echo "release: bundled tarball $DIST/aegis-$VERSION-$host_os-$host_arch_go.tar.gz (bin + libexec)"
 fi
 
 # BUILD-004: SHA-256 checksums manifest over every artifact (aegis binaries,

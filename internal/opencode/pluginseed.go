@@ -62,6 +62,13 @@ func ConfigSeedDir() (string, bool) {
 	for _, d := range LibexecDirs() { // REL-005: package install layout
 		cands = append(cands, filepath.Join(d, "oc-config", "opencode"))
 	}
+	// REL-006: a writable user-cache fallback so a read-only PACKAGED aegis (e.g. installed
+	// to /usr where libexec is not user-writable) can materialize the seed at runtime instead
+	// of needing it pre-bundled. Comes before the cwd-staged path so a packaged binary never
+	// pollutes the user's working directory with deploy/opencode/oc-config.
+	if cache, err := os.UserCacheDir(); err == nil {
+		cands = append(cands, filepath.Join(cache, "aegis", "oc-config", "opencode"))
+	}
 	cands = append(cands, StagedConfigSeedRelPath)
 	for _, c := range cands {
 		if err := stagePluginSeed(c); err != nil {
