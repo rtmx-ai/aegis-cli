@@ -1,8 +1,8 @@
 # Model provenance + compliance posture
 
-Why `MODEL_REF` defaults to the US-origin model, and how to think about running a
-PRC-origin open-weight model (Qwen) in a defense/ITAR context. Companion to
-[`docs/models.md`](models.md).
+How to think about model provenance — the current bundle default is the PRC-origin model
+(Qwen), with a US-origin alternative (gemma) one command away — in a defense/ITAR context.
+Companion to [`docs/models.md`](models.md).
 
 > **Not legal advice.** Compliance is contract- and agency-specific, and the rules on
 > Chinese-origin AI are moving fast. Treat this as engineering context to raise with the
@@ -61,17 +61,20 @@ What does **not** go away:
 - **Policy / optics / contract terms** — many programs will decline a PRC-origin model
   regardless of how it is run.
 
-## Posture (why gemma is the default)
+## Posture (bundle default + the controlled-work switch)
 
-- **`MODEL_REF` defaults to Gemma-4-26B-A4B (US-origin, Google)** — it sidesteps the
-  Chinese-origin question entirely and is the defensible default for anything touching
-  controlled data. It is also the SERVE-016 capability winner.
-- **Qwen3-Coder-30B-A3B stays available** as a one-command switch
-  (`scripts/pin-model.sh …`) for contexts where PRC-origin open weights are permitted (much
-  non-controlled work) — see [`docs/models.md`](models.md).
+- **`MODEL_REF` defaults to Qwen3-Coder-30B-A3B (PRC-origin, Alibaba)** — chosen for agentic
+  capability (the SERVE-016 forward pick: purpose-built for tool use, non-thinking). This is
+  the right default for development and non-controlled work.
+- **Gemma-4-26B-A4B (US-origin, Google) is the provenance-safe switch** for controlled/ITAR
+  work — one command away (`scripts/pin-model.sh ~/models/gemma-…gguf`), and also the
+  SERVE-016 capability winner. See [`docs/models.md`](models.md).
+- **The default does not fail safe.** Because the bundle default is now PRC-origin, a
+  controlled deployment must switch to gemma **explicitly** — it no longer gets a US-origin
+  model by default. Put that switch on the deployment checklist for any controlled program.
 - **Rule of thumb:** treat a Chinese-origin model as a compliance item to **clear explicitly
-  per contract**, not something 889 settles; default to the non-PRC model for controlled
-  work.
+  per contract**, not something 889 settles; switch to the non-PRC model (gemma) for
+  controlled work.
 
 ## Sources
 

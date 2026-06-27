@@ -6,17 +6,19 @@ recorded in `deploy/models/catalog.json` (the registry: `sha256` + `url` + per-m
 
 | Model | Catalog id | Ollama tag | GGUF | When |
 |---|---|---|---|---|
-| **Gemma-4-26B-A4B** (QAT Q4_K_XL) | `gemma-4-26b-a4b` | `gemma4-qat:32k` | `gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf` (14.2 GB) | The proven capability winner (SERVE-016: the only model observed to complete real tool-call edits). A thinking model — tuning sets `think:false`. |
-| **Qwen3-Coder-30B-A3B** (UD-Q4_K_XL) | `qwen3-coder-30b-a3b` | `qwen3-coder:30b` | `Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf` (17.7 GB) | The research-recommended agentic primary — purpose-built for tool use, **non-thinking by design**. |
+| **Qwen3-Coder-30B-A3B** (UD-Q4_K_XL) | `qwen3-coder-30b-a3b` | `qwen3-coder:30b` | `Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf` (17.7 GB) | **Bundle default** (`MODEL_REF`). The research-recommended agentic primary — purpose-built for tool use, **non-thinking by design**. PRC-origin (Alibaba). |
+| **Gemma-4-26B-A4B** (QAT Q4_K_XL) | `gemma-4-26b-a4b` | `gemma4-qat:32k` | `gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf` (14.2 GB) | The provenance-safe (US-origin, Google) pick for controlled/ITAR work; SERVE-016 capability winner. A thinking model — tuning sets `think:false`. |
 
 Neither completes within an interactive budget on linux-cpu (no GPU) — see
 `docs/serve-016-bakeoff.md`. The local set exists so SERVE-021 (darwin-metal) can
 validate either, and so the operator can pick the right tool per task today.
 
-**Provenance note.** The default (`MODEL_REF`) is the **US-origin** gemma; qwen3-coder is
-PRC-origin (Alibaba). Section 889 does not bar it, but other authorities and contract terms
-can — default to the non-PRC model for controlled work. See
-[`docs/model-compliance.md`](model-compliance.md).
+**Provenance note.** The default (`MODEL_REF`) is now **qwen3-coder** (PRC-origin, Alibaba),
+chosen for agentic capability; gemma is **US-origin** (Google). Section 889 does not bar
+qwen, but other authorities and contract terms can — so **for controlled/ITAR work, switch
+the default to gemma** (`scripts/pin-model.sh ~/models/gemma-…gguf`). Because the default is
+no longer US-origin, controlled deployments must make that switch *explicitly* — it no
+longer happens by default. See [`docs/model-compliance.md`](model-compliance.md).
 
 ## Switching
 
