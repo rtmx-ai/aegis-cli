@@ -406,12 +406,7 @@ func loadCatalogTuning(modelID string) *config.ModelTuning {
 	if modelID == "" {
 		return nil
 	}
-	var cands []string
-	if self, err := os.Executable(); err == nil {
-		cands = append(cands, filepath.Join(filepath.Dir(self), "deploy", "models", "catalog.json"))
-	}
-	cands = append(cands, filepath.Join("deploy", "models", "catalog.json"))
-	for _, p := range cands {
+	for _, p := range catalogCandidates() {
 		if b, err := os.ReadFile(p); err == nil {
 			if t := config.TuningForModel(modelID, b); t != nil {
 				return t
@@ -419,6 +414,32 @@ func loadCatalogTuning(modelID string) *config.ModelTuning {
 		}
 	}
 	return nil
+}
+
+// catalogCtxSizeForGGUF returns the catalog tuning's num_ctx for a GGUF model path
+// (SERVE-017), or 0 when the catalog or a match is absent.
+func catalogCtxSizeForGGUF(ggufPath string) int {
+	if ggufPath == "" {
+		return 0
+	}
+	for _, p := range catalogCandidates() {
+		if b, err := os.ReadFile(p); err == nil {
+			if t := config.TuningForGGUF(ggufPath, b); t != nil && t.NumCtx != nil {
+				return *t.NumCtx
+			}
+		}
+	}
+	return 0
+}
+
+// catalogCandidates resolves the model catalog: alongside the aegis binary first,
+// then cwd-relative deploy/models/catalog.json.
+func catalogCandidates() []string {
+	var cands []string
+	if self, err := os.Executable(); err == nil {
+		cands = append(cands, filepath.Join(filepath.Dir(self), "deploy", "models", "catalog.json"))
+	}
+	return append(cands, filepath.Join("deploy", "models", "catalog.json"))
 }
 
 func cmdRun(args []string, stdout, stderr io.Writer) int {
@@ -659,6 +680,14 @@ func buildServeCommand(calPath string) (*exec.Cmd, error) {
 	cal, err := serving.LoadCalibration(calPath)
 	if err != nil {
 		return nil, fmt.Errorf("calibration: %w (run scripts/bench.sh)", err)
+	}
+	// SERVE-017/020: if the calibration sets no ctx_size, carry the selected model's
+	// num_ctx from the catalog (matched by GGUF file) onto --ctx-size, so the production
+	// path serves the tuned context robustly instead of llama.cpp's small default.
+	if cal.CtxSize == 0 {
+		if n := catalogCtxSizeForGGUF(cal.Model); n > 0 {
+			cal.CtxSize = n
+		}
 	}
 	argv, err := serving.LaunchArgs(cal)
 	if err != nil {

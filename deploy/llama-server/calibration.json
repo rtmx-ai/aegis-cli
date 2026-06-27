@@ -4,5 +4,6 @@
   "batch": 512,
   "ngl": 0,
   "model": "/models/REPLACE-ME.gguf",
-  "port": 8080
+  "port": 8080,
+  "ctx_size": 16384
 }

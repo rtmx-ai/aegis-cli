@@ -44,6 +44,28 @@ type Calibration struct {
 	Model string `json:"model"`
 	// Port is the loopback port the server binds.
 	Port int `json:"port"`
+	// CtxSize is the context window served (llama-server --ctx-size). It carries the
+	// selected model's num_ctx (SERVE-020 tuning) onto the production path so it is a
+	// REAL serving knob, not the small default llama.cpp/Ollama fall back to (which
+	// silently truncates the harness's front-loaded tool definitions). 0 ->
+	// DefaultCtxSize at launch.
+	CtxSize int `json:"ctx_size,omitempty"`
+}
+
+// DefaultCtxSize is the context window the production launch uses when the
+// calibration sets none. 16384 is the floor agentic harnesses (OpenCode/Cline/aider)
+// need so their front-loaded tool definitions are not truncated — smaller is the
+// observed cause of tool-call failures. See docs/serve-016-bakeoff.md.
+const DefaultCtxSize = 16384
+
+// CtxSizeOrDefault returns the context window to serve: the calibrated CtxSize, or
+// DefaultCtxSize when unset/too small. The production launch never serves a small
+// default context.
+func (c *Calibration) CtxSizeOrDefault() int {
+	if c.CtxSize >= 512 {
+		return c.CtxSize
+	}
+	return DefaultCtxSize
 }
 
 // LoadCalibration reads and validates a calibration file.
@@ -109,6 +131,7 @@ func LaunchArgs(cal *Calibration) ([]string, error) {
 			"--model", cal.Model,
 			"--threads", fmt.Sprintf("%d", cal.Threads),
 			"--batch-size", fmt.Sprintf("%d", cal.Batch),
+			"--ctx-size", fmt.Sprintf("%d", cal.CtxSizeOrDefault()),
 			"-ngl", "0",
 			"--host", "127.0.0.1",
 			"--port", fmt.Sprintf("%d", cal.Port),
@@ -119,6 +142,7 @@ func LaunchArgs(cal *Calibration) ([]string, error) {
 			"llama-server",
 			"--model", cal.Model,
 			"--batch-size", fmt.Sprintf("%d", cal.Batch),
+			"--ctx-size", fmt.Sprintf("%d", cal.CtxSizeOrDefault()),
 			"-ngl", "999",
 			"--host", "127.0.0.1",
 			"--port", fmt.Sprintf("%d", cal.Port),

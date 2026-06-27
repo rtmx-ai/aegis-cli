@@ -117,3 +117,21 @@ func TestTuningForModel(t *testing.T) {
 		t.Error("empty model -> nil")
 	}
 }
+
+// TestTuningForGGUF covers the GGUF-keyed tuning lookup the production serving launch
+// uses (SERVE-017): the calibration's model path is matched to the catalog by file.
+func TestTuningForGGUF(t *testing.T) {
+	cat := []byte(`{"models":[
+		{"id":"qwen3-coder-30b-a3b","file":"Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf","tuning":{"num_ctx":16384}},
+		{"id":"laguna","file":"laguna.gguf"}
+	]}`)
+	if tn := TuningForGGUF("/models/Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf", cat); tn == nil || tn.NumCtx == nil || *tn.NumCtx != 16384 {
+		t.Errorf("GGUF path should match the catalog file -> num_ctx 16384, got %+v", tn)
+	}
+	if tn := TuningForGGUF("/models/laguna.gguf", cat); tn != nil {
+		t.Error("laguna carries no tuning -> nil")
+	}
+	if tn := TuningForGGUF("/models/unknown.gguf", cat); tn != nil {
+		t.Error("unmatched GGUF -> nil")
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -117,6 +118,32 @@ func TuningForModel(modelID string, catalogJSON []byte) *ModelTuning {
 	}
 	for _, e := range cat.Models {
 		if e.Tuning != nil && e.Ollama != "" && (e.Ollama == modelID || strings.HasPrefix(modelID, e.Ollama)) {
+			return e.Tuning
+		}
+	}
+	return nil
+}
+
+// TuningForGGUF returns the recommended ModelTuning for a GGUF model path from a
+// catalog JSON document, matched by the catalog entry's `file` (basename). The
+// production serving launch (SERVE-017) uses it to carry the per-model num_ctx onto
+// llama-server --ctx-size. Returns nil when no entry matches or carries tuning.
+func TuningForGGUF(ggufPath string, catalogJSON []byte) *ModelTuning {
+	if ggufPath == "" {
+		return nil
+	}
+	base := filepath.Base(ggufPath)
+	var cat struct {
+		Models []struct {
+			File   string       `json:"file"`
+			Tuning *ModelTuning `json:"tuning"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(catalogJSON, &cat); err != nil {
+		return nil
+	}
+	for _, e := range cat.Models {
+		if e.Tuning != nil && e.File != "" && e.File == base {
 			return e.Tuning
 		}
 	}
