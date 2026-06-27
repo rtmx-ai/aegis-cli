@@ -110,3 +110,19 @@ CPU the required 16k prefill is too slow to finish an interactive turn. The path
    research's top pick; retire phi4-mini/laguna from the tool-calling loop.
 3. **SERVE-021** — re-validate on darwin-metal (GPU), where 16k prefill is fast; that is
    where the tuned qwen3-coder is expected to actually complete within an interactive budget.
+
+---
+
+# Fairness caveat (added 2026-06-27, SERVE-022)
+
+**The qwen3-coder result above is confounded — do not read it as a fair capability verdict.**
+The RUNQ-004 transcript showed qwen3-coder *did* call the edit tool, but in its Qwen-native
+**XML** form (`<function=write>…`), which the OpenCode → Ollama **OpenAI-compatible** path
+leaked into message text instead of executing — so it scored as "no edit." It also ran at
+Ollama's small default `num_ctx` (gemma's tag carries 32768). Per the research, llama.cpp's
+**`--jinja`** parses Qwen3-Coder's XML tool tags — so qwen3-coder may pass once served
+correctly. A **fair re-comparison** (parsing fidelity verified per candidate, qwen via
+`--jinja`, equal-footing context) is tracked as **REQ-SERVE-022**
+(`docs/requirements/fair-model-comparison.md`). Until then, the "gemma wins / qwen fails on
+CPU" finding is **harness-conditional**, and the CPU default (gemma) reflects *what parses
+today*, not a settled capability ranking.

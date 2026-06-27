@@ -174,7 +174,8 @@
   "caveats": [
     "HARDWARE WALL: linux-cpu (no GPU) cannot finish a tuned agentic turn in <=480s; the config tuning (num_ctx/think/sampling) is necessary but not sufficient on CPU.",
     "Our DEFAULT serving is untuned: no explicit num_ctx (Ollama 4k floor silently truncates tool defs -> prose), no think:false (gemma rambles), no sampling. See docs/serve-016-bakeoff.md characterization.",
-    "Research-recommended primary: qwen3-coder:30b (non-thinking, agentic) with num_ctx>=16k + temp0.7/top_p0.8/top_k20/rep1.05. Validate on darwin-metal."
+    "Research-recommended primary: qwen3-coder:30b (non-thinking, agentic) with num_ctx>=16k + temp0.7/top_p0.8/top_k20/rep1.05. Validate on darwin-metal.",
+    "FAIRNESS (SERVE-022): the qwen3-coder result is confounded \u2014 its tool calls were emitted as Qwen-native XML and leaked to text on the Ollama OpenAI endpoint (not executed), and it ran at Ollama default num_ctx. Re-validate via llama.cpp --jinja before treating the ranking as a fair capability verdict."
   ],
   "budget_s": "240s (initial field) / 300s (coder) / 480s (tuned qwen3-coder)"
 }
