@@ -126,3 +126,21 @@ correctly. A **fair re-comparison** (parsing fidelity verified per candidate, qw
 (`docs/requirements/fair-model-comparison.md`). Until then, the "gemma wins / qwen fails on
 CPU" finding is **harness-conditional**, and the CPU default (gemma) reflects *what parses
 today*, not a settled capability ranking.
+
+## Resolved (SERVE-022, 2026-06-27) — qwen3-coder vindicated
+
+The fair re-comparison ran: each candidate served via **llama.cpp `--jinja`** (native
+tool-call parsing) at `ctx_size 16384` on linux-cpu, same `aegis run` path, Fib task.
+**Both complete — and qwen3-coder's tool calls parse, no XML leak:**
+
+| Model (llama.cpp --jinja) | parsed | closed | wall |
+|---|---|---|---|
+| gemma-4-26B-A4B | ✅ | ✅ | 145s |
+| **qwen3-coder-30B-A3B** | ✅ | ✅ | **208s** |
+
+This **reverses** the earlier "qwen3-coder fails on CPU" finding — it was a harness artifact
+(Ollama's OpenAI endpoint not parsing qwen's `<function=…>` XML), not incapability. Served
+correctly, qwen3-coder is vindicated as the agentic primary. Recorded:
+`eval/bakeoff/fidelity.json` · `test::TestFairModelComparison`. Note: the **Ollama spike**
+still leaks qwen's XML, so the linux-cpu *Ollama* default stays gemma; the **llama.cpp
+production** path (MODEL_REF=qwen3-coder) is correct. Latency ranking still wants GPU (SERVE-021).

@@ -66,5 +66,6 @@ go test ./...                         # passes
 | Serve-drive to a real local model | ✅ |
 | **Real task closed end-to-end on CPU (relaxed budget)** | ✅ RUNQ-004 |
 | Origin governance gate | ✅ |
-| Interactive latency / qwen on CPU | ⛔ GPU (SERVE-021) |
+| qwen on CPU (llama.cpp --jinja) | ✅ SERVE-022 (parses + closes, 208s) |
+| Interactive latency (any model) | ⛔ GPU (SERVE-021) |
 | Full intent-bench completion-rate | ⛔ BENCH-009 |

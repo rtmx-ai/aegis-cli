@@ -1,0 +1,16 @@
+{
+  "requirement": "REQ-SERVE-022",
+  "method": "fair comparison: each candidate served via llama.cpp --jinja (native tool-call template parsing) at ctx_size 16384 on linux-cpu, driven through the same aegis run -> opencode serve path on the Fib task (real coding task) at a 900s relaxed budget. Tool-call fidelity = the model's tool call executed (file edited), with no native tool markup leaked into message text.",
+  "host": "linux-cpu (no GPU)",
+  "serving": "llama-server (llama.cpp b9786) --jinja --ctx-size 16384",
+  "candidates": [
+    {"model": "gemma-4-26B-A4B (UD-Q4_K_XL)", "origin": "US", "parsed": true, "closed": true, "wall_s": 145, "xml_leak": false},
+    {"model": "qwen3-coder-30B-A3B (UD-Q4_K_XL)", "origin": "CN", "parsed": true, "closed": true, "wall_s": 208, "xml_leak": false}
+  ],
+  "finding": "BOTH candidates complete the real task on CPU via llama.cpp --jinja, with correct tool-call parsing (no XML leak). This REVERSES the SERVE-016/019 'qwen3-coder fails on CPU' result, which was a harness artifact: Ollama's OpenAI-compatible endpoint did not parse qwen3-coder's native XML tool calls (<function=...>), so they leaked into text and never executed. Served correctly (--jinja), qwen3-coder completes (208s) and is vindicated as the agentic primary. The earlier comparison was unfair; the production llama.cpp path is fair.",
+  "implications": [
+    "On the llama.cpp production path (MODEL_REF=qwen3-coder), the qwen default is correct and works on CPU.",
+    "The Ollama spike still leaks qwen's XML tool calls, so the linux-cpu Ollama default stays gemma (DefaultModelForTarget) until an Ollama tag with a correct tool template + num_ctx is staged.",
+    "This is a fair PARSING comparison on CPU; an interactive-latency ranking still wants GPU (SERVE-021)."
+  ]
+}
