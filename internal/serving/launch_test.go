@@ -29,7 +29,7 @@ func TestLlamaServerProduction(t *testing.T) {
 		t.Fatalf("launch args: %v", err)
 	}
 	joined := strings.Join(args, " ")
-	for _, want := range []string{"llama-server", "--model /models/m.gguf", "--host 127.0.0.1", "--port 8080", "--ctx-size 16384"} {
+	for _, want := range []string{"llama-server", "--model /models/m.gguf", "--jinja", "--host 127.0.0.1", "--port 8080", "--ctx-size 16384"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("production launch must contain %q\n  got: %s", want, joined)
 		}

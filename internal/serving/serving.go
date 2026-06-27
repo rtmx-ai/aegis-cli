@@ -129,6 +129,10 @@ func LaunchArgs(cal *Calibration) ([]string, error) {
 			"nice", "-n", "5",
 			"llama-server",
 			"--model", cal.Model,
+			// --jinja uses the model's embedded chat template so native tool-call formats
+			// (e.g. Qwen3-Coder's XML tags) are parsed into structured tool calls instead of
+			// leaking into text — mandatory for correct agentic tool use (SERVE-017/022).
+			"--jinja",
 			"--threads", fmt.Sprintf("%d", cal.Threads),
 			"--batch-size", fmt.Sprintf("%d", cal.Batch),
 			"--ctx-size", fmt.Sprintf("%d", cal.CtxSizeOrDefault()),
@@ -141,6 +145,7 @@ func LaunchArgs(cal *Calibration) ([]string, error) {
 			"nice", "-n", "5",
 			"llama-server",
 			"--model", cal.Model,
+			"--jinja", // parse native tool-call templates (see linux-cpu branch, SERVE-017/022)
 			"--batch-size", fmt.Sprintf("%d", cal.Batch),
 			"--ctx-size", fmt.Sprintf("%d", cal.CtxSizeOrDefault()),
 			"-ngl", "999",
