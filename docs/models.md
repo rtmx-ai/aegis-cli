@@ -13,6 +13,11 @@ Neither completes within an interactive budget on linux-cpu (no GPU) — see
 `docs/serve-016-bakeoff.md`. The local set exists so SERVE-021 (darwin-metal) can
 validate either, and so the operator can pick the right tool per task today.
 
+**Provenance note.** The default (`MODEL_REF`) is the **US-origin** gemma; qwen3-coder is
+PRC-origin (Alibaba). Section 889 does not bar it, but other authorities and contract terms
+can — default to the non-PRC model for controlled work. See
+[`docs/model-compliance.md`](model-compliance.md).
+
 ## Switching
 
 Switching is config-level — the per-model **tuning auto-applies** from the catalog in
