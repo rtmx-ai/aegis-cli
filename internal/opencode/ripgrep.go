@@ -23,6 +23,9 @@ func ResolveRipgrep() (string, bool) {
 		dir := filepath.Dir(self)
 		cands = append(cands, filepath.Join(dir, "rg"), filepath.Join(dir, StagedRipgrepRelPath))
 	}
+	for _, d := range LibexecDirs() { // REL-005: package install layout
+		cands = append(cands, filepath.Join(d, "rg"))
+	}
 	cands = append(cands, StagedRipgrepRelPath)
 	for _, c := range cands {
 		if isExecutable(c) {

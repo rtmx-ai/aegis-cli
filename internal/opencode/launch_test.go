@@ -244,3 +244,29 @@ func TestRunStepLimits(t *testing.T) {
 		t.Errorf("limits + tuning must compose in one agent block:\n%s", got)
 	}
 }
+
+// TestResolveFromLibexec → REQ-REL-005: aegis resolves its bundled helpers from the package
+// install layout ($AEGIS_LIBEXEC / <prefix>/lib/aegis), so a packaged binary works on PATH
+// without the alongside-exe / cwd-relative search. Tested via AEGIS_LIBEXEC with the source
+// tree out of cwd and a minimal PATH so only the libexec layout can satisfy resolution.
+func TestResolveFromLibexec(t *testing.T) {
+	lib := t.TempDir()
+	for _, name := range []string{"opencode", "rg"} {
+		if err := os.WriteFile(filepath.Join(lib, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("AEGIS_LIBEXEC", lib)
+	t.Chdir(t.TempDir())          // away from the source tree (no cwd-staged deploy/...)
+	t.Setenv("PATH", t.TempDir()) // so ResolveBinary's PATH lookup of opencode misses
+
+	if dirs := LibexecDirs(); len(dirs) == 0 || dirs[0] != lib {
+		t.Fatalf("LibexecDirs()[0] = %v, want %s first ($AEGIS_LIBEXEC)", dirs, lib)
+	}
+	if got, err := ResolveBinary(""); err != nil || filepath.Dir(got) != lib {
+		t.Errorf("ResolveBinary -> %q (err %v); want the libexec opencode under %s", got, err, lib)
+	}
+	if got, ok := ResolveRipgrep(); !ok || filepath.Dir(got) != lib {
+		t.Errorf("ResolveRipgrep -> %q ok=%v; want the libexec rg under %s", got, ok, lib)
+	}
+}

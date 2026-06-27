@@ -54,11 +54,15 @@ func ResolveBinary(explicit string) (string, error) {
 		return absOf(p), nil
 	}
 	// Candidate locations, in order: alongside the aegis binary (bundled release),
-	// alongside it under the staged path, and the staged path relative to cwd.
+	// alongside it under the staged path, the package install layout (REL-005), and the
+	// staged path relative to cwd.
 	var cands []string
 	if self, err := os.Executable(); err == nil {
 		dir := filepath.Dir(self)
 		cands = append(cands, filepath.Join(dir, "opencode"), filepath.Join(dir, StagedRelPath))
+	}
+	for _, d := range LibexecDirs() {
+		cands = append(cands, filepath.Join(d, "opencode"))
 	}
 	cands = append(cands, StagedRelPath)
 	for _, c := range cands {

@@ -799,6 +799,13 @@ func resolveLlamaServer() string {
 		}
 		return staged
 	}
+	// REL-005: package install layout (e.g. /usr/lib/aegis/llama-server).
+	for _, d := range opencode.LibexecDirs() {
+		p := filepath.Join(d, "llama-server")
+		if fi, err := os.Stat(p); err == nil && fi.Mode().Perm()&0o111 != 0 {
+			return p
+		}
+	}
 	if p, err := exec.LookPath("llama-server"); err == nil {
 		return p
 	}

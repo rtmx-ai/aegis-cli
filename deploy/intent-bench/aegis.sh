@@ -41,12 +41,14 @@ workdir="$(cd "$workdir" && pwd)"
 result_dir="$(cd "$result_dir" && pwd)"
 prompt_file="$(cd "$(dirname "$prompt_file")" && pwd)/$(basename "$prompt_file")"
 
-# aegis resolves its staged deploy/opencode/{bin/opencode,bin/rg,oc-config} relative to its
-# binary dir / CWD. Run from the aegis root so they are found regardless of the experiment
-# workdir. AEGIS_ROOT overrides; default = the parent of the binary dir (bin/aegis -> root).
-AEGIS_ROOT="${AEGIS_ROOT:-$(cd "$(dirname "$AEGIS")/.." 2>/dev/null && pwd || true)}"
-if [ -n "${AEGIS_ROOT:-}" ] && [ -d "$AEGIS_ROOT/deploy/opencode" ]; then
-    cd "$AEGIS_ROOT"
+# A packaged aegis (or one given $AEGIS_LIBEXEC) resolves its bundled OpenCode/ripgrep/
+# config-seed/llama-server via the install libexec (REL-005) — no cd needed. In a source
+# tree (no libexec), cd into the aegis root so its cwd-relative deploy/opencode/* resolve.
+if [ -z "${AEGIS_LIBEXEC:-}" ]; then
+    AEGIS_ROOT="${AEGIS_ROOT:-$(cd "$(dirname "$AEGIS")/.." 2>/dev/null && pwd || true)}"
+    if [ -n "${AEGIS_ROOT:-}" ] && [ -d "$AEGIS_ROOT/deploy/opencode" ]; then
+        cd "$AEGIS_ROOT"
+    fi
 fi
 
 cfg="$result_dir/aegis.json"

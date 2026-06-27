@@ -59,6 +59,9 @@ func ConfigSeedDir() (string, bool) {
 	if self, err := os.Executable(); err == nil {
 		cands = append(cands, filepath.Join(filepath.Dir(self), "oc-config", "opencode"))
 	}
+	for _, d := range LibexecDirs() { // REL-005: package install layout
+		cands = append(cands, filepath.Join(d, "oc-config", "opencode"))
+	}
 	cands = append(cands, StagedConfigSeedRelPath)
 	for _, c := range cands {
 		if err := stagePluginSeed(c); err != nil {

@@ -52,8 +52,8 @@ passes `aegis verify-env --check-opencode` with no extra setup. *Test:*
 *Depends on:* `REQ-REL-005`.
 
 ### REQ-REL-007 — Distribution channels (apt repo + Homebrew tap)
-**aegis shall** be installable from public channels: a signed apt repository (GitHub
-Pages-hosted `deb` repo or a PPA) and a Homebrew tap (`github.com/rtmx-ai/homebrew-tap`,
+**aegis shall** be installable from public channels: a signed apt repository (**GitHub
+Pages-hosted** `deb` repo — self-contained, no Launchpad/PPA) and a Homebrew tap (`github.com/rtmx-ai/homebrew-tap`,
 `brew install rtmx-ai/tap/aegis`), both serving the signed packages from `REL-001`. *Target:*
 documented `apt`/`brew` install one-liners resolve + install a working aegis. *Test:*
 `test::TestTapFormulaPinned` (the tap formula references the released version + sha256).
