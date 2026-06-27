@@ -9,9 +9,8 @@
 # multi-platform — superseding the prior binary-only v0.1.3 across macOS + Linux).
 #
 # KNOWN GAPS to close before this is real (do not mark REL-007 done until then):
-#   1. ripgrep is per-platform: deploy/opencode/RIPGREP_REF pins only x86_64-unknown-linux-musl.
-#      Each platform needs its own pinned rg (a per-platform RIPGREP_REF / staging) or the
-#      bundle ships without rg on non-linux-amd64 (OpenCode would fetch it — egress). MUST FIX.
+#   1. [DONE] per-platform ripgrep: RIPGREP_REF now pins rg for linux+macOS / amd64+arm64, and
+#      the "Stage ripgrep" step below downloads + verifies the platform's rg per runner.
 #   2. llama-server on macOS builds with Metal (scripts/build-llama.sh is target-aware) — verify.
 #   3. ubuntu-24.04-arm / macos-13 (Intel) runner availability in this org.
 #   4. Reproducibility/signing: these tarballs must be covered by SHA256SUMS + the signature in
@@ -68,8 +67,11 @@ jobs:
       - name: Build llama-server (native; Metal on macOS, CPU on Linux)
         run: scripts/build-llama.sh
 
-      # TODO(REL-007, gap #1): stage the PLATFORM's ripgrep here before assembling the bundle.
-      # Until per-platform rg is pinned, the non-linux-amd64 tarballs ship without rg.
+      # Stage the platform's pinned + verified ripgrep (REL-007 — downloads the rg matching
+      # this runner's goos-goarch from RIPGREP_REF and verifies its sha256 before bundling).
+      - name: Stage ripgrep (pinned + verified)
+        run: scripts/stage-ripgrep.sh "${{ matrix.goos }}-${{ matrix.goarch }}"
+
       - name: Assemble bundle tarball
         run: scripts/build-bundle.sh "${{ matrix.goos }}" "${{ matrix.goarch }}" "${{ inputs.version }}" dist
 

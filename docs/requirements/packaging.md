@@ -99,10 +99,13 @@ release publishes the platforms it built (linux-amd64 today).
 
 **Remaining to close REL-007:** the per-platform build jobs are **drafted** in
 `.github/workflows/bundle-matrix.yml` (a `workflow_dispatch` matrix over ubuntu/macos runners
-calling `scripts/build-bundle.sh`) — validate on real macOS/arm runners, close the
-per-platform **ripgrep** pin gap (`RIPGREP_REF` pins only linux-x86_64-musl today), fold the
-jobs into `release.yml` so the `release` job consumes the tarball artifacts, then set
-`HOMEBREW_TAP_TOKEN` + cut a signed `v*` tag. Until that publish, REL-007 stays MISSING.
+calling `scripts/build-bundle.sh`). The per-platform **ripgrep** pin is **done** —
+`deploy/opencode/RIPGREP_REF` pins rg for linux+macOS / amd64+arm64 (each verified against
+ripgrep's published checksum) and `scripts/stage-ripgrep.sh <goos>-<goarch>` stages the right
+one per runner (download-or-side-load, sha256-verified). Still to do: validate the matrix on
+real macOS/arm runners, fold the jobs into `release.yml` so the `release` job consumes the
+tarball artifacts, then set `HOMEBREW_TAP_TOKEN` + cut a signed `v*` tag. Until that publish,
+REL-007 stays MISSING.
 
 ## 4. Notes
 
