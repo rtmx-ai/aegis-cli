@@ -27,4 +27,17 @@ for plat in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64; do
 	sed -i.bak "s/$ph/$sha/" "$tmp" && rm -f "$tmp.bak"
 	echo "fill-formula: pinned $plat -> $sha" >&2
 done
-cat "$tmp" > "$out"; rm -f "$tmp"
+# Prune any platform block whose sha256 is still a REPLACE_ placeholder (that tarball was not
+# built on this runner) so the published formula is VALID — a placeholder sha256 breaks
+# `brew install`/`audit` on that platform. Pruned platforms reappear once a runner builds them.
+awk '
+/^[[:space:]]*on_(arm|intel) do[[:space:]]*$/ { buf=$0 ORS; inblk=1; repl=0; next }
+inblk {
+  buf=buf $0 ORS
+  if ($0 ~ /REPLACE_[A-Z0-9_]+_SHA256/) repl=1
+  if ($0 ~ /^[[:space:]]*end[[:space:]]*$/) { if (!repl) printf "%s", buf; inblk=0; buf="" }
+  next
+}
+{ print }
+' "$tmp" > "$out"
+rm -f "$tmp"

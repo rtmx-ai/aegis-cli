@@ -48,7 +48,12 @@ func TestTapFormulaPinned(t *testing.T) {
 	if !regexp.MustCompile(`sha256 "[0-9a-f]{64}"`).MatchString(string(filled)) {
 		t.Errorf("filled formula must pin a concrete sha256:\n%s", filled)
 	}
-	if strings.Contains(string(filled), "REPLACE_LINUX_AMD64_SHA256") {
-		t.Error("the available platform's sha256 must be filled (placeholder remains)")
+	// No placeholder may survive — unbuilt platforms are pruned so the published formula is
+	// valid (a REPLACE_ sha256 breaks brew on that platform).
+	if strings.Contains(string(filled), "REPLACE_") {
+		t.Errorf("no REPLACE_ placeholder may survive (unbuilt platforms must be pruned):\n%s", filled)
+	}
+	if !strings.Contains(string(filled), "aegis-#{version}-linux-amd64.tar.gz") {
+		t.Error("the built platform (linux-amd64) must remain in the formula")
 	}
 }

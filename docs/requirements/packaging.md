@@ -83,17 +83,22 @@ sudo apt install aegis                           # after adding the apt repo (se
 2. **Multi-platform needs a macOS CI runner.** The Linux runner builds linux-amd64 helpers;
    the formula's darwin tarballs stay placeholders until a `macos-latest` job builds them.
 
-**Decision (2026-06-27): brew-only for now.** The Homebrew channel ships first (release
-assets handle the 190 MB tarball); the apt channel is **deferred** pending finding (1) — the
-`build-apt-repo.sh` generator stays as ready-but-unpublished tooling. So REL-007's scope is
-the **Homebrew tap**.
+**Decision (2026-06-27): brew-only for now**, apt deferred on finding (1).
 
-**Remaining to close REL-007 (brew):** create `github.com/rtmx-ai/homebrew-tap`, set the
-`HOMEBREW_TAP_TOKEN` repo secret, and cut a signed `v*` tag — the workflow then fills +
-publishes `Formula/aegis.rb` and uploads the bundled tarball as a release asset. (For full
-macOS coverage, add a `macos-latest` job to build the darwin tarballs; linux-amd64 pins on
-the current runner.) Until that publish, REL-007 stays MISSING — the tooling is ready, but it
-is not yet installable from a public channel.
+**The tap already exists + is shared.** `github.com/rtmx-ai/homebrew-tap` serves `rtmx` (via
+GoReleaser) and `aegis` — aegis-cli was previously published there as **v0.1.3** (binary-only,
+"pair programmer" positioning). The new harness-bundled aegis **supersedes** v0.1.3 on the
+same channel. So the publish step **only ever writes `Formula/aegis.rb`** (never the README or
+`rtmx.rb`) — the CI's `cp … Formula/aegis.rb` respects that; do NOT seed/overwrite other files.
+
+**fill-formula prunes unbuilt platforms** so a partial release publishes a VALID formula (a
+`REPLACE_` sha256 would break `brew install`/`audit`). v0.1.3 shipped all four platforms
+binary-only; the harness bundle is host-built, so full macOS/arm parity needs **per-platform
+CI runners** (a `macos-latest` + arm job building OpenCode/llama-server) — until then a
+release publishes the platforms it built (linux-amd64 today).
+
+**Remaining to close REL-007:** add the per-platform build jobs, set `HOMEBREW_TAP_TOKEN`,
+and cut a signed `v*` tag. Until that publish, REL-007 stays MISSING.
 
 ## 4. Notes
 
