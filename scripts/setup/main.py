@@ -9,6 +9,7 @@ import os
 import sys
 
 from . import catalog
+from . import origin
 from . import ui as ui_mod
 from .orchestrator import Orchestrator
 from .steps import build_steps
@@ -64,6 +65,7 @@ def main(argv=None):
     u = ui_mod.UI(verbose=args.verbose)
     decision = catalog.resolve(args, load_conf(), u)
     save_conf(decision)
+    origin.configure()  # MODEL-008: prompt for the model-origin policy (tty only; else default)
     return Orchestrator(u).run(build_steps(decision, install=args.install))
 
 

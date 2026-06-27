@@ -2,9 +2,12 @@
 -s scripts/setup -t .` from the repo root; bridged into rtmx verify by a Go test).
 """
 import io
+import json
+import pathlib
+import tempfile
 import unittest
 
-from scripts.setup import catalog, profile, steps, ui
+from scripts.setup import catalog, origin, profile, steps, ui
 from scripts.setup.orchestrator import Orchestrator
 
 
@@ -127,6 +130,28 @@ class TestOrchestrator(unittest.TestCase):
         v = out.getvalue()
         self.assertIn("Already done. bin/x (6M)", v)
         self.assertNotIn("Building X (already done)", v)  # no title echo
+
+
+class OriginPolicyTest(unittest.TestCase):
+    def test_origin_policy_prompt(self):
+        # MODEL-008: the init prompt writes a per-country policy from the catalog's origins.
+        with tempfile.TemporaryDirectory() as d:
+            cat = pathlib.Path(d) / "catalog.json"
+            cat.write_text(json.dumps({"models": [
+                {"id": "g", "origin": "US"}, {"id": "q", "origin": "CN"}]}))
+            pol = pathlib.Path(d) / "origin-policy.json"
+            # allow US, deny CN — keyed off the country in the prompt (order-independent).
+            ask = lambda prompt: "y" if "US" in prompt else "n"
+            written = origin.configure(
+                ask=ask, interactive=True, catalog_path=cat, policy_path=pol)
+            self.assertEqual(written["countries"], {"US": "allow", "CN": "deny"})
+            self.assertEqual(written["default"], "deny")
+            on_disk = json.loads(pol.read_text())
+            self.assertEqual(on_disk["countries"]["CN"], "deny")
+
+    def test_non_interactive_leaves_default(self):
+        # Non-interactive runs do not touch the shipped policy.
+        self.assertIsNone(origin.configure(interactive=False))
 
 
 if __name__ == "__main__":

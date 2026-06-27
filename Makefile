@@ -45,7 +45,7 @@ GO_BUILD_ENV  := GOFLAGS=-mod=vendor
 endif
 
 .PHONY: all build fmt fmt-check vet test cover cover-gate lint race vuln \
-        airgap airgap-run metrics badges release verify-release ci ci-fast ci-darwin hooks-install clean help
+        airgap airgap-run origin-gate metrics badges release verify-release ci ci-fast ci-darwin hooks-install clean help
 
 all: build
 
@@ -124,6 +124,12 @@ airgap: build
 airgap-run: build
 	AIRGAP_STRICT=1 scripts/verify-airgap.sh -- $(BIN) verify-env --check-opencode
 
+## origin-gate: MODEL-007 model-provenance gate — fail the build when the pinned model
+## (MODEL_REF) has a country of origin not allowed by deploy/models/origin-policy.json.
+## The policy file is the explicit, auditable override (set a country to "allow").
+origin-gate: build
+	$(BIN) verify-env --check-origin
+
 ## metrics: compute golden-set dashboard metrics + enforce the ACR-regression gate
 metrics:
 	python3 scripts/ci-metrics.py --golden $(GOLDEN) --baseline $(BASELINE)
@@ -153,6 +159,7 @@ ci-full: ci
 	scripts/build-opencode.sh
 	scripts/build-llama.sh
 	@scripts/stage-model.sh 2>/dev/null || echo "ci-full: model pin pending (SERVE-016) — skipping stage-model"
+	$(MAKE) origin-gate  # MODEL-007: model-provenance gate (MODEL_REF origin vs policy)
 	$(MAKE) airgap-run   # ENCLAVE-001: whole-group EGRESS=0 proof with OpenCode staged
 	@echo "ci-full: OK (aegis + OpenCode + llama-server built from pinned source)"
 

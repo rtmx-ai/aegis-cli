@@ -34,6 +34,36 @@ func TestVerifyEnvNonLoopbackFails(t *testing.T) {
 	}
 }
 
+// TestVerifyEnvCheckOrigin → REQ-MODEL-007: the origin gate passes when the pinned model's
+// origin is policy-allowed (shipped policy) and fails under a denying policy.
+func TestVerifyEnvCheckOrigin(t *testing.T) {
+	t.Chdir("../..") // repo root, where deploy/models/{MODEL_REF,catalog.json,origin-policy.json} live
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"verify-env", "--check-origin"}, &out, &errb); code != 0 {
+		t.Fatalf("check-origin with the shipped policy should pass, got %d (%s)", code, out.String())
+	}
+	if !strings.Contains(out.String(), "origin=OK") {
+		t.Errorf("want origin=OK, got %q", out.String())
+	}
+
+	// A policy that denies every origin must fail the gate, whatever model is pinned.
+	dir := t.TempDir()
+	pol := filepath.Join(dir, "deny.json")
+	if err := os.WriteFile(pol, []byte(`{"default":"deny","countries":{"US":"deny","CN":"deny"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AEGIS_ORIGIN_POLICY", pol)
+	out.Reset()
+	errb.Reset()
+	if code := run([]string{"verify-env", "--check-origin"}, &out, &errb); code == 0 {
+		t.Errorf("a deny-all policy must fail check-origin; got exit 0 (%s)", out.String())
+	}
+	if !strings.Contains(out.String(), "origin=FAIL") {
+		t.Errorf("want origin=FAIL, got %q", out.String())
+	}
+}
+
 func TestVersionAndUsage(t *testing.T) {
 	var out, errb bytes.Buffer
 	if code := run([]string{"version"}, &out, &errb); code != 0 {

@@ -18,7 +18,8 @@
         "min_p": 0.0,
         "num_ctx": 16384,
         "think": false
-      }
+      },
+      "origin": "US"
     },
     {
       "id": "qwen3-coder-30b-a3b",
@@ -37,7 +38,8 @@
         "min_p": 0.0,
         "repeat_penalty": 1.05,
         "num_ctx": 16384
-      }
+      },
+      "origin": "CN"
     },
     {
       "id": "laguna-xs.2",
@@ -48,7 +50,8 @@
       "size": 20274296256,
       "recommended": false,
       "note": "poolside coding model (Apache-2.0; community GGUF).",
-      "ollama": "laguna-xs.2"
+      "ollama": "laguna-xs.2",
+      "origin": "US"
     },
     {
       "id": "qwen2.5-coder-14b",
@@ -67,7 +70,8 @@
         "min_p": 0.0,
         "repeat_penalty": 1.05,
         "num_ctx": 16384
-      }
+      },
+      "origin": "CN"
     },
     {
       "id": "qwen3.6-35b-a3b",
@@ -87,7 +91,8 @@
         "repeat_penalty": 1.05,
         "num_ctx": 16384,
         "think": false
-      }
+      },
+      "origin": "CN"
     },
     {
       "id": "phi-4-mini",
@@ -98,7 +103,8 @@
       "size": 2491874272,
       "recommended": false,
       "note": "Small + fast; weaker tool-calling (screening only).",
-      "ollama": "phi4-mini"
+      "ollama": "phi4-mini",
+      "origin": "US"
     }
   ]
 }

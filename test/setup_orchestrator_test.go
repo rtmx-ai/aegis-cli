@@ -6,6 +6,20 @@ import (
 	"testing"
 )
 
+// TestSetupOriginPolicy → REQ-MODEL-008: the setup origin-policy prompt writes a per-country
+// policy from the catalog's origins (bridged to the Python OriginPolicyTest).
+func TestSetupOriginPolicy(t *testing.T) {
+	readRepoFile(t, "scripts/setup/origin.py") // fails the test if missing
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available; skipping the origin-policy unittest bridge")
+	}
+	cmd := exec.Command("python3", "-m", "unittest", "scripts.setup.test_setup.OriginPolicyTest")
+	cmd.Dir = repoRoot(t)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("setup origin-policy suite failed: %v\n%s", err, out)
+	}
+}
+
 // TestSetupShimThin → REQ-SETUP-001: setup.sh is a thin shim that execs the Python
 // orchestrator; no orchestration/UI logic in bash.
 func TestSetupShimThin(t *testing.T) {

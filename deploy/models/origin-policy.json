@@ -1,0 +1,8 @@
+{
+  "note": "Per-country model-origin policy (MODEL-006). `default` is the disposition for any origin not listed below AND for unknown/unclassified origins. Listed countries override it. The origin gate (aegis verify-env --check-origin, make origin-gate) fails when the selected model's (MODEL_REF) origin is not allowed. Shipped default-deny with US+CN allowed: an un-classified origin is rejected until reviewed, without breaking the current default. A controlled/ITAR deployment should set CN (and other non-allied origins) to \"deny\" — which makes the gate fail for a PRC-origin MODEL_REF and forces the switch to the US-origin model. Edit this file or run the setup origin-policy prompt. See docs/model-compliance.md.",
+  "default": "deny",
+  "countries": {
+    "US": "allow",
+    "CN": "allow"
+  }
+}

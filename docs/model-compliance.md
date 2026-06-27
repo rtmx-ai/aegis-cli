@@ -76,6 +76,23 @@ What does **not** go away:
   per contract**, not something 889 settles; switch to the non-PRC model (gemma) for
   controlled work.
 
+## Enforcement (MODEL-005..008)
+
+The posture above is **enforced**, not just documented:
+
+- **Origin metadata** — every catalog model records an ISO `origin` (`deploy/models/catalog.json`).
+- **Policy** — a per-country allow/deny file (`deploy/models/origin-policy.json`,
+  `AEGIS_ORIGIN_POLICY`-overridable) that the operator controls. Shipped **default-deny** with
+  `US`+`CN` allowed: an *un-classified* origin is rejected until reviewed. Allowing a denied
+  origin is an explicit, version-controllable edit — no env bypass.
+- **Gate** — `aegis verify-env --check-origin` and `make origin-gate` (wired into `ci-full`)
+  fail when the pinned model's (`MODEL_REF`) origin is not allowed. For a controlled
+  deployment, set `CN: deny` → the gate fails for the qwen default → forces the switch to gemma.
+- **Init prompt** — `setup` asks per-country (the catalog's origins) and writes the policy at
+  init; non-interactive runs keep the shipped default.
+
+Spec: `docs/requirements/model-origin-governance.md`.
+
 ## Sources
 
 - [What is Section 889 of the FY2019 NDAA? — U.S. Election Assistance Commission](https://www.eac.gov/what-section-889-fy-2019-ndaa)

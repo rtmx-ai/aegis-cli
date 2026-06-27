@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -29,6 +30,7 @@ import (
 	"github.com/rtmx-ai/aegis-cli/internal/loop"
 	"github.com/rtmx-ai/aegis-cli/internal/metrics"
 	"github.com/rtmx-ai/aegis-cli/internal/opencode"
+	"github.com/rtmx-ai/aegis-cli/internal/origin"
 	"github.com/rtmx-ai/aegis-cli/internal/rtmx"
 	"github.com/rtmx-ai/aegis-cli/internal/serving"
 )
@@ -442,6 +444,71 @@ func catalogCandidates() []string {
 	return append(cands, filepath.Join("deploy", "models", "catalog.json"))
 }
 
+// deployFileBytes reads a deploy-relative file, looking alongside the aegis binary first,
+// then cwd-relative.
+func deployFileBytes(rel string) ([]byte, error) {
+	if self, err := os.Executable(); err == nil {
+		if b, err := os.ReadFile(filepath.Join(filepath.Dir(self), rel)); err == nil {
+			return b, nil
+		}
+	}
+	return os.ReadFile(rel)
+}
+
+// originPolicyPath resolves the origin policy file: AEGIS_ORIGIN_POLICY if set, else the
+// deploy file (alongside the binary, then cwd).
+func originPolicyPath() string {
+	if p := os.Getenv("AEGIS_ORIGIN_POLICY"); p != "" {
+		return p
+	}
+	if self, err := os.Executable(); err == nil {
+		p := filepath.Join(filepath.Dir(self), origin.DefaultPolicyPath)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return origin.DefaultPolicyPath
+}
+
+// verifyModelOrigin enforces the model-origin policy (MODEL-007): it resolves the pinned
+// model (MODEL_REF) + the catalog + the policy and fails when the origin is not allowed.
+// Absent MODEL_REF or catalog is a SKIP (nothing to gate), not a failure.
+func verifyModelOrigin(stdout io.Writer) int {
+	refBytes, err := deployFileBytes(filepath.Join("deploy", "models", "MODEL_REF"))
+	if err != nil {
+		fmt.Fprintf(stdout, "origin=SKIP (no MODEL_REF pinned)\n")
+		return 0
+	}
+	var ref struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(refBytes, &ref); err != nil || ref.Name == "" {
+		fmt.Fprintf(stdout, "origin=SKIP (MODEL_REF unreadable)\n")
+		return 0
+	}
+	catalog, err := deployFileBytes(filepath.Join("deploy", "models", "catalog.json"))
+	if err != nil {
+		fmt.Fprintf(stdout, "origin=SKIP (no model catalog)\n")
+		return 0
+	}
+	pol, err := origin.LoadPolicy(originPolicyPath())
+	if err != nil {
+		fmt.Fprintf(stdout, "origin=FAIL (policy: %v)\n", err)
+		return 1
+	}
+	country, known := origin.OriginForModel(ref.Name, catalog)
+	label := "unknown"
+	if known {
+		label = country
+	}
+	if err := origin.CheckModel(ref.Name, catalog, pol); err != nil {
+		fmt.Fprintf(stdout, "origin=FAIL model=%s origin=%s (%v)\n", ref.Name, label, err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "origin=OK model=%s origin=%s (policy-allowed)\n", ref.Name, label)
+	return 0
+}
+
 func cmdRun(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -728,6 +795,7 @@ func cmdVerifyEnv(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	cfgPath := fs.String("config", "", "config file path")
 	checkOpenCode := fs.Bool("check-opencode", false, "also launch OpenCode under the hardened env and confirm it bootstraps closed (loopback-only); run this under scripts/verify-airgap.sh for the whole-group EGRESS=0 proof (ENCLAVE-001)")
+	checkOrigin := fs.Bool("check-origin", false, "enforce the model-origin policy (MODEL-007): fail if the pinned model (MODEL_REF) has an origin not allowed by deploy/models/origin-policy.json")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -745,6 +813,11 @@ func cmdVerifyEnv(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "egress=%s endpoint=%s harness=%s\n", egress, cfg.Endpoint, cfg.Harness)
 	if egress != "OK" {
 		return 1
+	}
+	if *checkOrigin {
+		if rc := verifyModelOrigin(stdout); rc != 0 {
+			return rc
+		}
 	}
 	if *checkOpenCode {
 		// The launch check proves EGRESS=0 only for a COMPLETE bundle. If OpenCode or
