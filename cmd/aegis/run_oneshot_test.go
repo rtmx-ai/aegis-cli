@@ -47,6 +47,20 @@ func TestRunWritesTranscript(t *testing.T) {
 	}
 }
 
+// TestVerifyEnvCheckOpencodeSkips covers verify-env --check-opencode when OpenCode is
+// not staged: it skips the launch check (cannot prove EGRESS=0 on an incomplete
+// bundle) and still exits 0.
+func TestVerifyEnvCheckOpencodeSkips(t *testing.T) {
+	t.Chdir(t.TempDir()) // no opencode staged here
+	var o, e bytes.Buffer
+	if code := run([]string{"verify-env", "--check-opencode"}, &o, &e); code != 0 {
+		t.Fatalf("verify-env --check-opencode should exit 0 when opencode absent, got %d (%s)", code, e.String())
+	}
+	if !strings.Contains(o.String(), "opencode=SKIP") {
+		t.Errorf("want opencode=SKIP when not staged, got %q", o.String())
+	}
+}
+
 // TestTUIMissingBinary → cmdTUI prints guidance + exits 1 when opencode is absent.
 func TestTUIMissingBinary(t *testing.T) {
 	t.Chdir(t.TempDir()) // no staged opencode here

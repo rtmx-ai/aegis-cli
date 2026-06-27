@@ -45,7 +45,7 @@ GO_BUILD_ENV  := GOFLAGS=-mod=vendor
 endif
 
 .PHONY: all build fmt fmt-check vet test cover cover-gate lint race vuln \
-        airgap metrics badges release verify-release ci ci-fast ci-darwin hooks-install clean help
+        airgap airgap-run metrics badges release verify-release ci ci-fast ci-darwin hooks-install clean help
 
 all: build
 
@@ -116,6 +116,14 @@ badges:
 airgap: build
 	scripts/verify-airgap.sh -- $(AIRGAP_CMD)
 
+## airgap-run: ENCLAVE-001 whole-group EGRESS=0 proof — launch the bundled OpenCode
+## (its bootstrap is where the egress vectors fire: ripgrep/npm/models.dev) under the
+## egress gate and confirm it reaches readiness loopback-only. Skips with a note if
+## OpenCode/ripgrep are not staged (bundle completeness is OC-009/REL). Run in the
+## full-stack tier where OpenCode is built; fail-closed under netns in CI.
+airgap-run: build
+	AIRGAP_STRICT=1 scripts/verify-airgap.sh -- $(BIN) verify-env --check-opencode
+
 ## metrics: compute golden-set dashboard metrics + enforce the ACR-regression gate
 metrics:
 	python3 scripts/ci-metrics.py --golden $(GOLDEN) --baseline $(BASELINE)
@@ -145,6 +153,7 @@ ci-full: ci
 	scripts/build-opencode.sh
 	scripts/build-llama.sh
 	@scripts/stage-model.sh 2>/dev/null || echo "ci-full: model pin pending (SERVE-016) — skipping stage-model"
+	$(MAKE) airgap-run   # ENCLAVE-001: whole-group EGRESS=0 proof with OpenCode staged
 	@echo "ci-full: OK (aegis + OpenCode + llama-server built from pinned source)"
 
 ## hooks-install: install the pre-commit + pre-push git hooks (idempotent)

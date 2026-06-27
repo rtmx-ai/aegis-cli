@@ -666,6 +666,7 @@ func cmdVerifyEnv(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("verify-env", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	cfgPath := fs.String("config", "", "config file path")
+	checkOpenCode := fs.Bool("check-opencode", false, "also launch OpenCode under the hardened env and confirm it bootstraps closed (loopback-only); run this under scripts/verify-airgap.sh for the whole-group EGRESS=0 proof (ENCLAVE-001)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -683,6 +684,29 @@ func cmdVerifyEnv(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "egress=%s endpoint=%s harness=%s\n", egress, cfg.Endpoint, cfg.Harness)
 	if egress != "OK" {
 		return 1
+	}
+	if *checkOpenCode {
+		// The launch check proves EGRESS=0 only for a COMPLETE bundle. If OpenCode or
+		// its bundled ripgrep is not staged, the bootstrap would reach for the network
+		// (a download), so we cannot prove loopback-only — skip with a loud note rather
+		// than a false pass or false fail. Bundle completeness is OC-009/REL's concern.
+		if _, err := opencode.ResolveBinary(""); err != nil {
+			fmt.Fprintln(stdout, "opencode=SKIP (OpenCode not staged; bundle it to enforce the launch check)")
+			return 0
+		}
+		if _, ok := opencode.ResolveRipgrep(); !ok {
+			if _, err := exec.LookPath("rg"); err != nil {
+				fmt.Fprintln(stdout, "opencode=SKIP (ripgrep not staged; run scripts/stage-ripgrep.sh to enforce the launch check)")
+				return 0
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		if err := opencode.VerifyLaunch(ctx, cfg); err != nil {
+			fmt.Fprintf(stdout, "opencode=FAIL (bootstrap did not reach readiness: %v)\n", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, "opencode=OK (bootstrapped to readiness, loopback-only)")
 	}
 	return 0
 }

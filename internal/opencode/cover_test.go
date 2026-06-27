@@ -22,6 +22,15 @@ func TestHardenedEnv(t *testing.T) {
 	}
 }
 
+// TestVerifyLaunchMissingBinary covers VerifyLaunch's resolve-error path: with no
+// OpenCode staged it returns an error rather than launching anything.
+func TestVerifyLaunchMissingBinary(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := VerifyLaunch(context.Background(), config.Default()); err == nil {
+		t.Error("VerifyLaunch should error when OpenCode is not resolvable")
+	}
+}
+
 // TestModelsFetchDisabled → REQ-OC-011: the hardened launch env disables OpenCode's
 // models.dev catalog fetch (a non-loopback egress to models.dev at startup).
 func TestModelsFetchDisabled(t *testing.T) {

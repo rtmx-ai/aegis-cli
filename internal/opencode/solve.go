@@ -67,6 +67,31 @@ func realSolveDrive(ctx context.Context, bin string, cfg config.Config, opts Sol
 	return client.Drive(ctx, Model{ProviderID: "local", ModelID: model}, opts.Prompt)
 }
 
+// VerifyLaunch starts `opencode serve` under the hardened, air-gapped env and
+// confirms it reaches readiness, then stops it. The bootstrap that runs here is
+// exactly where OpenCode's egress vectors fire (ripgrep download, plugin npm
+// install, models.dev fetch), all closed by airgapEnv (OC-009/010/011). Run under
+// the egress gate (scripts/verify-airgap.sh netns isolation), reaching readiness
+// proves the whole opencode bring-up needs nothing but loopback — the ENCLAVE-001
+// whole-group EGRESS=0 proof. A blocking-egress regression would prevent readiness
+// and surface here as an error.
+func VerifyLaunch(ctx context.Context, cfg config.Config) error {
+	bin, err := ResolveBinary("")
+	if err != nil {
+		return err
+	}
+	port, err := freeLoopbackPort()
+	if err != nil {
+		return err
+	}
+	_, stop, err := StartServe(ctx, bin, cfg, ".", port, true)
+	if err != nil {
+		return err
+	}
+	stop()
+	return nil
+}
+
 // freeLoopbackPort returns an unused loopback TCP port for the serve API.
 func freeLoopbackPort() (int, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
