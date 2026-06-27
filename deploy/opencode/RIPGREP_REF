@@ -1,0 +1,7 @@
+{
+  "name": "rg",
+  "version": "15.1.0",
+  "asset": "ripgrep-15.1.0-x86_64-unknown-linux-musl",
+  "sha256": "PENDING-STAGE-OC-009",
+  "note": "Pinned ripgrep binary bundled alongside OpenCode (OC-009). OpenCode downloads ripgrep from github at bootstrap unless `rg` is on the launch PATH; aegis stages this one (deploy/opencode/bin/rg) and prepends its dir to the launch PATH. Side-load only — never fetched at runtime. On the connected build host, extract `rg` from the upstream ripgrep release tarball (BurntSushi/ripgrep v15.1.0), set its verified sha256 here, then run scripts/stage-ripgrep.sh; the script refuses until the digest is pinned."
+}

@@ -120,3 +120,19 @@ execution; (b) pin an OpenCode release whose headless surface works (classic v1
 had a one-shot `opencode run <prompt>`), trading off the "latest stable" policy;
 (c) revisit when upstream lands it. The client + transcript + adapter scaffolding
 are ready to light up the moment the run executes.
+
+### Addendum 2 — RESOLVED 2026-06-26: the serve path works (wrong route, not a gap)
+
+The "blocked upstream" verdict above was **wrong**. Re-tested against the same
+self-built v1.17.9 with the bootstrap egress vectors closed (staged `rg`, pre-seeded
+plugin) and the **correct route**, `opencode serve` drove `gemma4-qat:32k` end-to-end
+(file edited, pytest PASS, real tool calls, per-message usage, EGRESS=0). The original
+probe hit `/api/session/{id}/prompt` — the **v2 queue route** that only admits (its
+`/wait` is an empty stub) — and unmatched POSTs fall through to the web UI (HTML 200),
+reading as "admitted but never runs." The real synchronous executor is **`POST
+/session/{id}/message`** (base `/session`, no `/api`). `serve.go` uses the wrong
+paths/body and its unit mock encoded them, hiding the bug. The corrected drive +
+bootstrap hardening + a real-binary integration test are specified in
+**`docs/requirements/headless-serve-drive.md`** (`REQ-BENCH-006..007`, `REQ-OC-009..010`),
+all delivered. `REQ-BENCH-001`'s headless run is now satisfied via that serve drive (its
+classic-`opencode run` mechanism wedged offline and was superseded).

@@ -10,61 +10,77 @@ import (
 	"testing"
 )
 
-// mockServe stands in for `opencode serve`: readiness + the /api session routes
-// aegis drives, recording the prompt it receives.
-func mockServe(t *testing.T, gotPrompt *string) *httptest.Server {
+// mockServe stands in for `opencode serve`: readiness + the real /session routes
+// aegis drives (POST /session, POST+GET /session/{id}/message), recording the
+// message body it receives. It fails the test if the client touches the wrong v2
+// /api/session surface (the queue route that never executes).
+func mockServe(t *testing.T, gotBody *string) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/openapi.json", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("{}")) })
-	mux.HandleFunc("/api/session", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"id": "ses_1"}})
+	// The real server answers /openapi.json with the web UI (HTML), not JSON.
+	mux.HandleFunc("/openapi.json", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("<!doctype html><html></html>"))
 	})
-	mux.HandleFunc("/api/session/ses_1/prompt", func(w http.ResponseWriter, r *http.Request) {
-		b, _ := io.ReadAll(r.Body)
-		*gotPrompt = string(b)
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{}})
+	// POST /session returns the session object flat (no "data" wrapper).
+	mux.HandleFunc("/session", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "ses_1"})
 	})
-	mux.HandleFunc("/api/session/ses_1/message", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{
+	mux.HandleFunc("/session/ses_1/message", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			b, _ := io.ReadAll(r.Body)
+			*gotBody = string(b)
+			// Synchronous executor returns the assistant message on completion.
+			_ = json.NewEncoder(w).Encode(map[string]any{"info": map[string]any{"role": "assistant"}, "parts": []any{}})
+			return
+		}
+		// GET: the full transcript with per-message usage, a flat top-level array.
+		_ = json.NewEncoder(w).Encode([]map[string]any{
 			{"info": map[string]any{"role": "user"}, "parts": []map[string]any{{"type": "text", "text": "build X"}}},
 			{"info": map[string]any{"role": "assistant", "finish": "stop",
 				"tokens": map[string]any{"total": 142, "input": 100, "output": 42}},
 				"parts": []map[string]any{{"type": "text", "text": "done"}}},
-		}})
+		})
+	})
+	// The v2 queue surface must NOT be used.
+	mux.HandleFunc("/api/session", func(http.ResponseWriter, *http.Request) {
+		t.Error("client must drive /session, not the v2 /api/session queue route")
 	})
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 	return ts
 }
 
-// TestServeClientDrive → BENCH-001 (client mechanics): create -> prompt -> collect
-// transcript with usage over the /api surface. (The real autonomous run is gated
-// on an upstream gap; see serve.go.)
-func TestServeClientDrive(t *testing.T) {
-	var prompt string
-	ts := mockServe(t, &prompt)
+// TestServeDriveSynchronous → REQ-BENCH-006: aegis drives a turn via the serve
+// synchronous executor — create POST /session, drive POST /session/{id}/message
+// with {parts,model,agent}, collect GET /session/{id}/message with usage — over
+// /session (no /api prefix, no /wait).
+func TestServeDriveSynchronous(t *testing.T) {
+	var body string
+	ts := mockServe(t, &body)
 	c := NewServeClient(ts.URL)
 	c.dir = "/w"
 	ctx := context.Background()
 
 	if !c.Ready(ctx) {
-		t.Fatal("Ready should be true against a live serve")
+		t.Fatal("Ready should be true against a live serve (HTML 200)")
 	}
-	id, err := c.CreateSession(ctx, Model{ProviderID: "local", ModelID: "phi4-mini"})
-	if err != nil || id != "ses_1" {
-		t.Fatalf("CreateSession: id=%q err=%v", id, err)
+	res, err := c.Drive(ctx, Model{ProviderID: "local", ModelID: "gemma4-qat:32k"}, "build X")
+	if err != nil {
+		t.Fatalf("Drive: %v", err)
 	}
-	if err := c.Prompt(ctx, id, "build X"); err != nil {
-		t.Fatalf("Prompt: %v", err)
+	if res.SessionID != "ses_1" {
+		t.Errorf("session id = %q, want ses_1", res.SessionID)
 	}
-	if !strings.Contains(prompt, "build X") {
-		t.Errorf("serve must receive the prompt text; got %s", prompt)
+	// The prompt went to the synchronous executor with parts + model + agent.
+	for _, want := range []string{`"type":"text"`, `"text":"build X"`, `"modelID":"gemma4-qat:32k"`, `"agent":"build"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("message body missing %s; got %s", want, body)
+		}
 	}
-	msgs, err := c.Messages(ctx, id)
-	if err != nil || len(msgs) != 2 {
-		t.Fatalf("Messages: n=%d err=%v", len(msgs), err)
+	if len(res.Messages) != 2 {
+		t.Fatalf("transcript n=%d, want 2", len(res.Messages))
 	}
-	a := msgs[1]
+	a := res.Messages[1]
 	if a.Role != "assistant" || a.Tokens.Total != 142 || a.Text != "done" || a.Finish != "stop" {
 		t.Errorf("assistant message not parsed (incl. usage): %+v", a)
 	}

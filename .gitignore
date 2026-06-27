@@ -52,3 +52,5 @@ rtmx-results.json
 /.setup-profile.json
 __pycache__/
 *.pyc
+/deploy/opencode/config-seed/
+/.rtmx/claims/
