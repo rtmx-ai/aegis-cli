@@ -1,0 +1,33 @@
+{
+  "requirement": "REQ-BENCH-009",
+  "model": "gemma4-qat:32k",
+  "endpoint": "http://127.0.0.1:11434",
+  "experiments": [
+    "go-add",
+    "go-max",
+    "go-fib"
+  ],
+  "runs_per_cell": 1,
+  "by_condition": {
+    "control": {
+      "completion": 1.0,
+      "closed": 3,
+      "attempted": 3,
+      "tokens": 91005
+    },
+    "treatment": {
+      "completion": 1.0,
+      "closed": 3,
+      "attempted": 3,
+      "tokens": 104148
+    },
+    "baseline": {
+      "completion": 1.0,
+      "closed": 3,
+      "attempted": 3,
+      "tokens": 8413
+    }
+  },
+  "control_vs_treatment_fisher_p": 1.0,
+  "note": "Air-gapped intent-bench: aegis control (no rtmx) vs treatment (rtmx MCP) on the local model; the baseline is the cloud claude-code reference (egress, out-of-enclave). 1 run/cell on CPU \u2014 qwen-style tool-call variance means multi-run is preferred for tight rates (see docs); gemma is deterministic enough for a demonstration."
+}
