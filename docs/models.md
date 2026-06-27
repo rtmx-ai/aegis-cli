@@ -25,6 +25,13 @@ longer happens by default. See [`docs/model-compliance.md`](model-compliance.md)
 Switching is config-level — the per-model **tuning auto-applies** from the catalog in
 both paths (sampling/num_ctx/think), so you only change *which* model, not how it's tuned.
 
+**Default when a run names no model:** `aegis run` resolves a **target-aware default** —
+`gemma4-qat:32k` on `linux-cpu` (the proven CPU completer, RUNQ-004) and `qwen3-coder:30b`
+on `darwin-metal`. The qwen3-coder default fast-fails on CPU: it emits Qwen-native XML tool
+calls (`<function=…>`) that the OpenCode↔Ollama OpenAI path leaks as plain text instead of
+executing, and its Ollama tag carries no `num_ctx` override (gemma's carries 32768). Name a
+model explicitly to override.
+
 **Ollama spike** (`internal/opencode`, what the bake-off drives): set the run config's
 `model_id`. Both tags are pulled locally.
 ```jsonc

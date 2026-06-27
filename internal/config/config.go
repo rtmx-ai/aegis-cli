@@ -97,6 +97,25 @@ const (
 	DefaultMaxOutputTokens = 8192
 )
 
+// CPU/GPU default model ids (Ollama tags) used when a run names no model.
+const (
+	defaultModelLinuxCPU    = "gemma4-qat:32k"
+	defaultModelDarwinMetal = "qwen3-coder:30b"
+)
+
+// DefaultModelForTarget returns the recommended local model id for a serving target when a
+// run does not name one. On linux-cpu the CPU-capable completer (gemma4-qat) is the default:
+// RUNQ-004 proved it closes real tasks on CPU, while the qwen3-coder bundle default
+// fast-fails there (its Ollama tag emits Qwen-native XML tool calls that leak as text, and
+// runs at Ollama's small default context). On darwin-metal the agentic primary
+// (qwen3-coder) is the default. The bundle GGUF pin (deploy/models/MODEL_REF) is separate.
+func DefaultModelForTarget(t Target) string {
+	if t == TargetDarwinMetal {
+		return defaultModelDarwinMetal
+	}
+	return defaultModelLinuxCPU
+}
+
 // ModelTuning is the per-model serving tuning the SERVE-016 bake-off characterization
 // recommends (SERVE-020): sampling, context window, and thinking control. Nil fields
 // are omitted from the rendered config. Sampling (temperature/top_p) is delivered

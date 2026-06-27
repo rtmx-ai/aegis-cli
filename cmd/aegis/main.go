@@ -545,12 +545,20 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// SERVE-020: apply the per-model serving tuning from the catalog (unless the
-	// operator set it explicitly), so the launched model emits reliable tool calls.
+	// Target-aware default model when a run names none (RUNQ-004): on linux-cpu the
+	// CPU-capable completer (gemma4-qat) is the default — the qwen3-coder bundle default
+	// fast-fails on CPU (its Ollama tag emits Qwen-native XML tool calls that leak as text,
+	// and runs at Ollama's small default context). On darwin-metal qwen3-coder is the default.
 	effModel := *model
 	if effModel == "" {
 		effModel = cfg.ModelID
 	}
+	if effModel == "" {
+		effModel = config.DefaultModelForTarget(cfg.Target)
+		cfg.ModelID = effModel // the serve-drive falls back to cfg.ModelID for the run
+	}
+	// SERVE-020: apply the per-model serving tuning from the catalog (unless the
+	// operator set it explicitly), so the launched model emits reliable tool calls.
 	if cfg.Tuning == nil {
 		cfg.Tuning = loadCatalogTuning(effModel)
 	}
