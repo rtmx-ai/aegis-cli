@@ -49,6 +49,15 @@ recommended knobs; the launch applies them through OpenCode's config (agent
 launched model uses them; a tuned candidate's tool-call rate improves measurably in the
 bake-off. *Test:* `internal/opencode::TestPerModelTuning`. *Depends on:* `REQ-SERVE-016`.
 
+*Delivery (implemented 2026-06-27):* the catalog gains an `ollama` tag + `tuning` per model;
+`aegis run` matches the operator's model id to the catalog (`config.TuningForModel`) and
+`RenderConfig` emits `agent.build.{temperature,top_p}` + `options{top_k,min_p,repeat_penalty,
+num_ctx,think}`. **Sampling (temperature/top_p) is delivered reliably** through the harness;
+the Ollama extensions ride `options` **best-effort** — Ollama's OpenAI-compatible endpoint may
+ignore `num_ctx`/`think`, so the *robust* path for those is the serving launch (llama.cpp
+`--ctx-size` per `REQ-SERVE-017`, or an Ollama Modelfile). On linux-cpu the efficacy is masked
+by the prefill wall (`SERVE-021` validates on GPU).
+
 ### REQ-SERVE-021 — Re-validate the bake-off on darwin-metal (GPU)
 **aegis shall** re-run the bake-off on the `darwin-metal` target and record completion + WCR
 at GPU speed, so the model selection is validated against the production-latency host (the

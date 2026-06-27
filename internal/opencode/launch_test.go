@@ -194,3 +194,32 @@ func TestRunAgentCoaching(t *testing.T) {
 		}
 	}
 }
+
+// TestPerModelTuning → REQ-SERVE-020: when a config carries per-model tuning, the
+// rendered OpenCode config applies it to the build agent (temperature/top_p) + the
+// Ollama-extension options (top_k/min_p/repeat_penalty/num_ctx/think) — so the model
+// emits reliable tool calls. No tuning renders no agent block (default behavior).
+func TestPerModelTuning(t *testing.T) {
+	temp, topp, minp, rep := 0.7, 0.8, 0.0, 1.05
+	topk, ctx := 20, 16384
+	think := false
+	cfg := config.Default()
+	cfg.ModelID = "qwen3-coder:30b"
+	cfg.Tuning = &config.ModelTuning{
+		Temperature: &temp, TopP: &topp, TopK: &topk, MinP: &minp,
+		RepeatPenalty: &rep, NumCtx: &ctx, Think: &think,
+	}
+	got := RenderConfig(cfg, true)
+	for _, want := range []string{
+		`"agent"`, `"build"`, `"temperature":0.7`, `"top_p":0.8`,
+		`"options"`, `"top_k":20`, `"num_ctx":16384`, `"repeat_penalty":1.05`, `"think":false`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("rendered config must carry per-model tuning %q\n--- got ---\n%s", want, got)
+		}
+	}
+	cfg.Tuning = nil
+	if strings.Contains(RenderConfig(cfg, true), `"agent"`) {
+		t.Error("no tuning must render no agent block (default behavior unchanged)")
+	}
+}

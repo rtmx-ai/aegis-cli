@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -75,6 +76,51 @@ type Config struct {
 	// false and exists only so the guard itself is testable; production runs
 	// must leave it false.
 	AllowEgress bool `json:"allow_egress"`
+	// Tuning carries the per-model serving knobs (SERVE-020). When set, the launch
+	// renders them so the model emits reliable tool calls. Populated from the model
+	// catalog by ModelID; nil means "use the harness/serving defaults".
+	Tuning *ModelTuning `json:"tuning,omitempty"`
+}
+
+// ModelTuning is the per-model serving tuning the SERVE-016 bake-off characterization
+// recommends (SERVE-020): sampling, context window, and thinking control. Nil fields
+// are omitted from the rendered config. Sampling (temperature/top_p) is delivered
+// reliably via the harness; the Ollama extensions (top_k/min_p/repeat_penalty/num_ctx/
+// think) are forwarded best-effort — the robust path for num_ctx/think is the serving
+// launch (llama.cpp --ctx-size, or an Ollama Modelfile). See docs/serve-016-bakeoff.md.
+type ModelTuning struct {
+	Temperature   *float64 `json:"temperature,omitempty"`
+	TopP          *float64 `json:"top_p,omitempty"`
+	TopK          *int     `json:"top_k,omitempty"`
+	MinP          *float64 `json:"min_p,omitempty"`
+	RepeatPenalty *float64 `json:"repeat_penalty,omitempty"`
+	NumCtx        *int     `json:"num_ctx,omitempty"`
+	Think         *bool    `json:"think,omitempty"`
+}
+
+// TuningForModel returns the recommended ModelTuning for the operator's modelID from a
+// model-catalog JSON document (deploy/models/catalog.json), matched by each entry's
+// `ollama` tag (exact, then prefix — e.g. tag "qwen3-coder" matches "qwen3-coder:30b").
+// Returns nil when no catalog entry matches or carries tuning.
+func TuningForModel(modelID string, catalogJSON []byte) *ModelTuning {
+	if modelID == "" {
+		return nil
+	}
+	var cat struct {
+		Models []struct {
+			Ollama string       `json:"ollama"`
+			Tuning *ModelTuning `json:"tuning"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(catalogJSON, &cat); err != nil {
+		return nil
+	}
+	for _, e := range cat.Models {
+		if e.Tuning != nil && e.Ollama != "" && (e.Ollama == modelID || strings.HasPrefix(modelID, e.Ollama)) {
+			return e.Tuning
+		}
+	}
+	return nil
 }
 
 // Default returns a Config populated with offline-safe defaults.

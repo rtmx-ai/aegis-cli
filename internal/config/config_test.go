@@ -96,3 +96,24 @@ func TestHarnessSelectionBuiltin(t *testing.T) {
 		t.Error("unknown harness must be rejected")
 	}
 }
+
+// TestTuningForModel covers the catalog-driven per-model tuning lookup (SERVE-020):
+// the operator's Ollama tag is matched to a catalog entry by its `ollama` tag.
+func TestTuningForModel(t *testing.T) {
+	cat := []byte(`{"models":[
+		{"id":"qwen3-coder-30b-a3b","ollama":"qwen3-coder","tuning":{"temperature":0.7,"num_ctx":16384}},
+		{"id":"phi-4-mini","ollama":"phi4-mini"}
+	]}`)
+	if tn := TuningForModel("qwen3-coder:30b", cat); tn == nil || tn.Temperature == nil || *tn.Temperature != 0.7 {
+		t.Errorf("qwen3-coder:30b should match the qwen3-coder tuning, got %+v", tn)
+	}
+	if tn := TuningForModel("phi4-mini:latest", cat); tn != nil {
+		t.Error("phi4-mini carries no tuning -> nil")
+	}
+	if tn := TuningForModel("unknown:1b", cat); tn != nil {
+		t.Error("unmatched model -> nil")
+	}
+	if tn := TuningForModel("", cat); tn != nil {
+		t.Error("empty model -> nil")
+	}
+}

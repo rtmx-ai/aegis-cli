@@ -399,6 +399,28 @@ func cmdTUI(stdout, stderr io.Writer) int {
 // OpenCode binary (the real drive is covered by the gated serve-drive integration).
 var runSolve = opencode.Solve
 
+// loadCatalogTuning resolves the model catalog (alongside the aegis binary, then
+// cwd-relative deploy/models/catalog.json) and returns the per-model serving tuning
+// for modelID (SERVE-020), or nil when the catalog or a match is absent.
+func loadCatalogTuning(modelID string) *config.ModelTuning {
+	if modelID == "" {
+		return nil
+	}
+	var cands []string
+	if self, err := os.Executable(); err == nil {
+		cands = append(cands, filepath.Join(filepath.Dir(self), "deploy", "models", "catalog.json"))
+	}
+	cands = append(cands, filepath.Join("deploy", "models", "catalog.json"))
+	for _, p := range cands {
+		if b, err := os.ReadFile(p); err == nil {
+			if t := config.TuningForModel(modelID, b); t != nil {
+				return t
+			}
+		}
+	}
+	return nil
+}
+
 func cmdRun(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -433,6 +455,16 @@ func cmdRun(args []string, stdout, stderr io.Writer) int {
 	if cfg.AllowEgress {
 		fmt.Fprintln(stderr, "aegis: refusing to run: egress is enabled (closed-environment gate)")
 		return 1
+	}
+
+	// SERVE-020: apply the per-model serving tuning from the catalog (unless the
+	// operator set it explicitly), so the launched model emits reliable tool calls.
+	effModel := *model
+	if effModel == "" {
+		effModel = cfg.ModelID
+	}
+	if cfg.Tuning == nil {
+		cfg.Tuning = loadCatalogTuning(effModel)
 	}
 
 	// RUNQ-001: bound the run by a wall-clock budget; a partial transcript is still

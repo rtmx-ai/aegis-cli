@@ -1,5 +1,5 @@
 {
-  "note": "Curated GGUF catalog for setup.sh (MODEL-003/004). Connected-host downloads only; the enclave never fetches. sha256 = the HuggingFace LFS oid (verified). All Apache-2.0. The menu strikes models that exceed host RAM (MODEL-004). Add entries as the SERVE-016 bake-off evolves.",
+  "note": "Curated GGUF catalog for setup.sh (MODEL-003/004). Connected-host downloads only; the enclave never fetches. sha256 = the HuggingFace LFS oid (verified). All Apache-2.0. The menu strikes models that exceed host RAM (MODEL-004). Add entries as the SERVE-016 bake-off evolves. Per-model `ollama` tag + `tuning` (sampling/context/thinking) added per the SERVE-016 bake-off characterization (SERVE-020); laguna/phi4-mini carry no tuning (retired from the tool-calling loop).",
   "models": [
     {
       "id": "gemma-4-26b-a4b",
@@ -9,7 +9,16 @@
       "sha256": "dcf179a91153e3a7ece792e48ef872180d9d6ef9b7677f0a0bd3e83cfe624d5e",
       "size": 14249045120,
       "recommended": true,
-      "note": "Primary candidate — general MoE ~4B active, quantization-aware."
+      "note": "Primary candidate \u2014 general MoE ~4B active, quantization-aware.",
+      "ollama": "gemma4-qat",
+      "tuning": {
+        "temperature": 1.0,
+        "top_k": 64,
+        "top_p": 0.95,
+        "min_p": 0.0,
+        "num_ctx": 16384,
+        "think": false
+      }
     },
     {
       "id": "qwen3-coder-30b-a3b",
@@ -19,7 +28,16 @@
       "sha256": "2841aa314d916434860cfb8990347528dcdfe5c350dbcb9d1461dbee88ff2533",
       "size": 17665334432,
       "recommended": false,
-      "note": "Coding-specialist MoE ~3B active — top agentic-coding candidate."
+      "note": "Coding-specialist MoE ~3B active \u2014 top agentic-coding candidate.",
+      "ollama": "qwen3-coder",
+      "tuning": {
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "top_k": 20,
+        "min_p": 0.0,
+        "repeat_penalty": 1.05,
+        "num_ctx": 16384
+      }
     },
     {
       "id": "laguna-xs.2",
@@ -29,7 +47,8 @@
       "sha256": "771a73e1249b9bc08e17d3fca59f5c49b7b9c8a6a47b5a6ac82f95c6e76923c4",
       "size": 20274296256,
       "recommended": false,
-      "note": "poolside coding model (Apache-2.0; community GGUF)."
+      "note": "poolside coding model (Apache-2.0; community GGUF).",
+      "ollama": "laguna-xs.2"
     },
     {
       "id": "qwen2.5-coder-14b",
@@ -39,7 +58,16 @@
       "sha256": "c1e659736d89ac1065fb495330fb824d94001974a4bfa78e7270e43476a8d940",
       "size": 8988110272,
       "recommended": false,
-      "note": "Mid-size dense coder — proven tool-calling."
+      "note": "Mid-size dense coder \u2014 proven tool-calling.",
+      "ollama": "qwen2.5-coder",
+      "tuning": {
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "top_k": 20,
+        "min_p": 0.0,
+        "repeat_penalty": 1.05,
+        "num_ctx": 16384
+      }
     },
     {
       "id": "qwen3.6-35b-a3b",
@@ -49,7 +77,17 @@
       "sha256": "ac0e2c1189e055faa36eff361580e79c5bd6f8e76bffb4ce547f167d53e31a61",
       "size": 22134528992,
       "recommended": false,
-      "note": "Larger general MoE contender."
+      "note": "Larger general MoE contender.",
+      "ollama": "qwen3.6",
+      "tuning": {
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "top_k": 20,
+        "min_p": 0.0,
+        "repeat_penalty": 1.05,
+        "num_ctx": 16384,
+        "think": false
+      }
     },
     {
       "id": "phi-4-mini",
@@ -59,7 +97,8 @@
       "sha256": "88c00229914083cd112853aab84ed51b87bdf6b9ce42f532d8c85c7c63b1730a",
       "size": 2491874272,
       "recommended": false,
-      "note": "Small + fast; weaker tool-calling (screening only)."
+      "note": "Small + fast; weaker tool-calling (screening only).",
+      "ollama": "phi4-mini"
     }
   ]
 }

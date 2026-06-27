@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -63,6 +64,11 @@ func RenderConfig(cfg config.Config, intent bool) string {
 		instructions = fmt.Sprintf(`,
   "instructions": [%q]`, filepath.Join(seed, toolCoachingFile))
 	}
+	// SERVE-020: apply the per-model tuning to the build agent so the model emits
+	// reliable tool calls. temperature/top_p go on the agent (delivered by the
+	// harness); the Ollama extensions (top_k/min_p/repeat_penalty/num_ctx/think) ride
+	// `options` (forwarded best-effort — robust num_ctx/think is a serving-launch knob).
+	agent := renderTuning(cfg.Tuning)
 	// Classic opencode.json schema: provider + model (+ optional mcp). Air-gap
 	// hardening is enforced via env markers (OPENCODE_TELEMETRY/AUTOUPDATE/
 	// DISABLE_SHARE), `opencode run --pure` (no external plugins), and the egress
@@ -78,6 +84,49 @@ func RenderConfig(cfg config.Config, intent bool) string {
       "models": { %q: { "name": %q } }
     }
   },
-  "model": %q%s%s
-}`, baseURL, model, model, "local/"+model, mcp, instructions)
+  "model": %q%s%s%s
+}`, baseURL, model, model, "local/"+model, mcp, instructions, agent)
+}
+
+// renderTuning emits the OpenCode `agent.build` tuning block for the per-model knobs
+// (SERVE-020), or "" when there is no tuning. Built via encoding/json so floats format
+// correctly. temperature/top_p are agent fields; the rest ride `options`.
+func renderTuning(t *config.ModelTuning) string {
+	if t == nil {
+		return ""
+	}
+	build := map[string]any{}
+	if t.Temperature != nil {
+		build["temperature"] = *t.Temperature
+	}
+	if t.TopP != nil {
+		build["top_p"] = *t.TopP
+	}
+	opts := map[string]any{}
+	if t.TopK != nil {
+		opts["top_k"] = *t.TopK
+	}
+	if t.MinP != nil {
+		opts["min_p"] = *t.MinP
+	}
+	if t.RepeatPenalty != nil {
+		opts["repeat_penalty"] = *t.RepeatPenalty
+	}
+	if t.NumCtx != nil {
+		opts["num_ctx"] = *t.NumCtx
+	}
+	if t.Think != nil {
+		opts["think"] = *t.Think
+	}
+	if len(opts) > 0 {
+		build["options"] = opts
+	}
+	if len(build) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(map[string]any{"build": build})
+	if err != nil {
+		return ""
+	}
+	return ",\n  \"agent\": " + string(b)
 }
