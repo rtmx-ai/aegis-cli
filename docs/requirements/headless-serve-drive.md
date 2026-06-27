@@ -93,6 +93,19 @@ outcome is logged, not asserted here. *Test:* `test::TestServeDriveRealBinary` (
 integration tier, gated on `AEGIS_REAL_ENDPOINT` + `AEGIS_REAL_MODEL` + a resolvable binary +
 ripgrep). *Depends on:* `REQ-BENCH-006`.
 
+### REQ-BENCH-008 — Wire `aegis run` to the serve drive
+**aegis shall** drive `aegis run` (its `internal/opencode.Solve` entrypoint, `cmd/aegis/
+main.go`) through the serve client — `StartServe` then `ServeClient.Drive` — instead of the
+classic `opencode run` path (`RunHeadless`), which wedges offline. This is the missing bridge:
+BENCH-006/007 built and proved `ServeClient.Drive`, but `Solve` still calls `RunHeadless`, so
+`aegis run` — and therefore the intent-bench SUT adapter (`scripts/intent-bench/aegis.sh`,
+which invokes `aegis run`) — would hang on the classic path today. The `REQ-RUNQ-001`
+wall-clock budget and partial-transcript-on-abort behaviour **must be preserved** on the serve
+path: on context expiry, terminate the serve process group and return the partial transcript
+with `TimedOut` set. *Test:* `internal/opencode::TestSolveUsesServeDrive` — a seam/fake serve
+asserts `Solve` routes to the serve driver and honours the budget; real end-to-end coverage
+rides the gated `REQ-BENCH-007`. *Depends on:* `REQ-BENCH-006`.
+
 ## 4. Design notes & risks
 
 - **`internal/opencode/serve.go` already exists but is wrong.** It posts to `/api/session`
@@ -115,7 +128,8 @@ ripgrep). *Depends on:* `REQ-BENCH-006`.
 
 ## 5. Exit criteria
 
-OC-009, OC-010, BENCH-006 COMPLETE via `rtmx verify`; BENCH-007 green against the real binary
-under the egress gate (EGRESS=0). `aegis run` completes the trivial edit task end-to-end on a
-local model with a populated usage transcript, unblocking `REQ-RUNQ-004` (real-task completion)
-and the intent-bench profiling run (`BENCH-001..005`).
+OC-009, OC-010, BENCH-006, BENCH-007 COMPLETE via `rtmx verify` (the latter green against the
+real binary under the egress gate, EGRESS=0). BENCH-008 then routes `aegis run` itself through
+the serve drive, so the command — and the intent-bench adapter that calls it — completes the
+trivial edit task end-to-end on a local model with a populated usage transcript, unblocking
+`REQ-RUNQ-004` (real-task completion) and the intent-bench profiling run (`REQ-BENCH-009`).

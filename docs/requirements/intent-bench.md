@@ -97,7 +97,33 @@ entropy. *Test:* `test::TestBenchRunbook`. *Depends on:* REQ-BENCH-003.
 
 BENCH-001..005 COMPLETE via `rtmx verify`; a real profiling run produces a
 populated `results/summary.csv` comparing local-aegis (control + rtmx treatment)
-to the Sonnet-4 baseline on at least one experiment (e.g. `url-shortener`).
+to the Sonnet-4 baseline on at least one experiment (e.g. `url-shortener`). The
+**full-suite** headline run is its own requirement — see §7 / `REQ-BENCH-009`.
+
+## 7. The headline run (full suite)
+
+### REQ-BENCH-009 — Execute the full intent-bench suite
+**aegis shall** execute a real intent-bench profiling run across the **full** experiment suite —
+every experiment, for aegis *control* and the *rtmx treatment*, against the `claude-code` /
+Sonnet-4 baseline — and record a populated `results/summary.csv` plus the completion-rate /
+tokens / knowledge-entropy comparison. This is the headline number the BENCH thread exists to
+produce; §6 above covered only one experiment. The run drives `aegis run`, so it is gated on the
+serve-drive wiring (`REQ-BENCH-008`) and on a decided model (`REQ-SERVE-016`) — without the model
+pick the numbers are noise; `REQ-RUNQ-002` (reliable tool-calling) materially lifts completion
+rate. *Test:* `test::TestIntentBenchSuiteRun` — gated (needs an intent-bench checkout +
+`AEGIS_REAL_ENDPOINT`/`AEGIS_REAL_MODEL`; skipped in CI), asserts a populated `results/summary.csv`
+covering every experiment for control + treatment. *Depends on:* `REQ-BENCH-008`, `REQ-SERVE-016`.
+
+**Proposed decomposition (machine-authored, awaiting human approval — `PROPOSED`, not claimable):**
+A decomposition pass split BENCH-009 into two atomic children that separate the buildable-now
+capability from the model-gated run:
+- `REQ-BENCH-009-P01` — the full-suite *runner* (drives the adapter over every experiment ×
+  control/treatment/baseline); buildable once `REQ-BENCH-008` lands.
+- `REQ-BENCH-009-P02` — the real *run + recorded headline* (`results/summary.csv` + the
+  Fisher / Mann-Whitney comparison under `eval/intent-bench/`); gated on `REQ-SERVE-016` + an
+  intent-bench checkout.
+Both inherit the parent test (`TestIntentBenchSuiteRun`); a narrower test for each is flagged
+for the human to author on approval. `REQ-BENCH-008` is atomic — the same pass found no split.
 
 ## Addendum — upstream headless-run gap (validated against v1.17.9)
 
