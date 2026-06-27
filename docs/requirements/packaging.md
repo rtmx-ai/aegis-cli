@@ -59,6 +59,34 @@ documented `apt`/`brew` install one-liners resolve + install a working aegis. *T
 `test::TestTapFormulaPinned` (the tap formula references the released version + sha256).
 *Depends on:* `REQ-REL-006`, `REQ-REL-001`.
 
+## 3a. REL-007 build status + findings (2026-06-27)
+
+Tooling built + tested: `scripts/build-apt-repo.sh` (dist/*.deb → signed apt repo),
+`scripts/fill-formula.sh` (pins `deploy/homebrew/aegis.rb` from the bundle tarballs),
+`TestTapFormulaPinned`, and tag-triggered publish steps in `.github/workflows/release.yml`.
+
+Install (once published):
+```bash
+brew install rtmx-ai/tap/aegis                  # macOS/Linux — downloads the bundled tarball
+sudo apt install aegis                           # after adding the apt repo (see below)
+```
+
+**Two findings that gate the actual publish:**
+
+1. **The bundled `.deb` is ~190 MB (opencode is 167 MB) — over GitHub Pages' 100 MB/file
+   limit.** Pages (git-backed) cannot host it, so the apt-on-Pages plan needs a decision:
+   - **(a) binary-only `.deb` on Pages** + the harness side-loaded (consistent with the
+     air-gap model — opencode/llama-server/model are side-loaded anyway), OR
+   - **(b) a non-Pages object store** (e.g. R2/S3) hosting the bundled apt channel.
+   The brew channel is unaffected — the 190 MB tarball is a GitHub **release** asset (2 GB
+   limit), which the formula points at by sha256.
+2. **Multi-platform needs a macOS CI runner.** The Linux runner builds linux-amd64 helpers;
+   the formula's darwin tarballs stay placeholders until a `macos-latest` job builds them.
+
+**Remaining to close REL-007:** decide (1), add a macOS build job (2), create
+`github.com/rtmx-ai/homebrew-tap` + set `HOMEBREW_TAP_TOKEN`, and cut a signed tag so the
+workflow publishes for real.
+
 ## 4. Notes
 
 - This is **out-of-enclave distribution** (apt/brew need network) — for the connected build/

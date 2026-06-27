@@ -70,3 +70,36 @@ jobs:
           gh release create "$GITHUB_REF_NAME" $assets \
             --title "$GITHUB_REF_NAME" \
             --notes "Automated release. Static binaries (linux amd64/arm64, macOS Intel + Apple Silicon, windows amd64), Debian .deb packages, CycloneDX SBOM, and SHA-256 checksums. Verify downloads against SHA256SUMS."
+
+      # REL-007: pin + publish the Homebrew tap formula to github.com/rtmx-ai/homebrew-tap.
+      # The bundle tarball (dist/aegis-<v>-<os>-<arch>.tar.gz) is a release asset above; the
+      # formula points at it by sha256. This CI builds the host platform (linux-amd64); a
+      # macOS runner is needed to pin the darwin tarballs (they stay placeholders until then).
+      - name: Publish Homebrew tap
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -eu
+          [ -n "${TAP_TOKEN:-}" ] || { echo "REL-007: no HOMEBREW_TAP_TOKEN secret — skipping tap publish"; exit 0; }
+          v="${GITHUB_REF_NAME#v}"
+          scripts/fill-formula.sh "$v" dist deploy/homebrew/aegis.rb /tmp/aegis.rb
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/rtmx-ai/homebrew-tap.git" /tmp/tap
+          mkdir -p /tmp/tap/Formula && cp /tmp/aegis.rb /tmp/tap/Formula/aegis.rb
+          cd /tmp/tap
+          git config user.name "aegis-release-bot"; git config user.email "dev@rtmx.ai"
+          git add Formula/aegis.rb
+          git commit -m "aegis ${GITHUB_REF_NAME}" && git push || echo "REL-007: tap formula unchanged"
+
+      # REL-007: generate the apt repository (indices + signed Release) from the .deb packages.
+      # NOTE: the harness-bundled .deb is ~190MB (> GitHub Pages' 100MB/file limit), so the .deb
+      # ships as a RELEASE asset (above) and Pages can host the apt METADATA but not the big
+      # package. The bundled apt channel needs a non-Pages object store, OR a binary-only .deb
+      # variant on Pages with the harness side-loaded — see docs/requirements/packaging.md. This
+      # builds the repo so it is ready once that is decided (not deployed to Pages here).
+      - name: Build apt repository
+        env:
+          GPG_KEY: ${{ secrets.GPG_KEY }}
+        run: |
+          set -eu
+          command -v dpkg-scanpackages >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq dpkg-dev; }
+          scripts/build-apt-repo.sh dist dist/apt || echo "REL-007: apt repo generation skipped"
