@@ -107,6 +107,7 @@ jobs:
       - name: make release (binaries + SBOM + checksums + signature)
         env:
           MINISIGN_KEY: ${{ secrets.MINISIGN_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
           GPG_KEY: ${{ secrets.GPG_KEY }}
         run: make release
 

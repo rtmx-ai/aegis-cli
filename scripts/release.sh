@@ -132,7 +132,16 @@ fi
 
 # BUILD-005: offline detached signature over the manifest (air-gap-first).
 if command -v minisign >/dev/null 2>&1 && [ -n "${MINISIGN_KEY:-}" ]; then
-	minisign -S -s "$MINISIGN_KEY" -m "$DIST/SHA256SUMS"
+	# MINISIGN_KEY may be a PATH to the secret key OR the key CONTENT (a CI secret is content,
+	# not a file). minisign -s needs a file, so materialize content to a temp file when needed.
+	_keyfile="$MINISIGN_KEY"
+	if [ ! -f "$_keyfile" ]; then
+		_keyfile="$(mktemp)"; printf '%s\n' "$MINISIGN_KEY" > "$_keyfile"
+	fi
+	# Provide the key password non-interactively via MINISIGN_PASSWORD (empty for a passwordless
+	# key); in CI minisign reads it from stdin since there is no tty.
+	printf '%s\n' "${MINISIGN_PASSWORD:-}" | minisign -S -s "$_keyfile" -m "$DIST/SHA256SUMS"
+	[ "$_keyfile" = "$MINISIGN_KEY" ] || rm -f "$_keyfile"
 	echo "release: signed SHA256SUMS with minisign (detached, offline-verifiable)"
 elif command -v gpg >/dev/null 2>&1 && [ -n "${GPG_KEY:-}" ]; then
 	gpg --batch --yes --local-user "$GPG_KEY" --armor --detach-sign "$DIST/SHA256SUMS"
