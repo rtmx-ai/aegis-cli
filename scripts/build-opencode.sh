@@ -33,8 +33,11 @@ if [ ! -d "$SRC/.git" ]; then
 	git clone "$SOURCE_REPO" "$SRC"
 fi
 git -C "$SRC" fetch --tags origin
-git -C "$SRC" checkout -q "$REF"
-# Pristine tracked source at the pin, so the patch apply (OC-017) is idempotent across re-runs.
+# Clear any conflicted/unmerged state from a prior run (e.g. a stash-pop conflict) so the
+# checkout + the patch apply (OC-017) are idempotent; then pin to a pristine tree.
+git -C "$SRC" reset --hard -q 2>/dev/null || true
+git -C "$SRC" stash clear 2>/dev/null || true
+git -C "$SRC" checkout -q -f "$REF"
 git -C "$SRC" reset --hard -q "$REF"
 echo "build-opencode: building anomalyco/opencode @ $REF"
 
@@ -67,6 +70,13 @@ fi
 # OC-002: bake air-gap protections into the build (defense in depth with the
 # shipped deploy/opencode/opencode.json config).
 export OPENCODE_TELEMETRY=0 OPENCODE_AUTOUPDATE=0 OPENCODE_DISABLE_SHARE=1 OPENCODE_DISABLE_ANALYTICS=1
+
+# OC-012: bake a WHITELISTED model catalog (NO cloud/commercial providers). generate.ts reads
+# MODELS_DEV_API_JSON as the catalog source instead of fetching models.dev's 145-provider cloud
+# catalog — so the embedded OPENCODE_MODELS_DEV is our whitelist, and the picker shows no cloud
+# models. OC-013 populates the whitelist from the origin-approved policy; the config's `local`
+# provider (deploy/opencode/opencode.json) supplies the runtime model.
+export MODELS_DEV_API_JSON="$REPO_ROOT/deploy/opencode/models-whitelist.json"
 
 # Build the CLASSIC CLI (packages/opencode) — it ships the headless `opencode run`
 # command (non-interactive: one prompt, streams events, exits on idle) and the
