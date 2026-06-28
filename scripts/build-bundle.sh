@@ -28,7 +28,14 @@ install -m 0755 deploy/opencode/bin/opencode "$b/libexec/opencode"
 [ -x deploy/opencode/bin/rg ] && install -m 0755 deploy/opencode/bin/rg "$b/libexec/rg"
 [ -x deploy/llama-server/bin/llama-server ] && install -m 0755 deploy/llama-server/bin/llama-server "$b/libexec/llama-server"
 
+# OC-016: ship the license notices alongside the binaries — the rebrand of OpenCode is lawful
+# only if its MIT license + copyright travel with the distribution.
+notices=""
+for lic in THIRD-PARTY-NOTICES.md LICENSE NOTICE; do
+	[ -f "$lic" ] && { install -m 0644 "$lic" "$b/$lic"; notices="$notices $lic"; }
+done
+
 out="$dist/aegis-$version-$os-$arch.tar.gz"
-tar -C "$b" -czf "$out" bin libexec
+tar -C "$b" -czf "$out" bin libexec $notices
 echo "build-bundle: $out [$(ls "$b/libexec" | tr '\n' ' ')]" >&2
 echo "$out"

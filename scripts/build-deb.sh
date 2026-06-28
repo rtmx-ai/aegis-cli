@@ -33,6 +33,13 @@ else
 	echo "build-deb: NOTE — .deb($arch) is binary-only (helpers are host-arch=$host_arch)" >&2
 fi
 
+# OC-016: ship the license notices (lawful rebrand of bundled OpenCode — MIT) under the Debian
+# doc dir so they travel with `apt install aegis`.
+docdir="$root/usr/share/doc/aegis"; mkdir -p "$docdir"
+for lic in THIRD-PARTY-NOTICES.md LICENSE NOTICE; do
+	[ -f "$lic" ] && install -m 0644 "$lic" "$docdir/$lic"
+done
+
 cat >"$root/DEBIAN/control" <<CTL
 Package: aegis
 Version: $VERSION
