@@ -130,6 +130,14 @@ fi
 	fi
 )
 
+# A configured signing key with no signer available is a misconfiguration — fail loudly rather
+# than silently shipping UNSIGNED (this is exactly how v1.0.0 first went out unsigned: minisign
+# was not installed on the runner). The release workflow installs minisign before this runs.
+if [ -n "${MINISIGN_KEY:-}" ] && ! command -v minisign >/dev/null 2>&1; then
+	echo "release: ERROR — MINISIGN_KEY is set but minisign is not installed; refusing to ship UNSIGNED." >&2
+	exit 1
+fi
+
 # BUILD-005: offline detached signature over the manifest (air-gap-first).
 if command -v minisign >/dev/null 2>&1 && [ -n "${MINISIGN_KEY:-}" ]; then
 	# MINISIGN_KEY may be a PATH to the secret key OR the key CONTENT (a CI secret is content,

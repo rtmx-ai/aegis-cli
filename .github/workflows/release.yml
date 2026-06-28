@@ -101,6 +101,11 @@ jobs:
           pattern: bundle-*
           merge-multiple: true
 
+      # minisign is NOT preinstalled on ubuntu-latest; without it release.sh skips signing and
+      # SHA256SUMS ships UNSIGNED (the cause of the first v1.0.0). Install it before make release.
+      - name: Install minisign (offline detached signing)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq minisign
+
       # Single build step — the same `make release` an operator runs locally. The build is
       # offline (GOPROXY=off, -mod=vendor); only checkout + setup + the bundle download touch
       # the network. release.sh ingests ./bundles (BUNDLES_DIR) into the signed artifact set.
