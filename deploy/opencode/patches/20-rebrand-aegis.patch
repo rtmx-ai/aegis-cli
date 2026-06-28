@@ -1,0 +1,100 @@
+diff --git a/packages/opencode/script/build.ts b/packages/opencode/script/build.ts
+index 236838dbd..77b11e5de 100755
+--- a/packages/opencode/script/build.ts
++++ b/packages/opencode/script/build.ts
+@@ -181,7 +181,7 @@ for (const item of targets) {
+       autoloadPackageJson: true,
+       target: name.replace(pkg.name, "bun") as any,
+       outfile: `dist/${name}/bin/opencode`,
+-      execArgv: [`--user-agent=opencode/${Script.version}`, "--use-system-ca", "--"],
++      execArgv: [`--user-agent=aegis/${Script.version}`, "--use-system-ca", "--"],
+       windows: {},
+     },
+     files: embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {},
+diff --git a/packages/opencode/src/cli/ui.ts b/packages/opencode/src/cli/ui.ts
+index 6ad6495cf..378da776e 100644
+--- a/packages/opencode/src/cli/ui.ts
++++ b/packages/opencode/src/cli/ui.ts
+@@ -3,10 +3,10 @@ import { Schema } from "effect"
+ import { logo as glyphs } from "./logo"
+ 
+ const wordmark = [
+-  `⠀                                ▄     `,
+-  `█▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█`,
+-  `█  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀`,
+-  `▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀`,
++  ``,
++  `█▀▀█ █▀▀▀ █▀▀▀ ▀█▀ █▀▀▀`,
++  `█▀▀█ █▀▀  █ ▀█  █  ▀▀▀█`,
++  `▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀ ▀▀▀▀`,
+ ]
+ 
+ export class CancelledError extends Schema.TaggedErrorClass<CancelledError>()("UICancelledError", {}) {}
+diff --git a/packages/opencode/src/index.ts b/packages/opencode/src/index.ts
+index 13540a73a..0c9d0912c 100644
+--- a/packages/opencode/src/index.ts
++++ b/packages/opencode/src/index.ts
+@@ -44,7 +44,7 @@ function show(out: string) {
+ 
+ const cli = yargs(args)
+   .parserConfiguration({ "populate--": true })
+-  .scriptName("opencode")
++  .scriptName("aegis")
+   .wrap(100)
+   .help("help", "show help")
+   .alias("help", "h")
+diff --git a/packages/tui/src/app.tsx b/packages/tui/src/app.tsx
+index 17a9a554c..89422071b 100644
+--- a/packages/tui/src/app.tsx
++++ b/packages/tui/src/app.tsx
+@@ -440,24 +440,24 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
+     if (!terminalTitleEnabled() || Flag.OPENCODE_DISABLE_TERMINAL_TITLE) return
+ 
+     if (route.data.type === "home") {
+-      renderer.setTerminalTitle("OpenCode")
++      renderer.setTerminalTitle("aegis")
+       return
+     }
+ 
+     if (route.data.type === "session") {
+       const session = sync.session.get(route.data.sessionID)
+       if (!session || isDefaultTitle(session.title)) {
+-        renderer.setTerminalTitle("OpenCode")
++        renderer.setTerminalTitle("aegis")
+         return
+       }
+ 
+       const title = session.title.length > 40 ? session.title.slice(0, 37) + "..." : session.title
+-      renderer.setTerminalTitle(`OC | ${title}`)
++      renderer.setTerminalTitle(`aegis | ${title}`)
+       return
+     }
+ 
+     if (route.data.type === "plugin") {
+-      renderer.setTerminalTitle(`OC | ${route.data.id}`)
++      renderer.setTerminalTitle(`aegis | ${route.data.id}`)
+     }
+   })
+ 
+@@ -1037,7 +1037,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
+     await DialogAlert.show(
+       dialog,
+       "Update Complete",
+-      `Successfully updated to OpenCode v${result.data.version}. Please restart the application.`,
++      `Successfully updated to aegis v${result.data.version}. Please restart the application.`,
+     )
+ 
+     void exit()
+diff --git a/packages/tui/src/attention.ts b/packages/tui/src/attention.ts
+index b309edcd9..bf7e5f363 100644
+--- a/packages/tui/src/attention.ts
++++ b/packages/tui/src/attention.ts
+@@ -45,7 +45,7 @@ const TITLE_LIMIT = 80
+ const MESSAGE_LIMIT = 240
+ const BUILTIN_PACK: RegisteredSoundPack = {
+   id: DEFAULT_PACK_ID,
+-  name: "OpenCode Default",
++  name: "aegis Default",
+   builtin: true,
+   sounds: {
+     default: defaultSoundPath,
