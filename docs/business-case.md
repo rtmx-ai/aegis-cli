@@ -10,16 +10,13 @@ data physically on-device.
 Build the agentic coding stack (aegis-cli + local MoE + rtmx) on hardware we own:
 initial build on an existing Ryzen 5950X workstation, production on a MacBook Pro 16"
 M5 Max (128 GB, ~$5,200). The alternative for ITAR data is an authorized GovCloud
-frontier service — AWS GovCloud Bedrock, Azure Government AI Foundry, or Google Vertex
-under Assured Workloads.
+frontier service — AWS GovCloud Bedrock or Azure Government AI Foundry.
 
 ## The reframe: "GovCloud frontier" isn't frontier
 
 The premise that we'd be giving up frontier quality is weaker than it looks, because the
 frontier models aren't in these environments:
 
-- **Google Vertex / Assured Workloads** does not offer generative models under the
-  ITAR control package at all — it's not an option for this workload.
 - **Azure Government** tops out around GPT-4.1 / o3-mini — not GPT-5.5.
 - **AWS GovCloud Bedrock** offers Claude Sonnet 4.5 — not Opus.
 
