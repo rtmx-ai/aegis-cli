@@ -34,7 +34,27 @@ if [ ! -d "$SRC/.git" ]; then
 fi
 git -C "$SRC" fetch --tags origin
 git -C "$SRC" checkout -q "$REF"
+# Pristine tracked source at the pin, so the patch apply (OC-017) is idempotent across re-runs.
+git -C "$SRC" reset --hard -q "$REF"
 echo "build-opencode: building anomalyco/opencode @ $REF"
+
+# OC-017: apply aegis's build-time hardening + rebranding patches over the PINNED source —
+# strip the cloud model catalog to a local whitelist (OC-012), rebrand to aegis (OC-014), point
+# docs at aegis (OC-015), etc. These are a minimal, reviewable patch set, NOT a fork (CLAUDE.md
+# §1). Each must apply cleanly to OPENCODE_REF; a conflict FAILS the build loudly so an OC-008
+# upstream bump can never silently drop a control — re-roll the patch against the new pin.
+patches_dir="$REPO_ROOT/deploy/opencode/patches"
+if [ -d "$patches_dir" ]; then
+	for p in "$patches_dir"/*.patch; do
+		[ -e "$p" ] || continue
+		echo "build-opencode: applying patch $(basename "$p")"
+		if ! git -C "$SRC" apply --check "$p" 2>/dev/null; then
+			echo "build-opencode: ERROR — patch $(basename "$p") does not apply to $REF; re-roll it against the new upstream pin (OC-017)." >&2
+			exit 1
+		fi
+		git -C "$SRC" apply "$p"
+	done
+fi
 
 # OC-003: install OpenCode's deps with the PINNED bun (CI installs 1.3.14). We pass
 # --no-frozen-lockfile explicitly: bun auto-freezes in CI, and opencode's upstream lockfile @
