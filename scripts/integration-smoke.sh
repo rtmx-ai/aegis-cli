@@ -8,10 +8,17 @@
 set -eu
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"; REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"; cd "$REPO_ROOT"
 
-LLAMA="deploy/llama-server/bin/llama-server"
-OPENCODE="deploy/opencode/bin/opencode"
-AEGIS="./bin/aegis"
-for f in "$LLAMA" "$OPENCODE" "$AEGIS"; do
+# AEGIS_BIN / AEGIS_LIBEXEC let the closed-host smoke (ENCLAVE-003, scripts/enclave-smoke.sh)
+# drive an INSTALLED package instead of the source tree: point AEGIS at the installed binary
+# and resolve the helpers from its libexec. Default is the source-tree layout (BUILD-012).
+AEGIS="${AEGIS_BIN:-./bin/aegis}"
+if [ -n "${AEGIS_LIBEXEC:-}" ]; then
+	export AEGIS_LIBEXEC
+	LLAMA="$AEGIS_LIBEXEC/llama-server"; OPENCODE="$AEGIS_LIBEXEC/opencode"
+else
+	LLAMA="deploy/llama-server/bin/llama-server"; OPENCODE="deploy/opencode/bin/opencode"
+fi
+for f in "$AEGIS" "$LLAMA" "$OPENCODE"; do
 	[ -x "$f" ] || { echo "integration-smoke: missing $f — run 'make ci-full' (or 'make build') first." >&2; exit 1; }
 done
 model="$(grep -o '"name"[^,]*' deploy/models/MODEL_REF | sed 's/.*: *"//; s/".*//')"
@@ -44,7 +51,11 @@ work="$(mktemp -d)"
 printf 'REPLACE_ME\n' > "$work/greeting.txt"
 printf '{"endpoint":"http://127.0.0.1:%s","model_id":"%s","harness":"opencode","allow_egress":false,"target":"linux-cpu"}\n' \
 	"$port" "$model" > "$work/aegis.json"
-scripts/verify-airgap.sh -- "$AEGIS" run --workdir "$work" --config "$work/aegis.json" \
+# The egress gate wraps the run by default; the closed-host smoke (enclave-smoke.sh) sets
+# ENCLAVE_OUTER_GATE since it already runs the whole flow under verify-airgap / an offline host
+# (nesting unshare -rn would fail).
+RUN_WRAP="scripts/verify-airgap.sh --"; [ -n "${ENCLAVE_OUTER_GATE:-}" ] && RUN_WRAP=""
+$RUN_WRAP "$AEGIS" run --workdir "$work" --config "$work/aegis.json" \
 	--timeout "${SMOKE_TIMEOUT:-300s}" \
 	--prompt "Use the edit/write tool to change the file greeting.txt in the working directory so its entire contents are exactly the two words: hello world (replacing REPLACE_ME). Then you are done." \
 	--out "$work/transcript.jsonl"

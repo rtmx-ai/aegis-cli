@@ -3,7 +3,6 @@ package offline
 import (
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -14,30 +13,8 @@ import (
 // unless the stack is built (make ci-full) and a model GGUF is available (deploy/models or
 // $MODEL_OUT) — so a fresh checkout / CPU CI without the heavy artifacts does not fail.
 func TestIntegrationSmoke(t *testing.T) {
+	requireStackAndModel(t)
 	root := repoRoot(t)
-	for _, f := range []string{"deploy/llama-server/bin/llama-server", "deploy/opencode/bin/opencode", "bin/aegis"} {
-		fi, err := os.Stat(filepath.Join(root, f))
-		if err != nil || fi.Mode().Perm()&0o111 == 0 {
-			t.Skipf("full stack not built (%s); BUILD-012 is release-tier — run make ci-full", f)
-		}
-	}
-	ref, err := os.ReadFile(filepath.Join(root, "deploy", "models", "MODEL_REF"))
-	if err != nil {
-		t.Skip("no MODEL_REF")
-	}
-	name := ""
-	for _, ln := range strings.Split(string(ref), "\n") {
-		if strings.Contains(ln, "\"name\"") {
-			name = strings.Trim(strings.SplitN(ln, ":", 2)[1], " \t\",")
-		}
-	}
-	staged := os.Getenv("MODEL_OUT")
-	if staged == "" {
-		staged = filepath.Join(root, "deploy", "models", name)
-	}
-	if _, err := os.Stat(staged); err != nil {
-		t.Skipf("model GGUF not available (%s); stage it or set MODEL_OUT", staged)
-	}
 	cmd := exec.Command("scripts/integration-smoke.sh")
 	cmd.Dir = root
 	cmd.Env = os.Environ()
