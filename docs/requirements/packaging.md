@@ -107,6 +107,33 @@ real macOS/arm runners, fold the jobs into `release.yml` so the `release` job co
 tarball artifacts, then set `HOMEBREW_TAP_TOKEN` + cut a signed `v*` tag. Until that publish,
 REL-007 stays MISSING.
 
+## 3b. Multi-platform decomposition (REL-008/009/010)
+
+The multi-platform Homebrew publish (what fully closes REL-007, superseding the prior
+binary-only v0.1.3 across macOS + Linux) decomposes into:
+
+### REQ-REL-008 — Per-platform ripgrep pin
+**`deploy/opencode/RIPGREP_REF` shall** pin `rg` for every shipped platform
+(linux+macOS × amd64+arm64) by binary + tarball sha256 (verified against ripgrep's published
+checksums), and **`scripts/stage-ripgrep.sh <goos>-<goarch>`** shall stage the right one per
+runner — download-or-side-load, sha256-verified, refusing a mismatch. *Test:*
+`test::TestRipgrepPinned`. *Depends on:* `REQ-REL-006`. **DONE.**
+
+### REQ-REL-009 — Multi-platform bundle build
+**The bundle build shall** assemble a verified per-platform tarball (`bin/aegis` +
+`libexec/{opencode,rg,llama-server}`) via the shared `scripts/build-bundle.sh`, driven for
+all platforms by the native-runner matrix `.github/workflows/bundle-matrix.yml` (each runner
+builds OpenCode + llama-server + stages its `rg`). *Test:* `test::TestBundleTarball` (the
+assembler + the matrix wiring). *Depends on:* `REQ-REL-006`, `REQ-REL-008`. **Tooling done;
+the matrix's real-runner validation is part of REL-010.**
+
+### REQ-REL-010 — Multi-platform release publish
+**The tag-triggered release shall** run the bundle matrix, have the `release` job consume the
+per-platform tarball artifacts, fill the formula for all built platforms (pruning none), and
+publish to the tap — superseding v0.1.3 across platforms. *Test:* `test::TestReleaseMultiplatform`
+(release.yml wires the matrix + the artifact-consuming fill). *Depends on:* `REQ-REL-009`,
+`REQ-REL-007`. **MISSING — the release.yml fold + the actual publish.**
+
 ## 4. Notes
 
 - This is **out-of-enclave distribution** (apt/brew need network) — for the connected build/

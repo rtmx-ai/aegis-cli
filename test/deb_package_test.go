@@ -65,14 +65,22 @@ func TestDebBundlesHarness(t *testing.T) {
 	}
 }
 
-// TestBundleTarball → REQ-REL-007: scripts/build-bundle.sh assembles the Homebrew/release
-// bundle tarball (bin/aegis + libexec/{opencode,rg,llama-server}) the multi-platform
-// bundle-matrix workflow ships per platform. Gated/release-tier like the .deb test.
+// TestBundleTarball → REQ-REL-009: scripts/build-bundle.sh assembles the per-platform bundle
+// tarball (bin/aegis + libexec/{opencode,rg,llama-server}), and the bundle-matrix workflow
+// drives it + per-platform rg staging over a native-runner matrix. The matrix wiring is
+// checked always; the real assembly is gated/release-tier like the .deb test.
 func TestBundleTarball(t *testing.T) {
 	root := repoRoot(t)
+	// The multi-platform matrix must drive the shared assembler + per-platform rg staging.
+	mx := readRepoFile(t, ".github/workflows/bundle-matrix.yml")
+	for _, want := range []string{"matrix:", "scripts/build-bundle.sh", "scripts/stage-ripgrep.sh"} {
+		if !strings.Contains(mx, want) {
+			t.Errorf("bundle-matrix.yml must drive %q (REL-009)", want)
+		}
+	}
 	aegisBin := filepath.Join(root, "bin", "aegis")
 	if !isExecFile(aegisBin) || !isExecFile(filepath.Join(root, "deploy", "opencode", "bin", "opencode")) {
-		t.Skip("aegis/opencode not built — REL-007 bundle is release-tier (make ci-full)")
+		t.Skip("aegis/opencode not built — REL-009 bundle assembly is release-tier (make ci-full)")
 	}
 	dist := t.TempDir()
 	cmd := exec.Command("scripts/build-bundle.sh", "linux", "amd64", "0.0.0-test", dist, aegisBin)
