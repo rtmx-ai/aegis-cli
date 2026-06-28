@@ -34,6 +34,14 @@ file editing, or sandboxing, that is OpenCode's job — configure/drive it, do n
 reimplement it. aegis's code is the bundling, hardening, launch, rtmx wiring, and
 loop around it.
 
+*Build-time patches are not a fork.* aegis applies a minimal, reviewable set of
+hardening + rebranding patches over the **pinned** upstream (`OPENCODE_REF`),
+reapplied on each bump (OC-012..018): strip the cloud model catalog to a local
+whitelist, rebrand the app to "aegis", and prove zero egress — all MIT-permitted.
+This is *patch-and-rebuild-from-pinned-source*, not a divergent fork and not a
+reimplementation of the harness. The line: we may patch the build we already
+produce; we never maintain a forked harness or reimplement tool-calling/editing/TUI.
+
 ### The three non-negotiables
 
 1. **Closed by construction.** No component aegis ships, bundles, or launches may
