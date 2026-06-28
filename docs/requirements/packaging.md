@@ -132,7 +132,11 @@ the matrix's real-runner validation is part of REL-010.**
 per-platform tarball artifacts, fill the formula for all built platforms (pruning none), and
 publish to the tap — superseding v0.1.3 across platforms. *Test:* `test::TestReleaseMultiplatform`
 (release.yml wires the matrix + the artifact-consuming fill). *Depends on:* `REQ-REL-009`,
-`REQ-REL-007`. **MISSING — the release.yml fold + the actual publish.**
+`REQ-REL-007`. **Matrix VALIDATED 2026-06-28** — a `bundle-matrix` dispatch built green on
+darwin-arm64 (Metal), linux-amd64, and linux-arm64 (run conclusion success, artifacts produced).
+`macos-13` (Intel/darwin-amd64) was dropped: those runners never allocate and a stuck leg would
+hang `release.yml`'s `needs: bundle`; `fill-formula` prunes darwin-amd64. **Still MISSING — the
+actual publish only:** set `HOMEBREW_TAP_TOKEN` + cut a signed `v*` tag.
 
 ## 4. Notes
 
