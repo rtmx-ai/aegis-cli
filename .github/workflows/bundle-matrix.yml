@@ -8,8 +8,11 @@
 #
 # REMAINING to validate (do NOT mark REL-010 done until confirmed on real runners):
 #   1. [DONE] per-platform ripgrep: build-platform-bundle.sh stages + verifies the platform's rg.
-#   2. llama-server on macOS builds with Metal (scripts/build-llama.sh is target-aware) — verify.
-#   3. ubuntu-24.04-arm / macos-13 (Intel) runner availability in this org.
+#   2. [DONE] llama-server builds with Metal on macos-latest (darwin-arm64) — validated green.
+#   3. [DONE] ubuntu-24.04-arm validated green. macos-13 (Intel/darwin-amd64) DROPPED — those
+#      runners never allocate (stuck queued, GitHub is winding Intel macOS down) and would hang
+#      the release's needs:bundle. Apple Silicon covers current Macs; fill-formula prunes
+#      darwin-amd64. Re-add via a self-hosted Intel runner if needed.
 #   4. [DONE] signing: release.sh ingests the matrix tarballs into dist/ before SHA256SUMS, so
 #      they are covered by the manifest + the offline signature in the single release job.
 name: bundle-matrix (DRAFT)
@@ -33,7 +36,6 @@ jobs:
           - { os: ubuntu-latest,    goos: linux,  goarch: amd64 }
           - { os: ubuntu-24.04-arm, goos: linux,  goarch: arm64 }
           - { os: macos-latest,     goos: darwin, goarch: arm64 }
-          - { os: macos-13,         goos: darwin, goarch: amd64 }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

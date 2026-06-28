@@ -32,7 +32,8 @@ jobs:
           - { os: ubuntu-latest,    goos: linux,  goarch: amd64 }
           - { os: ubuntu-24.04-arm, goos: linux,  goarch: arm64 }
           - { os: macos-latest,     goos: darwin, goarch: arm64 }
-          - { os: macos-13,         goos: darwin, goarch: amd64 }
+          # macos-13 (Intel/darwin-amd64) dropped: those runners never allocate (stuck queued)
+          # and would hang this job's needs:bundle. fill-formula prunes darwin-amd64.
     runs-on: ${{ matrix.os }}
     continue-on-error: true
     steps:
