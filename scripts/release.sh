@@ -93,11 +93,27 @@ fi
 build_deb amd64
 build_deb arm64
 
+# REL-010: ingest any matrix-built per-platform bundles. The bundle matrix (release.yml)
+# uploads aegis-<v>-<os>-<arch>.tar.gz as artifacts; the release job downloads them to
+# $BUNDLES_DIR (we cannot pre-stage into dist/ — it is wiped at the top). Copy them in here, so
+# they are published + covered by SHA256SUMS + the signature alongside the host artifacts.
+BUNDLES_DIR="${BUNDLES_DIR:-bundles}"
+if [ -d "$BUNDLES_DIR" ]; then
+	for tb in "$BUNDLES_DIR"/aegis-"$VERSION"-*.tar.gz; do
+		[ -f "$tb" ] && cp "$tb" "$DIST/" && echo "release: ingested matrix bundle $(basename "$tb")"
+	done
+fi
+
 # REL-006/007: the HOST-platform bundle tarball (aegis + libexec helpers) for the Homebrew
 # formula, via scripts/build-bundle.sh — shared with the multi-platform bundle-matrix workflow
 # (.github/workflows/bundle-matrix.yml), which builds the other platforms on native runners.
 host_os="$(go env GOOS)"; host_arch_go="$(go env GOARCH)"
-if [ -x "$DIST/aegis-$VERSION-$host_os-$host_arch_go" ] && [ -x deploy/opencode/bin/opencode ]; then
+host_tarball="$DIST/aegis-$VERSION-$host_os-$host_arch_go.tar.gz"
+if [ -f "$host_tarball" ]; then
+	# REL-010: a matrix job already produced this platform's bundle (downloaded into dist/) —
+	# keep it (it is covered by SHA256SUMS below) rather than rebuilding.
+	echo "release: using matrix-provided bundle $(basename "$host_tarball")"
+elif [ -x "$DIST/aegis-$VERSION-$host_os-$host_arch_go" ] && [ -x deploy/opencode/bin/opencode ]; then
 	scripts/build-bundle.sh "$host_os" "$host_arch_go" "$VERSION" "$DIST" >/dev/null \
 		&& echo "release: bundled tarball aegis-$VERSION-$host_os-$host_arch_go.tar.gz"
 fi

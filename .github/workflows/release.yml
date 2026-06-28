@@ -19,7 +19,45 @@ permissions:
   contents: write
 
 jobs:
+  # REL-009/010: build the per-platform Homebrew bundle tarballs on NATIVE runners (OpenCode +
+  # llama-server are host-built, so each platform needs its own runner). continue-on-error +
+  # the release job's if:!cancelled() mean a platform that fails to build degrades gracefully —
+  # fill-formula prunes it — rather than sinking the whole release. This is the heavy matrix;
+  # validate it via the bundle-matrix (DRAFT) workflow_dispatch before relying on it for a tag.
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,    goos: linux,  goarch: amd64 }
+          - { os: ubuntu-24.04-arm, goos: linux,  goarch: arm64 }
+          - { os: macos-latest,     goos: darwin, goarch: arm64 }
+          - { os: macos-13,         goos: darwin, goarch: amd64 }
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.11"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3"
+      - name: Install Bun (for the OpenCode build)
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+      - name: Build the platform bundle (aegis + OpenCode + llama-server + rg)
+        run: scripts/build-platform-bundle.sh "${{ matrix.goos }}" "${{ matrix.goarch }}" "$GITHUB_REF_NAME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/aegis-*.tar.gz
+          if-no-files-found: error
+
   release:
+    needs: bundle
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -46,9 +84,19 @@ jobs:
           curl -fsSL https://bun.sh/install | bash
           echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
 
-      # Single build step — the same `make release` an operator runs locally.
-      # The build itself is offline (GOPROXY=off, -mod=vendor); only checkout +
-      # toolchain setup touch the network.
+      # REL-010: pull the per-platform bundle tarballs the matrix built into ./bundles;
+      # release.sh ingests them into dist/ (it wipes dist/ at the top, so they cannot be
+      # pre-staged there) so they are signed + published + pinned into the formula.
+      - name: Download platform bundles
+        uses: actions/download-artifact@v4
+        with:
+          path: bundles
+          pattern: bundle-*
+          merge-multiple: true
+
+      # Single build step — the same `make release` an operator runs locally. The build is
+      # offline (GOPROXY=off, -mod=vendor); only checkout + setup + the bundle download touch
+      # the network. release.sh ingests ./bundles (BUNDLES_DIR) into the signed artifact set.
       - name: make release (binaries + SBOM + checksums + signature)
         env:
           MINISIGN_KEY: ${{ secrets.MINISIGN_KEY }}
@@ -71,10 +119,10 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --notes "Automated release. Static binaries (linux amd64/arm64, macOS Intel + Apple Silicon, windows amd64), Debian .deb packages, CycloneDX SBOM, and SHA-256 checksums. Verify downloads against SHA256SUMS."
 
-      # REL-007: pin + publish the Homebrew tap formula to github.com/rtmx-ai/homebrew-tap.
-      # The bundle tarball (dist/aegis-<v>-<os>-<arch>.tar.gz) is a release asset above; the
-      # formula points at it by sha256. This CI builds the host platform (linux-amd64); a
-      # macOS runner is needed to pin the darwin tarballs (they stay placeholders until then).
+      # REL-007/010: pin + publish the Homebrew tap formula to github.com/rtmx-ai/homebrew-tap.
+      # dist/ now holds every platform's bundle tarball (the matrix artifacts ingested above), so
+      # fill-formula pins all of them by sha256 (pruning any that failed to build). It writes
+      # ONLY Formula/aegis.rb — never the shared tap's README or rtmx.rb.
       - name: Publish Homebrew tap
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

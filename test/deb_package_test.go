@@ -71,11 +71,18 @@ func TestDebBundlesHarness(t *testing.T) {
 // checked always; the real assembly is gated/release-tier like the .deb test.
 func TestBundleTarball(t *testing.T) {
 	root := repoRoot(t)
-	// The multi-platform matrix must drive the shared assembler + per-platform rg staging.
+	// The multi-platform matrix drives the shared per-platform build script, which in turn runs
+	// the assembler + per-platform rg staging (DRY: one build path for both workflows).
 	mx := readRepoFile(t, ".github/workflows/bundle-matrix.yml")
-	for _, want := range []string{"matrix:", "scripts/build-bundle.sh", "scripts/stage-ripgrep.sh"} {
+	for _, want := range []string{"matrix:", "scripts/build-platform-bundle.sh"} {
 		if !strings.Contains(mx, want) {
 			t.Errorf("bundle-matrix.yml must drive %q (REL-009)", want)
+		}
+	}
+	bp := readRepoFile(t, "scripts/build-platform-bundle.sh")
+	for _, want := range []string{"build-bundle.sh", "stage-ripgrep.sh"} {
+		if !strings.Contains(bp, want) {
+			t.Errorf("build-platform-bundle.sh must drive %q (REL-009)", want)
 		}
 	}
 	aegisBin := filepath.Join(root, "bin", "aegis")
