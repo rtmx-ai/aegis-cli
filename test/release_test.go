@@ -151,15 +151,24 @@ func TestBuildOpenCodeConfigured(t *testing.T) {
 	}
 }
 
-// TestOpenCodeBuildIsOfflineHardened → REQ-OC-003: offline frozen deps; the build
-// degrades safely without Bun, and the binary is bundled under the egress gate.
+// TestOpenCodeBuildIsOfflineHardened → REQ-OC-003: a reproducible, hardened build that
+// degrades safely without Bun. Reproducibility is anchored by a PINNED bun + the pinned source
+// (OPENCODE_REF) + the checksummed binary — NOT --frozen-lockfile, since opencode's upstream
+// lockfile @ v1.17.9 is stale under current bun and a frozen install fails on a fresh clone.
 func TestOpenCodeBuildIsOfflineHardened(t *testing.T) {
 	b := readRepoFile(t, "scripts/build-opencode.sh")
-	if !strings.Contains(b, "--frozen-lockfile") {
-		t.Error("build must install dependencies offline (--frozen-lockfile)")
-	}
 	if !strings.Contains(b, "command -v bun") {
 		t.Error("build must degrade cleanly when bun is absent (gated host step)")
+	}
+	if !strings.Contains(b, "OPENCODE_REF") {
+		t.Error("build must build from the pinned source (OPENCODE_REF)")
+	}
+	// CI must pin bun so the OpenCode dependency resolution is reproducible (the determinism
+	// anchor that replaces the unusable --frozen-lockfile).
+	for _, wf := range []string{".github/workflows/bundle-matrix.yml", ".github/workflows/release.yml"} {
+		if !strings.Contains(readRepoFile(t, wf), "bun-v1.3.14") {
+			t.Errorf("%s must pin bun (bun-v1.3.14) for a reproducible OpenCode build", wf)
+		}
 	}
 }
 

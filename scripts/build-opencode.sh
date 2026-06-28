@@ -36,8 +36,13 @@ git -C "$SRC" fetch --tags origin
 git -C "$SRC" checkout -q "$REF"
 echo "build-opencode: building anomalyco/opencode @ $REF"
 
-# OC-003: offline, frozen dependencies (no live fetch during the build).
-( cd "$SRC" && bun install --frozen-lockfile )
+# OC-003: install OpenCode's deps with the PINNED bun (CI installs 1.3.14). We pass
+# --no-frozen-lockfile explicitly: bun auto-freezes in CI, and opencode's upstream lockfile @
+# v1.17.9 needs a small normalization under bun 1.3.14 that a frozen install rejects on a fresh
+# clone (it only passes locally because a prior run already updated build/opencode-src).
+# Determinism is anchored by the pinned bun + pinned source (OPENCODE_REF) + the built binary's
+# checksum in SHA256SUMS, not by the stale upstream lockfile.
+( cd "$SRC" && bun install --no-frozen-lockfile )
 
 # OC-002: bake air-gap protections into the build (defense in depth with the
 # shipped deploy/opencode/opencode.json config).
