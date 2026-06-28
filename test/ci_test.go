@@ -194,15 +194,16 @@ func TestAirgapGateFailsClosed(t *testing.T) {
 	}
 }
 
-// TestOperatorDocsPresent models REQ-DOCS-001: operator docs carry the
-// deprecation notice and include a runbook plus an air-gap setup guide, each
-// covering its required topics.
+// TestOperatorDocsPresent models REQ-DOCS-001: operator docs are present and cover their
+// required topics — the README's install + first-run entry points, a runbook, and an
+// air-gap setup guide.
 func TestOperatorDocsPresent(t *testing.T) {
-	// README must carry the deprecation notice pointing at the legacy branch.
+	// README must give install + first-run entry points.
 	readme := readRepoFile(t, "README.md")
-	if !strings.Contains(strings.ToLower(readme), "deprecation") ||
-		!strings.Contains(readme, "legacy/rust-assured-workloads") {
-		t.Error("README must carry the deprecation notice referencing legacy/rust-assured-workloads")
+	for _, topic := range []string{"brew install rtmx-ai/tap/aegis", "make build", "verify-env"} {
+		if !strings.Contains(readme, topic) {
+			t.Errorf("README must cover the install/usage entry point %q", topic)
+		}
 	}
 	// Runbook must cover operating the loop and closed-loop verification.
 	runbook := readRepoFile(t, "docs/runbook.md")

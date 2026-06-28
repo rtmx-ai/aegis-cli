@@ -8,31 +8,81 @@
 
 <sub>CI status, statement coverage, and component version regenerate live on every green `main` build (`make badges` → `badges` branch); Go grade is served by goreportcard.com; license reads from `LICENSE` (Apache-2.0).</sub>
 
-An **air-gap-native, top-tier agentic coding experience**. Its centerpiece is the
-**OpenCode TUI** (MIT), driven by a **local model** (Ollama / llama.cpp, loopback)
-with **rtmx as the intent layer**. Running `aegis` launches that TUI inside a
-closed, air-gap-suitable environment. aegis **bundles and launches OpenCode; it
-does not fork or rebuild it** — it owns the air-gap distribution, hardening, the
-rtmx intent loop (interactive + headless `aegis run`), audit, and packaging.
+**aegis is an air-gap-native, top-tier agentic coding experience for closed
+environments.** Running `aegis` launches a hardened **OpenCode TUI** (MIT), driven by a
+**local model** (llama.cpp / Ollama, loopback only), with **rtmx as the intent layer**.
+It makes zero network calls beyond loopback to the local model endpoint — *by
+construction, not by configuration*.
+
+aegis **bundles and launches OpenCode; it does not fork or rebuild it.** Tool-calling,
+file editing, and sandboxing are OpenCode's job. aegis owns what a closed-enclave
+distribution needs *around* the harness: air-gap hardening + egress default-deny, the
+rtmx intent loop (interactive in the TUI and headless via `aegis run`), audit, metrics,
+host calibration, and packaging.
 
 ```mermaid
 flowchart LR
     user["operator"] --> tui["aegis → OpenCode TUI (bundled, hardened)"]
-    tui <--> model["local model (Ollama / llama.cpp, loopback)"]
+    tui <--> model["local model (llama.cpp / Ollama, loopback)"]
     tui <--> rtmx["rtmx MCP — intent layer (next/claim/verify/set_status)"]
     tui -.headless.-> loop["aegis loop — unattended rtmx drain"]
 ```
 
-Tool-calling, file editing, and sandboxing are **OpenCode's** job — aegis
-configures and drives it, and never reimplements the harness.
+---
+
+## Install
+
+aegis ships as a single static binary plus a bundled harness (OpenCode + ripgrep +
+llama-server). The large model GGUF is **side-loaded separately** — it is too big to
+package, and an air gap wants it staged deliberately anyway.
+
+```bash
+# Homebrew — macOS (Apple Silicon) and Linux
+brew install rtmx-ai/tap/aegis
+
+# Debian / Ubuntu — grab aegis_<version>_<arch>.deb from the latest release, then:
+sudo apt install ./aegis_1.0.0_amd64.deb      # installs aegis + the harness under /usr/lib/aegis
+
+# Build everything from source on a connected build host (full stack):
+git clone https://github.com/rtmx-ai/aegis-cli && cd aegis-cli
+./setup.sh                                    # aegis + OpenCode + llama.cpp, stages a model, calibrates
+
+# ...or build just the aegis binary (offline, vendored — proves no live fetch):
+make build                                    # → ./bin/aegis
+```
+
+Prebuilt downloads (binaries, `.deb`s, the Homebrew tarballs, the CycloneDX SBOM, and a
+minisign-signed `SHA256SUMS`) are attached to each [GitHub
+release](https://github.com/rtmx-ai/aegis-cli/releases); verify them with `make
+verify-release` against the public key in `deploy/release/`. After installing, stage a
+model (see [Setup](#setup)) and run `aegis verify-env` to confirm the environment is
+closed and traceable.
+
+---
+
+## What aegis is — and where it came from
+
+aegis began as a Rust pair-programmer aimed at compliance-bound, cloud-managed
+environments. Trying to *be* the harness — and tethering the whole thing to a managed
+cloud — did not pan out. aegis was rebuilt ground-up in Go around a sharper conviction:
+the hard part of agentic coding in a secure environment isn't the cloud, it's the **air
+gap**. Everything that makes a cloud assistant convenient — model APIs, telemetry,
+plugin fetches, auto-update — is exactly what a closed enclave forbids.
+
+So aegis became **air-gap-native**: a single static Go orchestrator that runs entirely on
+one closed host, bundles a best-in-class open harness instead of reinventing it, drives a
+local model over loopback, and tracks *intent* with rtmx so a small on-host model can
+close real work one verifiable requirement at a time. Egress isn't a setting you turn off
+— it's a build-failing condition. That is the whole point, and the rewrite is built so it
+cannot drift.
 
 ---
 
 ## Setup
 
-One command builds the full stack from pinned source (aegis + OpenCode +
-llama.cpp), stages + verifies the model, calibrates serving to the host, and
-smoke-tests the whole stack — run it on a connected build host:
+One command builds the full stack from pinned source (aegis + OpenCode + llama.cpp),
+stages + verifies the model, calibrates serving to the host, and smoke-tests the whole
+stack — run it on a connected build host:
 
 ```bash
 ./setup.sh                                  # menu of catalog models (auto-selects the recommended one)
@@ -42,26 +92,14 @@ smoke-tests the whole stack — run it on a connected build host:
 ```
 
 The catalog menu strikes through any model that won't fit the host's RAM, and
-auto-selects the largest one that will. `--install` ends with clear instructions
-on how to run `aegis`.
+auto-selects the largest one that will. `--install` ends with clear instructions on how
+to run `aegis`.
 
-Then install + run in the closed enclave per [docs/operator-guide.md](docs/operator-guide.md):
-`aegis` (the OpenCode TUI), `aegis run "<prompt>"` (one headless task), or
-`aegis loop` (drain the rtmx backlog). Prerequisites + the tiered build cadence
-are in [docs/requirements/build-cadence.md](docs/requirements/build-cadence.md).
-
----
-
-## ⚠️ DEPRECATION NOTICE
-
-The previous implementation was a **Rust** orchestrator built for the
-**Google Cloud Assured Workloads / CUI** posture. It tried to be the harness and
-did not pan out. That code is archived, unmaintained, on branch
-**`legacy/rust-assured-workloads`**.
-
-**This `main` is a ground-up, offline / air-gap-native Go rewrite.** It targets a
-closed single host, vendors all dependencies, and makes zero network calls beyond
-loopback. Do not port Rust assumptions forward; the architecture changed.
+Then install + run in the closed enclave per
+[docs/operator-guide.md](docs/operator-guide.md): `aegis` (the OpenCode TUI), `aegis run
+"<prompt>"` (one headless task), or `aegis loop` (drain the rtmx backlog). Prerequisites
++ the tiered build cadence are in
+[docs/requirements/build-cadence.md](docs/requirements/build-cadence.md).
 
 ---
 
@@ -70,12 +108,12 @@ loopback. Do not port Rust assumptions forward; the architecture changed.
 1. **Closed by construction.** No component aegis-cli ships or writes may make a
    network call other than loopback to the local model endpoint. Egress is a
    *build-failing* condition, not a warning.
-2. **Thin-orchestrator discipline.** aegis-cli owns only: the loop,
-   retry/escalation policy, audit logging, metrics, and config. Everything else is
-   delegated to the harness and serving layer.
-3. **One requirement at a time.** The loop claims a single rtmx requirement, closes
-   it, releases it, and moves on. Scope is narrowed so a small local model can
-   succeed and every change is independently verifiable.
+2. **Bundle, don't rebuild.** aegis-cli owns distribution, hardening, launch, the rtmx
+   intent loop, audit, metrics, the egress guard, and config — and bundles OpenCode + the
+   model + rtmx. It does not fork OpenCode or reimplement the harness.
+3. **One requirement at a time.** The loop claims a single rtmx requirement, closes it,
+   releases it, and moves on. Scope is narrowed so a small local model can succeed and
+   every change is independently verifiable.
 
 ---
 
