@@ -22,19 +22,38 @@ export AEGIS_BIN=<aegis-cli>/bin/aegis     # aegis binary
 ollama serve                                # or bring up llama-server via `aegis serve`
 ```
 
-## Run
+For `make analyze` (scipy/pandas), use a venv — Ubuntu blocks system pip (PEP 668):
 
 ```bash
-# CONTROL (no intent) and TREATMENT (rtmx) for one experiment on the local model
-AEGIS_TIMEOUT=1800s bash bench.sh run url-shortener --condition control   --agent aegis --model gemma4-qat:32k --runs 5
-AEGIS_TIMEOUT=1800s bash bench.sh run url-shortener --condition treatment --agent aegis --model gemma4-qat:32k --runs 5 --treatment rtmx
-make analyze   # Mann-Whitney U (tokens) + Fisher exact (completion) -> results/analysis.json
+python3 -m venv .venv && . .venv/bin/activate && pip install -r analysis/requirements.txt
 ```
 
-The wrapper runs `aegis run --no-intent`, so intent-bench controls the A/B via the workdir:
-its `treatments/rtmx.sh` seeds the experiment's requirements as an rtmx MCP (`.mcp.json`) for
-**treatment**, and leaves it absent for **control**. aegis does not inject its own intent
-layer, keeping the comparison clean. Endpoint via `AEGIS_ENDPOINT` (default Ollama loopback).
+## Run — one model at a time, separate runs per model
+
+`run-suite.sh` brings the model up via `aegis serve` (loopback), runs the experiments under
+**control** + **rtmx treatment**, then tears the server down. Run it **once per model** —
+intent-bench tags every `results/summary.csv` row by `--model`, so two models land as
+distinguishable rows for `make analyze` and **separate per-model PRs**.
+
+```bash
+AB=<aegis-cli>; IB=~/code/github.com/intent-bench/intent-bench
+
+# Model A — gemma (six "claim" experiments, N=5, ~1hr/run each on CPU):
+$AB/deploy/intent-bench/run-suite.sh --bench $IB \
+    --gguf ~/models/gemma-4-26B-A4B-...gguf --model-id gemma-4-26b-a4b --runs 5
+
+# Model B — qwen3-coder (a SEPARATE run, same experiments, different port):
+$AB/deploy/intent-bench/run-suite.sh --bench $IB \
+    --gguf ~/models/Qwen3-Coder-30B-...gguf --model-id qwen3-coder-30b --runs 5 --port 8091
+
+cd $IB && make analyze   # Mann-Whitney U (tokens) + Fisher exact (completion) -> results/analysis.json
+```
+
+Defaults: the six "claim" experiments (url-shortener, task-manager, rest-api, cli-tool,
+brownfield, rtmx-self), N=5. Override with `--experiments "..."`, `--runs N`, `--timeout`. A
+single experiment at `--runs 1` is the wiring smoke. The wrapper runs `aegis run --no-intent`,
+so intent-bench controls the A/B via the workdir (rtmx `.mcp.json` seeded for treatment, absent
+for control) — aegis never injects its own intent layer, keeping the comparison clean.
 
 ## Reality check (read before a full run)
 
