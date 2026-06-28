@@ -10,7 +10,11 @@ Provision a keypair per `docs/release-signing.md` §1 and commit ONLY the public
 key here. The secret key stays on a controlled host (and, for enclave releases,
 never touches CI). Key custody is the security/export-control authority's call.
 
-Provisioned (REL-001): `aegis-minisign.pub` (minisign key `28F95ACEED83B1BA`). The secret
-half is held off-repo as a host/CI secret (`MINISIGN_KEY`) and never committed; `scripts/
-release.sh` signs `SHA256SUMS` with it, and `make verify-release` verifies against the public
-key here.
+Provisioned (REL-001): `aegis-minisign.pub` (minisign key `43D07379243BC492`). The secret
+half is held off-repo as a host/CI secret (`MINISIGN_KEY`, the key-file content) and never
+committed; `scripts/release.sh` signs `SHA256SUMS` with it, and `make verify-release` verifies
+against the public key here.
+
+The key is **passwordless** (`minisign -G -W`) — protection is the encrypted CI secret + custody
+of the `.key` file, so CI needs no `MINISIGN_PASSWORD`. (Regenerated 2026-06-28, replacing key
+`28F95ACEED83B1BA`, whose passphrase was lost; that key never signed a published release.)
