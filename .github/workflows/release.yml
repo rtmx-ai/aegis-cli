@@ -45,7 +45,10 @@ jobs:
           python-version: "3"
       - name: Install Bun (for the OpenCode build)
         run: |
-          curl -fsSL https://bun.sh/install | bash
+          # Pin bun: CI installs latest by default, which re-resolves opencode v1.17.9's
+          # lockfile and breaks build-opencode.sh's --frozen-lockfile (OC-003). 1.3.14 is the
+          # version whose resolution matches the committed lockfile.
+          curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.14"
           echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
       - name: Build the platform bundle (aegis + OpenCode + llama-server + rg)
         run: scripts/build-platform-bundle.sh "${{ matrix.goos }}" "${{ matrix.goarch }}" "$GITHUB_REF_NAME"
@@ -81,7 +84,10 @@ jobs:
       # full-stack tier; the per-push gate (make ci) stays Go-only.
       - name: Install Bun (for the OpenCode build)
         run: |
-          curl -fsSL https://bun.sh/install | bash
+          # Pin bun: CI installs latest by default, which re-resolves opencode v1.17.9's
+          # lockfile and breaks build-opencode.sh's --frozen-lockfile (OC-003). 1.3.14 is the
+          # version whose resolution matches the committed lockfile.
+          curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.14"
           echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
 
       # REL-010: pull the per-platform bundle tarballs the matrix built into ./bundles;
