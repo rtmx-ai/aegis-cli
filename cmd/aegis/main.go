@@ -86,6 +86,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cmdModels(rest, stdout, stderr)
 	case "serve":
 		return cmdServe(rest, stdout, stderr)
+	case "profile":
+		return cmdProfile(rest, stdout, stderr)
 	case "verify-env":
 		return cmdVerifyEnv(rest, stdout, stderr)
 	case "propose":
@@ -125,6 +127,7 @@ orchestration (aegis's own):
   status        unified: config + model endpoint + rtmx backlog
   models        list the local model inventory (loopback endpoint)
   serve         bring the local model server up (calibrated, loopback)
+  profile       probe the host + recommend the best-fitting US models (read-only)
   frame         classify the backlog + surface reframe/unframed lists
   propose <prefix>   emit atomic children of a requirement (human approves)
   verify-env    report egress + traceability status before a run
