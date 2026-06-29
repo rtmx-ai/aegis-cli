@@ -15,7 +15,7 @@ func TestHardenedEnv(t *testing.T) {
 	cfg.Endpoint = "http://127.0.0.1:11434"
 	cfg.ModelID = "phi4-mini:latest"
 	joined := strings.Join(HardenedEnv(cfg), "\n")
-	for _, w := range []string{"OPENCODE_TELEMETRY=0", "OPENAI_BASE_URL=http://127.0.0.1:11434/v1", "OPENCODE_CONFIG_CONTENT="} {
+	for _, w := range []string{"OPENCODE_TELEMETRY=0", "OPENAI_BASE_URL=http://127.0.0.1:11434/v1", "OPENCODE_CONFIG_CONTENT=", "OPENCODE_DISABLE_AUTOUPDATE=1", "OPENCODE_PURE=1"} {
 		if !strings.Contains(joined, w) {
 			t.Errorf("HardenedEnv missing %q", w)
 		}

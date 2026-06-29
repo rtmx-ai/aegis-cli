@@ -43,6 +43,7 @@ func HardenedEnv(cfg config.Config) []string { return airgapEnv(cfg, true) }
 func airgapEnv(cfg config.Config, intent bool) []string {
 	env := []string{
 		"OPENCODE_AUTOUPDATE=0",
+		"OPENCODE_DISABLE_AUTOUPDATE=1", // the flag opencode's auto-upgrade check actually reads (upgrade.ts)
 		"OPENCODE_TELEMETRY=0",
 		"OPENCODE_DISABLE_SHARE=1",
 		// OC-011: disable OpenCode's models.dev catalog fetch — it pulls the model
