@@ -99,3 +99,44 @@ model with no calibration is started immediately with a synthesized, host-shaped
 `~/.config/aegis/calibration.json` so the background profiler / `bench.sh` refine the same file in
 place. The picker prefers the smallest GGUF (fastest to load). Time-to-first-token beats optimality;
 the rigorous resource-fit analysis runs *behind* the operator (the profiler), never in front.
+
+## In-TUI provisioning when no model is present (OC-022 / OC-024 / OC-025)
+
+**Propulsive principle:** a fresh machine must never drop the operator back to the shell. When no
+model is provisioned, `aegis` opens the TUI and the splash *becomes* a model-selection/download
+screen; the operator provisions in-app and lands on the prompt with a working model. A screen is pure
+UI — the splash itself renders with no model — only chat/slash-commands need the model, so this needs
+no running model to render. Decomposition (build order: OC-024 → OC-025 → OC-022):
+
+### REQ-OC-024 — `aegis provision` engine
+**`aegis provision` shall** make a model available end-to-end: resolve the best-fitting US model (the
+profiler's pick) by default, or `--id <catalog-id>`, or `--browse <path.gguf>` (source a local GGUF,
+no download); download from the **pinned catalog URL** with live progress and **sha256 verification**
+(refuse + delete the partial on mismatch); seed-calibrate; and start serving (left running for the TUI
+to connect). The download is the **only** place aegis egresses — operator-initiated, to a pinned +
+verified URL, connected-host only; the serving runtime stays closed (GUARD unchanged).
+- **Acceptance:** `aegis provision` with a connected host downloads + verifies the recommended US
+  model, calibrates, and leaves it serving on loopback; a sha256 mismatch fails without serving;
+  `--browse <gguf>` serves a local file with no network; offline → a clear error, never a bad serve.
+- **Verify:** `cmd/aegis::TestProvisionDownloadVerify` + `TestResolveProvisionSpec`. **Deps:** PROFILE-001, SERVE-004.
+
+### REQ-OC-025 — Propulsive launch (no exit on no model)
+**Bare `aegis` shall not exit** to the shell when no model is provisioned. It launches the TUI with an
+`AEGIS_NO_MODEL` signal (+ the best-fit model id/size/origin + catalog options) so the operator stays
+in the app and provisions in-TUI. When a model IS provisioned, OC-023's auto-serve path is unchanged.
+- **Acceptance:** on a host with no model + no calibration, `aegis` opens the TUI (exit code reflects
+  the TUI session, not an immediate guidance-and-exit) with `AEGIS_NO_MODEL` set in the launch env.
+- **Verify:** `cmd/aegis::TestTUINoModelLaunchesNotExits`. **Deps:** OC-023, OC-024.
+
+### REQ-OC-022 — In-TUI provisioning screen (refined)
+**When `AEGIS_NO_MODEL` is set, the opencode splash shall** render a model-selection/download screen
+instead of the prompt: the best-fit US model highlighted (id · size · origin), `[Download]` /
+`[Browse local]`, and a live progress bar. `[Download]` spawns `aegis provision` (OC-024), streams its
+progress into the bar, and on success transitions to the normal prompt (the model now serves). **No
+auto-egress** — nothing fetches until the operator acts. Implemented as an OC-017 patch over
+`home.tsx`.
+- **Acceptance:** from a fresh launch the operator picks/downloads a model entirely on-screen (no
+  shell), watches the digest verify, and reaches a working prompt — without the launcher ever
+  egressing on its own.
+- **Verify:** `test::TestHarnessProvisionScreen` (the patch wires the no-model screen + spawns
+  provision). **Deps:** OC-024, OC-025, OC-017.

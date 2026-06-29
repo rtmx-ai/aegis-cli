@@ -88,6 +88,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cmdServe(rest, stdout, stderr)
 	case "profile":
 		return cmdProfile(rest, stdout, stderr)
+	case "provision":
+		return cmdProvision(rest, stdout, stderr)
 	case "verify-env":
 		return cmdVerifyEnv(rest, stdout, stderr)
 	case "propose":
@@ -128,6 +130,7 @@ orchestration (aegis's own):
   models        list the local model inventory (loopback endpoint)
   serve         bring the local model server up (calibrated, loopback)
   profile       probe the host + recommend the best-fitting US models (read-only)
+  provision [--id X|--browse PATH]   download/source the best-fitting model + serve it
   frame         classify the backlog + surface reframe/unframed lists
   propose <prefix>   emit atomic children of a requirement (human approves)
   verify-env    report egress + traceability status before a run
