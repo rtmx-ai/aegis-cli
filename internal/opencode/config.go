@@ -65,6 +65,10 @@ func RenderConfig(cfg config.Config, intent bool) string {
     "rtmx": {
       "description": "rtmx intent: next/claim/verify/status/health/backlog",
       "template": "Run the bundled rtmx intent engine: execute the shell command 'rtmx $ARGUMENTS' and show its full output verbatim, then stop — do not edit files. rtmx subcommands: next, claim <id>, verify, status, health, backlog. If no arguments were given, run 'rtmx status'."
+    },
+    "trace": {
+      "description": "Requirements traceability — status, completion %, the requirement->test matrix",
+      "template": "Show the requirements traceability state, then stop — do not edit files. Run the shell commands 'rtmx status' (the requirement->test matrix: each requirement's status COMPLETE/PARTIAL/MISSING and its mapped test) and 'rtmx health' (completion %, orphaned requirements/tests, reciprocity, the gates) and show their output verbatim. Lead with the headline: total requirements and the COMPLETE / PARTIAL / MISSING breakdown with the completion percentage. This is the live intent state; re-run /trace after closing a requirement to see it update."
     }
   }`
 	}
