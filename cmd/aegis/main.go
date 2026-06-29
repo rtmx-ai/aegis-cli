@@ -407,6 +407,12 @@ func cmdTUI(stdout, stderr io.Writer) int {
 	case cfg.ModelID == "":
 		cfg.ModelID = config.DefaultModelForTarget(cfg.Target)
 	}
+	// PROFILE-003: profile the host once (cached, ~0.3s after the model is already up) so the gentle
+	// best-fit hint can surface at launch — non-intrusive, never blocking.
+	autoProfile()
+	if h := profileHint(cfg.ModelID); h != "" {
+		fmt.Fprintln(stderr, "aegis: "+h)
+	}
 	if err := opencode.Launch(cfg, "", ""); err != nil {
 		if opencode.IsMissing(err) {
 			fmt.Fprintln(stderr, opencode.MissingGuidance)

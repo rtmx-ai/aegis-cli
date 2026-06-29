@@ -6,12 +6,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/rtmx-ai/aegis-cli/internal/config"
-	"github.com/rtmx-ai/aegis-cli/internal/origin"
 	"github.com/rtmx-ai/aegis-cli/internal/profile"
 	"github.com/rtmx-ai/aegis-cli/internal/serving"
 )
@@ -31,32 +28,16 @@ func cmdProfile(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	specs, err := catalogModelSpecs()
+	rec, err := computeRecommendation(*ctx)
 	if err != nil {
 		fmt.Fprintf(stderr, "aegis: profile: %v\n", err)
 		return 1
 	}
-	allowed := func(string) bool { return true }
-	if pol, perr := origin.LoadPolicy(originPolicyPath()); perr == nil {
-		allowed = pol.Allows
-	}
-
-	rec := profile.Recommend(specs, allowed, profile.Probe(), *ctx, profile.DefaultFloors())
-
 	// --bench: replace the running model's predicted tok/s with an authoritative measurement.
 	if *bench {
 		benchRunningModel(stdout, stderr, &rec)
 	}
-
-	// Cache the recommendation (best-effort; never fatal).
-	if home, herr := os.UserHomeDir(); herr == nil {
-		dir := filepath.Join(home, ".config", "aegis")
-		if os.MkdirAll(dir, 0o755) == nil {
-			if b, merr := json.MarshalIndent(rec, "", "  "); merr == nil {
-				_ = os.WriteFile(filepath.Join(dir, "profile.json"), b, 0o644)
-			}
-		}
-	}
+	_ = writeProfileCache(rec) // best-effort; never fatal
 
 	if *asJSON {
 		b, _ := json.MarshalIndent(rec, "", "  ")

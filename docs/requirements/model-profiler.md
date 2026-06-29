@@ -58,18 +58,26 @@ marking the row measured and **re-picking the floors, so a model that benches be
 down** to the next-best. With no model serving it guides the operator and falls back to prediction.
 **Test:** `internal/profile` (MeasureTokPerSec + ApplyMeasurement fold/step-down).
 
+### PROFILE-003 — First-launch auto-profile + gentle fit hint
+**Bare `aegis` shall** profile the host once on first launch (after the model is up, ~0.3 s, cached to
+`~/.config/aegis/profile.json`; a no-op on re-launch) and surface a one-line, non-intrusive hint at
+launch naming the best-fitting US model — with an upgrade nudge when the running model isn't it. It
+never blocks the TUI. **Test:** `cmd/aegis` (profile hint + cache round-trip + auto-profile).
+
 ## 3. Scope
 
 **Iteration 1 (this build):** the probe (linux available-RAM + bandwidth sweep + reuse
 `internal/install.Detect`), the fit model (capacity + roofline; params/active derived from catalog
 size + id, KV by scale heuristic), the ranking, `aegis profile`, the cached `profile.json`.
 
-**Iteration 2 (this build):** `--bench` micro-bench confirmation (PROFILE-002) — authoritative tok/s
-for the running model, folded into the recommendation with floor step-down.
+**Iteration 2:** `--bench` micro-bench confirmation (PROFILE-002) — authoritative tok/s for the
+running model, folded into the recommendation with floor step-down.
 
-**Deferred (noted, not built):** auto-run-once-on-first-launch + a gentle TUI upgrade hint; exact KV
-from GGUF header parsing; darwin available-RAM + Metal bandwidth. The recommendation is **advisory** —
-the operator chooses; `pin-model.sh` + `bench.sh` remain the provisioning path.
+**Iteration 3 (this build):** first-launch auto-profile + the launch fit hint (PROFILE-003).
+
+**Deferred (noted, not built):** exact KV from GGUF header parsing; darwin available-RAM + Metal
+bandwidth. The recommendation is **advisory** — the operator chooses; `pin-model.sh` + `bench.sh`
+remain the provisioning path.
 
 ## 4. Acceptance
 
