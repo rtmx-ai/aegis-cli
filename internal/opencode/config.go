@@ -50,10 +50,22 @@ func RenderConfig(cfg config.Config, intent bool) string {
 	}
 	baseURL := cfg.Endpoint + "/v1"
 	mcp := ""
+	command := ""
 	if intent {
 		mcp = `,
   "mcp": {
     "rtmx": { "type": "local", "enabled": true, "command": ["rtmx", "mcp-server", "--stdio"] }
+  }`
+		// OC-020: a /rtmx slash command in the TUI. It runs the bundled rtmx intent engine
+		// (OC-019) and renders its output in-session — so the operator drives the intent loop
+		// (next/claim/verify/status/health/backlog) without leaving the TUI. $ARGUMENTS is the
+		// subcommand line (opencode commands are prompt templates expanded with $ARGUMENTS).
+		command = `,
+  "command": {
+    "rtmx": {
+      "description": "rtmx intent: next/claim/verify/status/health/backlog",
+      "template": "Run the bundled rtmx intent engine: execute the shell command 'rtmx $ARGUMENTS' and show its full output verbatim, then stop — do not edit files. rtmx subcommands: next, claim <id>, verify, status, health, backlog. If no arguments were given, run 'rtmx status'."
+    }
   }`
 	}
 	// RUNQ-002: append the tool-call coaching instruction (staged into the config
@@ -83,8 +95,8 @@ func RenderConfig(cfg config.Config, intent bool) string {
       "models": { %q: { "name": %q } }
     }
   },
-  "model": %q%s%s%s
-}`, baseURL, model, model, "local/"+model, mcp, instructions, agent)
+  "model": %q%s%s%s%s
+}`, baseURL, model, model, "local/"+model, mcp, command, instructions, agent)
 }
 
 // renderAgent emits the OpenCode `agent.build` block: per-model tuning (SERVE-020) plus the
