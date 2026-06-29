@@ -441,6 +441,68 @@ func resolveCalibrationPath() string {
 	return ""
 }
 
+// resolveAnyModelGGUF returns a side-loaded model GGUF for the fast-start path, scanning the model
+// download dir ($MODEL_DOWNLOAD_DIR, else ~/models). It returns the SMALLEST *.gguf — the fastest to
+// load + most interactive, honoring "get started quickly"; the background profiler later recommends
+// the best-fitting model. Returns "" when none is present.
+func resolveAnyModelGGUF() string {
+	dir := os.Getenv("MODEL_DOWNLOAD_DIR")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		dir = filepath.Join(home, "models")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	best, bestSize := "", int64(0)
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".gguf") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if best == "" || info.Size() < bestSize {
+			best, bestSize = filepath.Join(dir, e.Name()), info.Size()
+		}
+	}
+	return best
+}
+
+// writeSeedCalibration synthesizes a conservative, host-shaped calibration for gguf (internal/install
+// seed: threads≈physical cores, ngl per target) and writes it to the user config dir, so the launch
+// serves immediately and the background profiler / bench.sh can refine the SAME file later. Returns
+// the written path.
+func writeSeedCalibration(gguf string) (string, error) {
+	cal := install.Plan(install.Detect()).Calibration
+	cal.Model = gguf
+	if n := catalogCtxSizeForGGUF(gguf); n > 0 {
+		cal.CtxSize = n
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(home, ".config", "aegis")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, "calibration.json")
+	b, err := json.MarshalIndent(cal, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
 // provisionGuidance is the operator-facing message when no model can be brought up (OC-023). It is
 // resource-aware: aegis serves the largest model the host can hold responsively (internal/install
 // Plan picks the envelope by RAM) — not every model fits every system. The air-gap rule forbids
@@ -470,7 +532,20 @@ func ensureModelServing(cfg config.Config, out io.Writer) (stop func(), modelID 
 	}
 	calPath := resolveCalibrationPath()
 	if calPath == "" {
-		return nil, "", fmt.Errorf("%s", provisionGuidance())
+		// Fast-start guarantee: never block the operator on a full bench. If a model GGUF is already
+		// side-loaded, start it NOW with conservative, host-shaped default tuning (internal/install
+		// seed calibration); the background profiler / bench.sh refine it later. Only when no model
+		// is present at all do we fall back to provisioning guidance.
+		gguf := resolveAnyModelGGUF()
+		if gguf == "" {
+			return nil, "", fmt.Errorf("%s", provisionGuidance())
+		}
+		seed, werr := writeSeedCalibration(gguf)
+		if werr != nil {
+			return nil, "", fmt.Errorf("%s", provisionGuidance())
+		}
+		fmt.Fprintf(out, "aegis: no calibration yet — starting %s with default tuning (run `aegis profile` to tune for this host)\n", filepath.Base(gguf))
+		calPath = seed
 	}
 	cal, lerr := serving.LoadCalibration(calPath)
 	if lerr != nil {

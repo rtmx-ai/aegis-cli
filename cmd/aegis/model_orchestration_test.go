@@ -10,7 +10,44 @@ import (
 
 	"github.com/rtmx-ai/aegis-cli/internal/config"
 	"github.com/rtmx-ai/aegis-cli/internal/mockmodel"
+	"github.com/rtmx-ai/aegis-cli/internal/serving"
 )
+
+// TestFastStartSeedCalibration → fast-start guarantee: a side-loaded model with no calibration is
+// started immediately with a synthesized, host-shaped seed calibration (no blocking bench). The
+// picker prefers the smallest GGUF (fastest to load), and the seed file is a valid calibration the
+// background profiler can later refine.
+func TestFastStartSeedCalibration(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	models := filepath.Join(home, "models")
+	if err := os.MkdirAll(models, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MODEL_DOWNLOAD_DIR", models)
+	small := filepath.Join(models, "small-Q4_K_M.gguf")
+	big := filepath.Join(models, "big-Q4_K_M.gguf")
+	if err := os.WriteFile(small, []byte("tiny"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(big, make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := resolveAnyModelGGUF(); got != small {
+		t.Fatalf("fast-start should pick the smallest GGUF, got %q want %q", got, small)
+	}
+	path, err := writeSeedCalibration(small)
+	if err != nil {
+		t.Fatalf("writeSeedCalibration: %v", err)
+	}
+	cal, err := serving.LoadCalibration(path)
+	if err != nil {
+		t.Fatalf("seed calibration must be loadable: %v", err)
+	}
+	if cal.Model != small {
+		t.Errorf("seed calibration model = %q, want %q", cal.Model, small)
+	}
+}
 
 // TestEnsureModelServingAlreadyUp covers the early-return path: when a model already answers on the
 // endpoint, ensureModelServing opens the TUI against it without starting a second server.
@@ -86,5 +123,23 @@ func TestCatalogIDForGGUF(t *testing.T) {
 	}
 	if id := catalogIDForGGUF("/models/not-in-catalog.gguf"); id != "" {
 		t.Errorf("unknown GGUF should map to no id, got %q", id)
+	}
+}
+
+// TestEnsureModelServingNoModel covers the fast-start branch when nothing is provisioned: no
+// calibration + no side-loaded GGUF → resource-aware provisioning guidance, never a server start.
+func TestEnsureModelServingNoModel(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("AEGIS_CALIBRATION", "")
+	t.Setenv("MODEL_DOWNLOAD_DIR", filepath.Join(home, "no-models")) // absent dir → no GGUFs
+	cfg := config.Default()
+	cfg.Endpoint = "http://127.0.0.1:1" // dead → past the preflight
+	stop, _, err := ensureModelServing(cfg, io.Discard)
+	if stop != nil {
+		stop()
+	}
+	if err == nil || !strings.Contains(err.Error(), "provision") {
+		t.Errorf("no model + no calibration must return provisioning guidance, got %v", err)
 	}
 }

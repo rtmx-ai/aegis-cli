@@ -92,3 +92,10 @@ never faces an empty UI thrashing on "Cannot connect to API":
    is only ever downloaded explicitly on a connected host, never silently or in the enclave.
 
 **Verify:** `cmd/aegis::TestModelAutoServeResourceAware`. **Deps:** SERVE-004, MODEL-004, OC-019.
+
+**Fast-start guarantee (OC-023 refinement).** The launch never blocks on a full bench. A side-loaded
+model with no calibration is started immediately with a synthesized, host-shaped *seed* calibration
+(`internal/install.Plan`: threads ≈ physical cores, `-ngl` per target), persisted to
+`~/.config/aegis/calibration.json` so the background profiler / `bench.sh` refine the same file in
+place. The picker prefers the smallest GGUF (fastest to load). Time-to-first-token beats optimality;
+the rigorous resource-fit analysis runs *behind* the operator (the profiler), never in front.
