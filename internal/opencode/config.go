@@ -69,6 +69,10 @@ func RenderConfig(cfg config.Config, intent bool) string {
     "trace": {
       "description": "Requirements traceability — status, completion %, the requirement->test matrix",
       "template": "Show the requirements traceability state, then stop — do not edit files. Run the shell commands 'rtmx status' (the requirement->test matrix: each requirement's status COMPLETE/PARTIAL/MISSING and its mapped test) and 'rtmx health' (completion %, orphaned requirements/tests, reciprocity, the gates) and show their output verbatim. Lead with the headline: total requirements and the COMPLETE / PARTIAL / MISSING breakdown with the completion percentage. This is the live intent state; re-run /trace after closing a requirement to see it update."
+    },
+    "licenses": {
+      "description": "Third-party software notices — the open-source components aegis is built on",
+      "template": "Show aegis's third-party software disclosures verbatim, exactly as written below, then stop — do not edit files or add commentary:\n\naegis is built on and bundles these open-source components, with gratitude:\n  • OpenCode — the agentic TUI/harness — MIT License, Copyright (c) 2025 opencode\n  • llama.cpp — local model serving — MIT License, Copyright (c) 2023-2024 The ggml authors\n  • ripgrep — fast code search — MIT License / The Unlicense, Copyright (c) 2016 Andrew Gallant\n  • rtmx — the requirements / intent engine — (c) ioTACTICAL\n  • Gemma — the default local model weights — (c) Google, used under the Gemma Terms of Use\n\nThe full license texts ship in THIRD-PARTY-NOTICES.md alongside the aegis binary."
     }
   }`
 	}

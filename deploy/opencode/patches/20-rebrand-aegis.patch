@@ -487,3 +487,62 @@ index 16354a59f..c78465bd6 100644
  ]
  
  const INPUT_UNDO_TIP: Tip = (shortcuts) => press(shortcuts.inputUndo(), "to undo changes in your prompt")
+diff --git a/packages/tui/src/logo.ts b/packages/tui/src/logo.ts
+index a58a8cf99..12105b84e 100644
+--- a/packages/tui/src/logo.ts
++++ b/packages/tui/src/logo.ts
+@@ -1,6 +1,13 @@
++// aegis banner (OC-014). Bold uppercase block glyphs; the shimmer (logo.tsx) animates over them.
+ export const logo = {
+-  left: ["                   ", "█▀▀█ █▀▀█ █▀▀█ █▀▀▄", "█__█ █__█ █^^^ █__█", "▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀~~▀"],
+-  right: ["             ▄     ", "█▀▀▀ █▀▀█ █▀▀█ █▀▀█", "█___ █__█ █__█ █^^^", "▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀"],
++  left: [
++    "█████ █████ █████ ███ █████",
++    "█   █ █     █      █  █    ",
++    "█████ ███   █  ██  █  █████",
++    "█   █ █     █   █  █      █",
++    "█   █ █████ █████ ███ █████",
++  ],
++  right: ["", "", "", "", ""],
+ }
+ 
+ export const go = {
+diff --git a/packages/tui/src/routes/home.tsx b/packages/tui/src/routes/home.tsx
+index d4145e2d8..307119e82 100644
+--- a/packages/tui/src/routes/home.tsx
++++ b/packages/tui/src/routes/home.tsx
+@@ -10,6 +10,7 @@ import { useLocal } from "../context/local"
+ import { usePluginRuntime } from "../plugin/runtime"
+ import { useEditorContext } from "../context/editor"
+ import { useTerminalDimensions } from "@opentui/solid"
++import { useTheme } from "../context/theme"
+ import { useTuiConfig } from "../config"
+ import { HomeSessionDestinationProvider } from "./home/session-destination"
+ 
+@@ -24,6 +25,7 @@ export function Home() {
+   const sync = useSync()
+   const route = useRouteData("home")
+   const promptRef = usePromptRef()
++  const theme = useTheme()
+   const [ref, setRef] = createSignal<PromptRef | undefined>()
+   const args = useArgs()
+   const local = useLocal()
+@@ -77,12 +79,18 @@ export function Home() {
+             <Logo />
+           </pluginRuntime.Slot>
+         </box>
++        <box flexShrink={0} paddingTop={1}>
++          <text fg={theme().textMuted}>agentic coding in a closed enclave — local models, zero egress</text>
++        </box>
+         <box height={1} minHeight={0} flexShrink={1} />
+         <box width="100%" maxWidth={promptMaxWidth()} zIndex={1000} paddingTop={1} flexShrink={0}>
+           <pluginRuntime.Slot name="home_prompt" mode="replace" ref={bind}>
+             <Prompt ref={bind} right={<pluginRuntime.Slot name="home_prompt_right" />} placeholders={placeholder} />
+           </pluginRuntime.Slot>
+         </box>
++        <box width="100%" maxWidth={promptMaxWidth()} flexShrink={0} paddingTop={1} alignItems="center">
++          <text fg={theme().textMuted}>Built on OpenCode (MIT), llama.cpp (MIT), ripgrep (MIT), rtmx, and Gemma — type /licenses for full notices</text>
++        </box>
+         <pluginRuntime.Slot name="home_bottom" />
+         <box flexGrow={1} minHeight={0} />
+         <Toast />
