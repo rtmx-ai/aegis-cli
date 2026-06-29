@@ -50,16 +50,26 @@ unattended floors — the largest model that clears each. It writes the result t
 it never downloads, never serves, never edits the running calibration. **Test:** `internal/profile`
 unit tests (fit math + ranking) + `cmd/aegis` profile-command test.
 
+### PROFILE-002 — Micro-bench confirmation (authoritative tok/s)
+**`aegis profile --bench` shall** replace the *predicted* throughput of the model currently serving
+with a *measured* one: it warms the model, times a short generation, and computes the real decode rate
+(completion tokens ÷ wall-clock). It folds that authoritative figure back into the recommendation —
+marking the row measured and **re-picking the floors, so a model that benches below its floor steps
+down** to the next-best. With no model serving it guides the operator and falls back to prediction.
+**Test:** `internal/profile` (MeasureTokPerSec + ApplyMeasurement fold/step-down).
+
 ## 3. Scope
 
 **Iteration 1 (this build):** the probe (linux available-RAM + bandwidth sweep + reuse
 `internal/install.Detect`), the fit model (capacity + roofline; params/active derived from catalog
 size + id, KV by scale heuristic), the ranking, `aegis profile`, the cached `profile.json`.
 
-**Deferred (noted, not built):** micro-bench confirmation of the top candidate; auto-run-once-on-first-
-launch + a gentle TUI upgrade hint; exact KV from GGUF header parsing; darwin available-RAM + Metal
-bandwidth. The recommendation is **advisory** — the operator chooses; `pin-model.sh` + `bench.sh`
-remain the provisioning path.
+**Iteration 2 (this build):** `--bench` micro-bench confirmation (PROFILE-002) — authoritative tok/s
+for the running model, folded into the recommendation with floor step-down.
+
+**Deferred (noted, not built):** auto-run-once-on-first-launch + a gentle TUI upgrade hint; exact KV
+from GGUF header parsing; darwin available-RAM + Metal bandwidth. The recommendation is **advisory** —
+the operator chooses; `pin-model.sh` + `bench.sh` remain the provisioning path.
 
 ## 4. Acceptance
 

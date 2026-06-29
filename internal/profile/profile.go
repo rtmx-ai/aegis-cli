@@ -59,8 +59,10 @@ type ModelFit struct {
 	RequiredBytes      uint64  `json:"required_bytes"`
 	FitsCapacity       bool    `json:"fits_capacity"`
 	PredictedTokPerSec float64 `json:"predicted_tok_per_sec"`
-	FitsInteractive    bool    `json:"fits_interactive"`
-	FitsUnattended     bool    `json:"fits_unattended"`
+	// Measured is true when PredictedTokPerSec was replaced by a real micro-bench (authoritative).
+	Measured        bool `json:"measured"`
+	FitsInteractive bool `json:"fits_interactive"`
+	FitsUnattended  bool `json:"fits_unattended"`
 }
 
 // Recommendation is the profiler output: the probed host, every allowed model's fit (largest-first),
