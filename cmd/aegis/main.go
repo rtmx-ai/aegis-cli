@@ -537,7 +537,7 @@ func provisionGuidance() string {
 // id. If it cannot, it returns a resource-aware guidance error rather than opening an unusable UI.
 func ensureModelServing(cfg config.Config, out io.Writer) (stop func(), modelID string, err error) {
 	if endpointReady(cfg.Endpoint, 12*time.Second) {
-		return nil, "", nil // a model is already serving
+		return nil, servingModelID(), nil // already serving — label it with the catalog id (picker + hint)
 	}
 	calPath := resolveCalibrationPath()
 	if calPath == "" {
@@ -593,6 +593,18 @@ func ensureModelServing(cfg config.Config, out io.Writer) (stop func(), modelID 
 	}
 	stop()
 	return nil, "", fmt.Errorf("model did not become ready within 180s (check the model + calibration)")
+}
+
+// servingModelID resolves the catalog id of the model the active calibration points at, so an
+// already-running endpoint is labeled consistently with the profiler/catalog (not the ollama-tag
+// fallback). "" when no calibration or no catalog match.
+func servingModelID() string {
+	if cp := resolveCalibrationPath(); cp != "" {
+		if cal, err := serving.LoadCalibration(cp); err == nil {
+			return catalogIDForGGUF(cal.Model)
+		}
+	}
+	return ""
 }
 
 // catalogIDForGGUF returns the catalog model id whose GGUF file matches ggufPath's basename — so the
