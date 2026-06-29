@@ -9,7 +9,7 @@
       "sha256": "dcf179a91153e3a7ece792e48ef872180d9d6ef9b7677f0a0bd3e83cfe624d5e",
       "size": 14249045120,
       "recommended": true,
-      "note": "US-origin (Google) alternative \u2014 provenance-safe pick for controlled/ITAR work; SERVE-016 capability winner. Switch via scripts/pin-model.sh.",
+      "note": "US-origin (Google) alternative — provenance-safe pick for controlled/ITAR work; SERVE-016 capability winner. Switch via scripts/pin-model.sh.",
       "ollama": "gemma4-qat",
       "tuning": {
         "temperature": 1.0,
@@ -29,7 +29,7 @@
       "sha256": "2841aa314d916434860cfb8990347528dcdfe5c350dbcb9d1461dbee88ff2533",
       "size": 17665334432,
       "recommended": false,
-      "note": "Primary / bundle default (MODEL_REF) \u2014 coding-specialist MoE ~3B active, non-thinking agentic (SERVE-016 forward pick). PRC-origin (Alibaba): see docs/model-compliance.md.",
+      "note": "Primary / bundle default (MODEL_REF) — coding-specialist MoE ~3B active, non-thinking agentic (SERVE-016 forward pick). PRC-origin (Alibaba): see docs/model-compliance.md.",
       "ollama": "qwen3-coder",
       "tuning": {
         "temperature": 0.7,
@@ -61,7 +61,7 @@
       "sha256": "c1e659736d89ac1065fb495330fb824d94001974a4bfa78e7270e43476a8d940",
       "size": 8988110272,
       "recommended": false,
-      "note": "Mid-size dense coder \u2014 proven tool-calling.",
+      "note": "Mid-size dense coder — proven tool-calling.",
       "ollama": "qwen2.5-coder",
       "tuning": {
         "temperature": 0.7,
@@ -105,6 +105,46 @@
       "note": "Small + fast; weaker tool-calling (screening only).",
       "ollama": "phi4-mini",
       "origin": "US"
+    },
+    {
+      "id": "ornith-1.0-9b",
+      "name": "Ornith-1.0-9B (Q4_K_M)",
+      "file": "ornith-1.0-9b-Q4_K_M.gguf",
+      "url": "https://huggingface.co/deepreinforce-ai/Ornith-1.0-9B-GGUF/resolve/main/ornith-1.0-9b-Q4_K_M.gguf",
+      "sha256": "5720d1f671b4996481274fffe01868c3c36e87c135cc8538471cc7bd6087b106",
+      "size": 5629108704,
+      "recommended": false,
+      "note": "Agentic-coding fine-tune (DeepReinforce, self-scaffolding RL) on a Qwen 3.5 9B base — reported ~69 SWE-bench. Dense 9B (all params active per token). PRC base lineage (Qwen/Alibaba) — CN opt-in only; see docs/model-compliance.md.",
+      "ollama": "ornith-1.0-9b",
+      "tuning": {
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "top_k": 20,
+        "min_p": 0.0,
+        "repeat_penalty": 1.05,
+        "num_ctx": 16384
+      },
+      "origin": "CN"
+    },
+    {
+      "id": "ornith-1.0-35b",
+      "name": "Ornith-1.0-35B (Q4_K_M)",
+      "file": "ornith-1.0-35b-Q4_K_M.gguf",
+      "url": "https://huggingface.co/deepreinforce-ai/Ornith-1.0-35B-GGUF/resolve/main/ornith-1.0-35b-Q4_K_M.gguf",
+      "sha256": "ff25291b2599fb927a835e624d2b3540106af61761c3fa57ac4264046dbec002",
+      "size": 21166757760,
+      "recommended": false,
+      "note": "Agentic-coding fine-tune (DeepReinforce, self-scaffolding RL) on a Qwen 3.5 35B MoE base. MoE (active < total; the profiler estimates it as dense — conservative, use --bench for the real rate). PRC base lineage (Qwen/Alibaba) — CN opt-in only; see docs/model-compliance.md.",
+      "ollama": "ornith-1.0-35b",
+      "tuning": {
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "top_k": 20,
+        "min_p": 0.0,
+        "repeat_penalty": 1.05,
+        "num_ctx": 16384
+      },
+      "origin": "CN"
     }
   ]
 }
