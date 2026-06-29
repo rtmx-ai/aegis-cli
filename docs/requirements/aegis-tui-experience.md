@@ -140,3 +140,12 @@ auto-egress** — nothing fetches until the operator acts. Implemented as an OC-
   egressing on its own.
 - **Verify:** `test::TestHarnessProvisionScreen` (the patch wires the no-model screen + spawns
   provision). **Deps:** OC-024, OC-025, OC-017.
+
+### REQ-OC-026 — Interactive provisioning (keypress download, not a typed command)
+Refines OC-022. **The no-model provisioning screen shall** let the operator provision with a single
+keypress: a `[Download]` action spawns `aegis provision` (the OC-024 engine, via `AEGIS_BIN`) as a
+child process, parses its `downloaded X/Y GB (Z%)` lines into an **inline progress bar**, and on
+exit 0 **auto-transitions to the prompt** (the model now serves on loopback). `[Browse]` sources a
+local GGUF. **No auto-egress** — nothing spawns until the operator presses the key. OC-017 home.tsx
+patch. **Verify:** `test::TestHarnessProvisionInteractive` (patch wires spawn + progress parse +
+transition). **Deps:** OC-022, OC-024.

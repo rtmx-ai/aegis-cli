@@ -508,10 +508,19 @@ index a58a8cf99..12105b84e 100644
  
  export const go = {
 diff --git a/packages/tui/src/routes/home.tsx b/packages/tui/src/routes/home.tsx
-index d4145e2d8..0059c0726 100644
+index d4145e2d8..519a7cc24 100644
 --- a/packages/tui/src/routes/home.tsx
 +++ b/packages/tui/src/routes/home.tsx
-@@ -10,6 +10,7 @@ import { useLocal } from "../context/local"
+@@ -1,5 +1,7 @@
+ import { Prompt, type PromptRef } from "../component/prompt"
+-import { createEffect, createMemo, createSignal, onMount } from "solid-js"
++import { createEffect, createMemo, createSignal, Match, onMount, Switch } from "solid-js"
++import { spawn } from "node:child_process"
++import { useBindings } from "../keymap"
+ import { Logo } from "../component/logo"
+ import { useSync } from "../context/sync"
+ import { Toast } from "../ui/toast"
+@@ -10,6 +12,7 @@ import { useLocal } from "../context/local"
  import { usePluginRuntime } from "../plugin/runtime"
  import { useEditorContext } from "../context/editor"
  import { useTerminalDimensions } from "@opentui/solid"
@@ -519,7 +528,7 @@ index d4145e2d8..0059c0726 100644
  import { useTuiConfig } from "../config"
  import { HomeSessionDestinationProvider } from "./home/session-destination"
  
-@@ -24,6 +25,7 @@ export function Home() {
+@@ -24,6 +27,7 @@ export function Home() {
    const sync = useSync()
    const route = useRouteData("home")
    const promptRef = usePromptRef()
@@ -527,18 +536,71 @@ index d4145e2d8..0059c0726 100644
    const [ref, setRef] = createSignal<PromptRef | undefined>()
    const args = useArgs()
    const local = useLocal()
-@@ -77,12 +79,25 @@ export function Home() {
+@@ -37,6 +41,40 @@ export function Home() {
+   })
+   let sent = false
+ 
++  // OC-026: interactive provisioning. On the no-model screen, Ctrl+D spawns `aegis provision`
++  // (the OC-024 engine, located via AEGIS_BIN), streams its progress inline, and the panel clears
++  // once the model is serving — so the operator never leaves the TUI. No spawn until the keypress.
++  const [provPhase, setProvPhase] = createSignal<"idle" | "running" | "done" | "error">("idle")
++  const [provLine, setProvLine] = createSignal("starting…")
++  function startProvision() {
++    if (provPhase() !== "idle") return
++    setProvPhase("running")
++    setProvLine("starting…")
++    const child = spawn(process.env.AEGIS_BIN || "aegis", ["provision"], { stdio: ["ignore", "pipe", "pipe"] })
++    let buffer = ""
++    const onData = (chunk: Buffer) => {
++      buffer += chunk.toString()
++      const parts = buffer.split("\n")
++      buffer = parts.pop() ?? ""
++      for (const raw of parts) {
++        const line = raw.replace(/^aegis: provision: /, "").trim()
++        if (!line) continue
++        const m = line.match(/^downloaded [\d.]+\/[\d.]+ GB \((\d+)%\)/)
++        setProvLine(m ? `downloading the model… ${m[1]}%` : line)
++      }
++    }
++    child.stdout?.on("data", onData)
++    child.stderr?.on("data", onData)
++    child.on("close", (code) => setProvPhase(code === 0 ? "done" : "error"))
++    child.on("error", () => setProvPhase("error"))
++  }
++  useBindings(() => ({
++    enabled: () => process.env.AEGIS_NO_MODEL === "1" && provPhase() === "idle",
++    bindings: [
++      { key: "ctrl+d", desc: "Download the best-fit model", group: "Provisioning", cmd: () => startProvision() },
++    ],
++  }))
++
+   onMount(() => {
+     editor.clearSelection()
+   })
+@@ -77,12 +115,37 @@ export function Home() {
              <Logo />
            </pluginRuntime.Slot>
          </box>
 +        <box flexShrink={0} paddingTop={1}>
 +          <text fg={theme.textMuted}>agentic coding in a closed enclave — local models, zero egress</text>
 +        </box>
-+        {process.env.AEGIS_NO_MODEL === "1" && (
++        {process.env.AEGIS_NO_MODEL === "1" && provPhase() !== "done" && (
 +          <box flexShrink={0} paddingTop={1} flexDirection="column" alignItems="center">
-+            <text fg={theme.text}>No model loaded — provision one to begin</text>
-+            <text fg={theme.primary}>{process.env.AEGIS_BEST_FIT || "no model fits this host — browse a local GGUF"}</text>
-+            <text fg={theme.textMuted}>Press ! then run  aegis provision  to download + serve the best fit, or  aegis provision --browse path.gguf  for a local file</text>
++            <Switch>
++              <Match when={provPhase() === "running"}>
++                <text fg={theme.primary}>Provisioning the model…</text>
++                <text fg={theme.textMuted}>{provLine()}</text>
++              </Match>
++              <Match when={provPhase() === "error"}>
++                <text fg={theme.text}>Provisioning failed.</text>
++                <text fg={theme.textMuted}>Type  !aegis provision  to retry, or  !aegis provision --browse path.gguf  for a local file</text>
++              </Match>
++              <Match when={true}>
++                <text fg={theme.text}>No model loaded — provision one to begin</text>
++                <text fg={theme.primary}>{process.env.AEGIS_BEST_FIT || "no model fits this host — browse a local GGUF"}</text>
++                <text fg={theme.textMuted}>Press  Ctrl+D  to download + serve the best fit · or type  !aegis provision --browse path.gguf  for a local file</text>
++              </Match>
++            </Switch>
 +          </box>
 +        )}
          <box height={1} minHeight={0} flexShrink={1} />
