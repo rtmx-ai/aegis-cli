@@ -72,3 +72,23 @@ never touching `setup.sh`. *Test:* `test::TestInTuiModelProvision`. *Depends on:
   Together they make the bundled TUI *the* aegis product, not a configured OpenCode.
 - `OC-021`/`OC-022` are UX-heavy; expect them to decompose (PROPOSE) into atomic children when
   claimed.
+
+### REQ-OC-023 — Auto model orchestration (bare `aegis` just works)
+
+**The bare `aegis` command shall** bring up a usable model before opening the TUI, so the operator
+never faces an empty UI thrashing on "Cannot connect to API":
+
+1. **Preflight** the model endpoint; if a model already answers on loopback, open the TUI against it.
+2. **Auto-serve.** Otherwise resolve a host calibration (`$AEGIS_CALIBRATION`, `~/.config/aegis`,
+   repo default) + its model GGUF, launch `llama-server` in the background with visible load
+   progress, wait for readiness, then open the TUI — labelling the picker with the *actual* served
+   model id, never the `local-moe` placeholder.
+3. **Resource-aware.** The model served is the one chosen at provision time by the resource-aware
+   plan (`internal/install.Plan` picks the largest envelope the host can hold by RAM: 26B-A4B
+   `< 24 GiB`, 35B-A3B `< 56 GiB`, larger `≥ 56 GiB`). **Not every model fits every system.**
+4. **Guide, never thrash.** If no model can be brought up, print resource-aware provisioning
+   guidance naming the host's best-fit tier + how to download (connected host) or source a local
+   GGUF, then calibrate — and exit, rather than open an unusable UI. The air-gap rule holds: a model
+   is only ever downloaded explicitly on a connected host, never silently or in the enclave.
+
+**Verify:** `cmd/aegis::TestModelAutoServeResourceAware`. **Deps:** SERVE-004, MODEL-004, OC-019.

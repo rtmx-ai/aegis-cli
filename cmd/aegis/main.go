@@ -381,6 +381,29 @@ func cmdTUI(stdout, stderr io.Writer) int {
 	if err != nil {
 		cfg = config.Default()
 	}
+	// Don't spin up a model if the harness isn't even present: a cheap opencode-resolve first means a
+	// missing OpenCode guides immediately, and bare `aegis` never loads a 14 GB model just to fail.
+	if _, rerr := opencode.ResolveBinary(""); rerr != nil {
+		fmt.Fprintln(stderr, opencode.MissingGuidance)
+		return 1
+	}
+	// OC-023 ("Auto"): bring the recommended model up before opening the UI, so bare `aegis` just
+	// works instead of opening an empty UI that thrashes on "Cannot connect to API". If no model can
+	// be resolved, guide the operator to provision one rather than launching an unusable TUI.
+	stop, modelID, serr := ensureModelServing(cfg, stderr)
+	if serr != nil {
+		fmt.Fprintf(stderr, "aegis: %v\n", serr)
+		return 1
+	}
+	if stop != nil {
+		defer stop()
+	}
+	switch { // never leave the picker on the "local-moe" placeholder
+	case modelID != "":
+		cfg.ModelID = modelID // the actual resource-aware-selected model being served
+	case cfg.ModelID == "":
+		cfg.ModelID = config.DefaultModelForTarget(cfg.Target)
+	}
 	if err := opencode.Launch(cfg, "", ""); err != nil {
 		if opencode.IsMissing(err) {
 			fmt.Fprintln(stderr, opencode.MissingGuidance)
@@ -390,6 +413,130 @@ func cmdTUI(stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// endpointReady reports whether the model endpoint answers a loopback completion within timeout.
+func endpointReady(endpoint string, timeout time.Duration) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return servingPreflight(endpoint, "", "")(ctx) == nil
+}
+
+// resolveCalibrationPath finds a host calibration: $AEGIS_CALIBRATION, the user config dir, then
+// the repo default. Returns "" when none exists.
+func resolveCalibrationPath() string {
+	if p := os.Getenv("AEGIS_CALIBRATION"); p != "" {
+		return p
+	}
+	var cands []string
+	if home, err := os.UserHomeDir(); err == nil {
+		cands = append(cands, filepath.Join(home, ".config", "aegis", "calibration.json"))
+	}
+	cands = append(cands, "deploy/llama-server/calibration.json")
+	for _, c := range cands {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return ""
+}
+
+// provisionGuidance is the operator-facing message when no model can be brought up (OC-023). It is
+// resource-aware: aegis serves the largest model the host can hold responsively (internal/install
+// Plan picks the envelope by RAM) — not every model fits every system. The air-gap rule forbids
+// silent downloads, so we tell the operator how to provision the right-sized model.
+func provisionGuidance() string {
+	caps := install.Detect()
+	plan := install.Plan(caps)
+	return fmt.Sprintf("no local model is provisioned.\n"+
+		"  This host (%d GiB RAM, %d cores) best fits the %s model envelope — aegis serves the\n"+
+		"  largest model your system can hold responsively; not every model fits every system.\n"+
+		"  Provision a model in that envelope, then re-run aegis:\n"+
+		"    • download (connected host):  scripts/fetch-model.sh <catalog-id>\n"+
+		"    • or source a local GGUF:     scripts/pin-model.sh <path-to-model.gguf>\n"+
+		"    • then calibrate this host:    scripts/bench.sh\n"+
+		"  (US-origin gemma-4-26b-a4b is the default that fits the minimum envelope.)",
+		caps.TotalRAMGB(), caps.PhysicalCPU, plan.Tier)
+}
+
+// ensureModelServing makes a model available on cfg.Endpoint before the TUI opens (OC-023, "Auto").
+// If one is already serving it returns immediately. Otherwise it resolves a calibration + its model
+// GGUF — the resource-aware model chosen at provision time (internal/install Plan) — and brings
+// llama-server up in the background, streaming progress, returning a stop func + the served model
+// id. If it cannot, it returns a resource-aware guidance error rather than opening an unusable UI.
+func ensureModelServing(cfg config.Config, out io.Writer) (stop func(), modelID string, err error) {
+	if endpointReady(cfg.Endpoint, 12*time.Second) {
+		return nil, "", nil // a model is already serving
+	}
+	calPath := resolveCalibrationPath()
+	if calPath == "" {
+		return nil, "", fmt.Errorf("%s", provisionGuidance())
+	}
+	cal, lerr := serving.LoadCalibration(calPath)
+	if lerr != nil {
+		return nil, "", fmt.Errorf("calibration %s: %w", calPath, lerr)
+	}
+	if cal.Model == "" {
+		return nil, "", fmt.Errorf("%s", provisionGuidance())
+	}
+	if _, serr := os.Stat(cal.Model); serr != nil {
+		return nil, "", fmt.Errorf("the calibrated model is not present (%s).\n%s", cal.Model, provisionGuidance())
+	}
+	fmt.Fprintf(out, "aegis: no model running — bringing up %s (loopback)\n", filepath.Base(cal.Model))
+	cmd, berr := buildServeCommand(calPath)
+	if berr != nil {
+		return nil, "", berr
+	}
+	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard // the model loads in the background
+	if startErr := cmd.Start(); startErr != nil {
+		return nil, "", fmt.Errorf("launch model server: %w", startErr)
+	}
+	stop = func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		}
+	}
+	fmt.Fprint(out, "aegis: loading model ")
+	deadline := time.Now().Add(180 * time.Second)
+	for time.Now().Before(deadline) {
+		if endpointReady(cfg.Endpoint, 4*time.Second) {
+			fmt.Fprintln(out, "— ready")
+			return stop, catalogIDForGGUF(cal.Model), nil
+		}
+		fmt.Fprint(out, ".")
+		time.Sleep(2 * time.Second)
+	}
+	stop()
+	return nil, "", fmt.Errorf("model did not become ready within 180s (check the model + calibration)")
+}
+
+// catalogIDForGGUF returns the catalog model id whose GGUF file matches ggufPath's basename — so the
+// picker shows the real, resource-aware-selected model rather than the "local-moe" placeholder — or
+// "" when the catalog or a match is absent.
+func catalogIDForGGUF(ggufPath string) string {
+	base := filepath.Base(ggufPath)
+	for _, p := range catalogCandidates() {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var cat struct {
+			Models []struct {
+				ID   string `json:"id"`
+				File string `json:"file"`
+			} `json:"models"`
+		}
+		if json.Unmarshal(b, &cat) != nil {
+			continue
+		}
+		for _, m := range cat.Models {
+			if m.File == base {
+				return m.ID
+			}
+		}
+	}
+	return ""
 }
 
 // cmdRun implements `aegis run <prompt>` (SURFACE-002 / BENCH-001): a one-shot
