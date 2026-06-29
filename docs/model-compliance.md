@@ -1,7 +1,7 @@
 # Model provenance + compliance posture
 
-How to think about model provenance — the current bundle default is the PRC-origin model
-(Qwen), with a US-origin alternative (gemma) one command away — in a defense/ITAR context.
+How to think about model provenance — the bundle default is the US-origin model
+(Gemma); a PRC-origin model (Qwen) is opt-in only — in a defense/ITAR context.
 Companion to [`docs/models.md`](models.md).
 
 > **Not legal advice.** Compliance is contract- and agency-specific, and the rules on
@@ -61,20 +61,22 @@ What does **not** go away:
 - **Policy / optics / contract terms** — many programs will decline a PRC-origin model
   regardless of how it is run.
 
-## Posture (bundle default + the controlled-work switch)
+## Posture (US-origin default; non-US is opt-in)
 
-- **`MODEL_REF` defaults to Qwen3-Coder-30B-A3B (PRC-origin, Alibaba)** — chosen for agentic
-  capability (the SERVE-016 forward pick: purpose-built for tool use, non-thinking). This is
-  the right default for development and non-controlled work.
-- **Gemma-4-26B-A4B (US-origin, Google) is the provenance-safe switch** for controlled/ITAR
-  work — one command away (`scripts/pin-model.sh ~/models/gemma-…gguf`), and also the
-  SERVE-016 capability winner. See [`docs/models.md`](models.md).
-- **The default does not fail safe.** Because the bundle default is now PRC-origin, a
-  controlled deployment must switch to gemma **explicitly** — it no longer gets a US-origin
-  model by default. Put that switch on the deployment checklist for any controlled program.
-- **Rule of thumb:** treat a Chinese-origin model as a compliance item to **clear explicitly
-  per contract**, not something 889 settles; switch to the non-PRC model (gemma) for
-  controlled work.
+- **`MODEL_REF` defaults to Gemma-4-26B-A4B (US-origin, Google)** — the provenance-safe default
+  for a defense/ITAR posture, and the SERVE-016 capability winner. A controlled deployment gets a
+  US-origin model with no extra step.
+- **The default fails safe.** The shipped origin policy is **US-only**: CN (e.g. Qwen/DeepSeek)
+  and every other non-US origin are denied unless the operator explicitly opts in. The bundle
+  default and the policy agree — there is no PRC-origin model anywhere in the default path
+  (model, gate, *or* the OpenCode picker whitelist, OC-013).
+- **Qwen3-Coder-30B-A3B (PRC-origin, Alibaba) is opt-in only** — the SERVE-016 agentic-capability
+  pick, available for development / non-controlled work, but only after a deliberate, auditable
+  choice: add `"CN": "allow"` to `origin-policy.json` **and** pin it (`scripts/pin-model.sh
+  ~/models/Qwen…gguf`). We asked the Qwen/DeepSeek questions to map the ITAR / supply-chain
+  envelope; allowing a Chinese-origin model is never the default.
+- **Rule of thumb:** a non-US-origin model is a compliance item to **clear explicitly per
+  contract** before opting in — not something 889 settles.
 
 ## Enforcement (MODEL-005..008)
 
@@ -83,11 +85,12 @@ The posture above is **enforced**, not just documented:
 - **Origin metadata** — every catalog model records an ISO `origin` (`deploy/models/catalog.json`).
 - **Policy** — a per-country allow/deny file (`deploy/models/origin-policy.json`,
   `AEGIS_ORIGIN_POLICY`-overridable) that the operator controls. Shipped **default-deny** with
-  `US`+`CN` allowed: an *un-classified* origin is rejected until reviewed. Allowing a denied
-  origin is an explicit, version-controllable edit — no env bypass.
+  only `US` allowed: CN and every other non-US origin are rejected until the operator opts in.
+  Allowing a denied origin is an explicit, version-controllable edit — no env bypass.
 - **Gate** — `aegis verify-env --check-origin` and `make origin-gate` (wired into `ci-full`)
-  fail when the pinned model's (`MODEL_REF`) origin is not allowed. For a controlled
-  deployment, set `CN: deny` → the gate fails for the qwen default → forces the switch to gemma.
+  fail when the pinned model's (`MODEL_REF`) origin is not allowed. The default ships gemma (US)
+  and passes; opting in to a CN model means adding `"CN": "allow"` AND pinning it — a deliberate,
+  gated, auditable choice, never the default.
 - **Init prompt** — `setup` asks per-country (the catalog's origins) and writes the policy at
   init; non-interactive runs keep the shipped default.
 

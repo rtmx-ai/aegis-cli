@@ -100,7 +100,7 @@ const (
 // CPU/GPU default model ids (Ollama tags) used when a run names no model.
 const (
 	defaultModelLinuxCPU    = "gemma4-qat:32k"
-	defaultModelDarwinMetal = "qwen3-coder:30b"
+	defaultModelDarwinMetal = "gemma4-qat:32k"
 )
 
 // DefaultModelForTarget returns the recommended local model id for a serving target when a

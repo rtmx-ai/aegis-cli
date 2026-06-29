@@ -137,12 +137,12 @@ func TestTuningForGGUF(t *testing.T) {
 }
 
 // TestDefaultModelForTarget covers the target-aware default model (RUNQ-004): gemma is the
-// CPU default (the proven CPU completer), qwen3-coder the darwin-metal default.
+// CPU default (the proven CPU completer), gemma the default on both targets (US-only policy).
 func TestDefaultModelForTarget(t *testing.T) {
 	if m := DefaultModelForTarget(TargetLinuxCPU); m != "gemma4-qat:32k" {
 		t.Errorf("linux-cpu default = %q, want gemma4-qat:32k (the CPU-capable completer)", m)
 	}
-	if m := DefaultModelForTarget(TargetDarwinMetal); m != "qwen3-coder:30b" {
-		t.Errorf("darwin-metal default = %q, want qwen3-coder:30b", m)
+	if m := DefaultModelForTarget(TargetDarwinMetal); m != "gemma4-qat:32k" {
+		t.Errorf("darwin-metal default = %q, want gemma4-qat:32k", m)
 	}
 }

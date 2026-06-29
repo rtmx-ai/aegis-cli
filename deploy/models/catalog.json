@@ -8,7 +8,7 @@
       "url": "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF/resolve/main/gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf",
       "sha256": "dcf179a91153e3a7ece792e48ef872180d9d6ef9b7677f0a0bd3e83cfe624d5e",
       "size": 14249045120,
-      "recommended": false,
+      "recommended": true,
       "note": "US-origin (Google) alternative \u2014 provenance-safe pick for controlled/ITAR work; SERVE-016 capability winner. Switch via scripts/pin-model.sh.",
       "ollama": "gemma4-qat",
       "tuning": {
@@ -28,7 +28,7 @@
       "url": "https://huggingface.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/resolve/main/Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf",
       "sha256": "2841aa314d916434860cfb8990347528dcdfe5c350dbcb9d1461dbee88ff2533",
       "size": 17665334432,
-      "recommended": true,
+      "recommended": false,
       "note": "Primary / bundle default (MODEL_REF) \u2014 coding-specialist MoE ~3B active, non-thinking agentic (SERVE-016 forward pick). PRC-origin (Alibaba): see docs/model-compliance.md.",
       "ollama": "qwen3-coder",
       "tuning": {

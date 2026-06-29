@@ -76,6 +76,7 @@ export OPENCODE_TELEMETRY=0 OPENCODE_AUTOUPDATE=0 OPENCODE_DISABLE_SHARE=1 OPENC
 # catalog — so the embedded OPENCODE_MODELS_DEV is our whitelist, and the picker shows no cloud
 # models. OC-013 populates the whitelist from the origin-approved policy; the config's `local`
 # provider (deploy/opencode/opencode.json) supplies the runtime model.
+python3 scripts/gen-model-whitelist.py 2>/dev/null || true   # OC-013: whitelist from origin policy
 export MODELS_DEV_API_JSON="$REPO_ROOT/deploy/opencode/models-whitelist.json"
 
 # Build the CLASSIC CLI (packages/opencode) — it ships the headless `opencode run`

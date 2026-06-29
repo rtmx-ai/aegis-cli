@@ -1,5 +1,5 @@
 {
-  "name": "Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf",
-  "sha256": "2841aa314d916434860cfb8990347528dcdfe5c350dbcb9d1461dbee88ff2533",
-  "note": "Pinned model GGUF. Side-load only — never fetched at runtime. Written by scripts/pin-model.sh."
+  "name": "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf",
+  "sha256": "dcf179a91153e3a7ece792e48ef872180d9d6ef9b7677f0a0bd3e83cfe624d5e",
+  "note": "Pinned model GGUF. Side-load only \u2014 never fetched at runtime. Written by scripts/pin-model.sh."
 }
