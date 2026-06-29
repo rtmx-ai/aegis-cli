@@ -205,3 +205,13 @@ func modelDownloadDir() string {
 	}
 	return "models"
 }
+
+// bestFitCard renders the best-fitting US model as a one-line card for the in-TUI provisioning screen
+// (AEGIS_BEST_FIT, OC-022), or "" when nothing fits this host.
+func bestFitCard() string {
+	spec, err := resolveProvisionSpec("")
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%s · US-origin · ~%.0f GB", spec.ID, float64(spec.Size)/1e9)
+}

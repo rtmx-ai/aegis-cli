@@ -416,6 +416,7 @@ func cmdTUI(stdout, stderr io.Writer) int {
 		// OC-025: no model is NOT fatal — launch the TUI in the no-model state (the OC-022 screen
 		// consumes AEGIS_NO_MODEL to render in-app provisioning) rather than exiting to the shell.
 		_ = os.Setenv("AEGIS_NO_MODEL", "1")
+		_ = os.Setenv("AEGIS_BEST_FIT", bestFitCard()) // OC-022: the in-TUI screen shows this
 		fmt.Fprintln(stderr, "aegis: no model yet — provision one in the TUI (or run `aegis provision`)")
 	}
 	if stop != nil {
