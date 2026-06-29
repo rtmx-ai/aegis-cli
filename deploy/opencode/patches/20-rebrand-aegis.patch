@@ -508,7 +508,7 @@ index a58a8cf99..12105b84e 100644
  
  export const go = {
 diff --git a/packages/tui/src/routes/home.tsx b/packages/tui/src/routes/home.tsx
-index d4145e2d8..519a7cc24 100644
+index d4145e2d8..b3de2103f 100644
 --- a/packages/tui/src/routes/home.tsx
 +++ b/packages/tui/src/routes/home.tsx
 @@ -1,5 +1,7 @@
@@ -516,7 +516,7 @@ index d4145e2d8..519a7cc24 100644
 -import { createEffect, createMemo, createSignal, onMount } from "solid-js"
 +import { createEffect, createMemo, createSignal, Match, onMount, Switch } from "solid-js"
 +import { spawn } from "node:child_process"
-+import { useBindings } from "../keymap"
++import { useBindings, OPENCODE_BASE_MODE } from "../keymap"
  import { Logo } from "../component/logo"
  import { useSync } from "../context/sync"
  import { Toast } from "../ui/toast"
@@ -536,7 +536,7 @@ index d4145e2d8..519a7cc24 100644
    const [ref, setRef] = createSignal<PromptRef | undefined>()
    const args = useArgs()
    const local = useLocal()
-@@ -37,6 +41,40 @@ export function Home() {
+@@ -37,6 +41,42 @@ export function Home() {
    })
    let sent = false
  
@@ -568,16 +568,18 @@ index d4145e2d8..519a7cc24 100644
 +    child.on("error", () => setProvPhase("error"))
 +  }
 +  useBindings(() => ({
++    mode: OPENCODE_BASE_MODE, // OC-027: without the active mode the bind sat below the prompt's keys and never fired
 +    enabled: () => process.env.AEGIS_NO_MODEL === "1" && provPhase() === "idle",
 +    bindings: [
-+      { key: "ctrl+d", desc: "Download the best-fit model", group: "Provisioning", cmd: () => startProvision() },
++      // ctrl+g, not ctrl+d: ctrl+d is input-delete (and app-exit on an empty prompt).
++      { key: "ctrl+g", desc: "Download the best-fit model", group: "Provisioning", cmd: () => startProvision() },
 +    ],
 +  }))
 +
    onMount(() => {
      editor.clearSelection()
    })
-@@ -77,12 +115,37 @@ export function Home() {
+@@ -77,12 +117,37 @@ export function Home() {
              <Logo />
            </pluginRuntime.Slot>
          </box>
@@ -598,7 +600,7 @@ index d4145e2d8..519a7cc24 100644
 +              <Match when={true}>
 +                <text fg={theme.text}>No model loaded — provision one to begin</text>
 +                <text fg={theme.primary}>{process.env.AEGIS_BEST_FIT || "no model fits this host — browse a local GGUF"}</text>
-+                <text fg={theme.textMuted}>Press  Ctrl+D  to download + serve the best fit · or type  !aegis provision --browse path.gguf  for a local file</text>
++                <text fg={theme.textMuted}>Press  Ctrl+G  to download + serve the best fit · or type  !aegis provision --browse path.gguf  for a local file</text>
 +              </Match>
 +            </Switch>
 +          </box>
