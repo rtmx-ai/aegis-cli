@@ -40,6 +40,10 @@ type ModelSpec struct {
 	File      string `json:"file"`
 	SizeBytes uint64 `json:"size"`
 	Origin    string `json:"origin"`
+	// ActiveParams is the MoE active-parameter count per token, when the catalog states it. It is
+	// authoritative for throughput (bytes-read/token); 0 means derive from the id's `aNb` hint, else
+	// treat as dense (active = total). Use it for MoE models whose id carries no active-param hint.
+	ActiveParams uint64 `json:"active_params"`
 }
 
 // Floors are the per-mode "acceptable tok/s" bars: interactive (the TUI) is higher than unattended
@@ -235,6 +239,9 @@ func kvBytes(totalParams uint64, ctxTokens int) uint64 {
 func Fit(spec ModelSpec, p HostProfile, ctxTokens int, f Floors) ModelFit {
 	bpp := bytesPerParam(spec.File)
 	total, active := deriveParams(spec.ID, spec.SizeBytes, bpp)
+	if spec.ActiveParams > 0 {
+		active = spec.ActiveParams // explicit catalog active_params — authoritative for MoE
+	}
 
 	required := spec.SizeBytes + kvBytes(total, ctxTokens) + computeBufferBytes
 	usable := uint64(0)

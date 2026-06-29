@@ -19,7 +19,8 @@
         "num_ctx": 16384,
         "think": false
       },
-      "origin": "US"
+      "origin": "US",
+      "active_params": 4000000000
     },
     {
       "id": "qwen3-coder-30b-a3b",
@@ -39,7 +40,8 @@
         "repeat_penalty": 1.05,
         "num_ctx": 16384
       },
-      "origin": "CN"
+      "origin": "CN",
+      "active_params": 3000000000
     },
     {
       "id": "laguna-xs.2",
@@ -92,7 +94,8 @@
         "num_ctx": 16384,
         "think": false
       },
-      "origin": "CN"
+      "origin": "CN",
+      "active_params": 3000000000
     },
     {
       "id": "phi-4-mini",
@@ -134,7 +137,7 @@
       "sha256": "ff25291b2599fb927a835e624d2b3540106af61761c3fa57ac4264046dbec002",
       "size": 21166757760,
       "recommended": false,
-      "note": "Agentic-coding fine-tune (DeepReinforce, self-scaffolding RL) on a Qwen 3.5 35B MoE base. MoE (active < total; the profiler estimates it as dense — conservative, use --bench for the real rate). PRC base lineage (Qwen/Alibaba) — CN opt-in only; see docs/model-compliance.md.",
+      "note": "Agentic-coding fine-tune (DeepReinforce, self-scaffolding RL) on a Qwen 3.5 35B MoE base — MoE ~3B active (estimated from the Qwen 35B-A3B base; --bench to confirm). PRC base lineage (Qwen/Alibaba) — CN opt-in only; see docs/model-compliance.md.",
       "ollama": "ornith-1.0-35b",
       "tuning": {
         "temperature": 0.7,
@@ -144,7 +147,8 @@
         "repeat_penalty": 1.05,
         "num_ctx": 16384
       },
-      "origin": "CN"
+      "origin": "CN",
+      "active_params": 3000000000
     }
   ]
 }

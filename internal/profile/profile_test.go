@@ -54,3 +54,17 @@ func TestProbeSmoke(t *testing.T) {
 		t.Error("available RAM must not exceed total")
 	}
 }
+
+// TestFitUsesActiveParams: an explicit catalog active_params (MoE) overrides the dense estimate that
+// an id without an `aNb` hint would otherwise get — predicting a realistically faster decode rate.
+func TestFitUsesActiveParams(t *testing.T) {
+	p := HostProfile{TotalRAMBytes: 64 << 30, AvailableRAMBytes: 60 << 30, MemBandwidthBps: 20 << 30}
+	dense := ModelSpec{ID: "moe-35b", File: "x-Q4_K_M.gguf", SizeBytes: 20 << 30, Origin: "US"}
+	moe := dense
+	moe.ActiveParams = 3_000_000_000
+	fd := Fit(dense, p, 16384, DefaultFloors())
+	fm := Fit(moe, p, 16384, DefaultFloors())
+	if fm.PredictedTokPerSec <= fd.PredictedTokPerSec {
+		t.Errorf("explicit active_params must predict faster than dense: moe=%.1f dense=%.1f", fm.PredictedTokPerSec, fd.PredictedTokPerSec)
+	}
+}
