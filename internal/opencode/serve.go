@@ -51,6 +51,11 @@ func airgapEnv(cfg config.Config, intent bool) []string {
 		// is supplied inline via the rendered provider config, so the catalog is
 		// never needed.
 		"OPENCODE_DISABLE_MODELS_FETCH=1",
+		// OC-018 (ITAR): OPENCODE_PURE gates npm.ts's external provider/plugin install, so a
+		// cloud provider SDK (@ai-sdk/anthropic, …) can never be fetched + loaded even if one is
+		// hand-configured — cloud is unreachable, not just absent from the picker (OC-012). The
+		// local provider (@ai-sdk/openai-compatible) is bundled, so it is unaffected.
+		"OPENCODE_PURE=1",
 		"OPENAI_BASE_URL=" + cfg.Endpoint + "/v1",
 		"OPENAI_API_KEY=not-needed-loopback",
 		"OPENCODE_CONFIG_CONTENT=" + RenderConfig(cfg, intent),
