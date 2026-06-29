@@ -1,28 +1,28 @@
-# bundle-matrix — multi-platform Homebrew bundle VALIDATION harness (REL-009/010).
+# bundle-matrix — builds the per-platform Homebrew bundle tarballs (aegis + OpenCode + llama-server +
+# the platform's pinned ripgrep) on NATIVE runners, one job per OS/arch. REL-009/010.
 #
-# STATUS: release.yml now HAS the folded bundle matrix (REL-010) — on a `v*` tag it builds these
-# tarballs and the `release` job publishes them. THIS workflow is the standalone validation
-# harness: manually triggered (workflow_dispatch) so you can confirm the macOS/arm builds
-# actually succeed on real runners BEFORE cutting a tag (release.yml's bundle job mirrors it,
-# both calling scripts/build-platform-bundle.sh). Run this first; tag once it's green.
-#
-# REMAINING to validate (do NOT mark REL-010 done until confirmed on real runners):
-#   1. [DONE] per-platform ripgrep: build-platform-bundle.sh stages + verifies the platform's rg.
-#   2. [DONE] llama-server builds with Metal on macos-latest (darwin-arm64) — validated green.
-#   3. [DONE] ubuntu-24.04-arm validated green. macos-13 (Intel/darwin-amd64) DROPPED — those
-#      runners never allocate (stuck queued, GitHub is winding Intel macOS down) and would hang
-#      the release's needs:bundle. Apple Silicon covers current Macs; fill-formula prunes
-#      darwin-amd64. Re-add via a self-hosted Intel runner if needed.
-#   4. [DONE] signing: release.sh ingests the matrix tarballs into dist/ before SHA256SUMS, so
-#      they are covered by the manifest + the offline signature in the single release job.
-name: bundle-matrix (DRAFT)
+# This is the CANONICAL bundle build, reused two ways — one definition, one script
+# (scripts/build-platform-bundle.sh), no duplication with release.yml:
+#   - release.yml CALLS it (workflow_call) on a `v*` tag, then ingests the tarballs into the signed,
+#     published release + the Homebrew formula.
+#   - Run it STANDALONE (workflow_dispatch) to confirm the macOS/arm builds succeed on real runners
+#     before cutting a tag.
+
+name: bundle-matrix
 
 on:
+  workflow_call:
+    inputs:
+      version:
+        description: "version / ref name (e.g. v1.2.0)"
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       version:
         description: "version, no v prefix (e.g. 0.3.0)"
         required: true
+        type: string
 
 permissions:
   contents: read
@@ -36,6 +36,9 @@ jobs:
           - { os: ubuntu-latest,    goos: linux,  goarch: amd64 }
           - { os: ubuntu-24.04-arm, goos: linux,  goarch: arm64 }
           - { os: macos-latest,     goos: darwin, goarch: arm64 }
+          # macos-13 (Intel/darwin-amd64) dropped: those runners never allocate (stuck queued, GitHub
+          # is winding Intel macOS down) and would hang release's needs:bundle. fill-formula prunes
+          # darwin-amd64; Apple Silicon covers current Macs. Re-add via a self-hosted Intel runner.
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -53,15 +56,13 @@ jobs:
           curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.14"
           echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
 
-      # One script builds the full bundle (aegis + OpenCode + llama-server + the platform's
-      # pinned rg) — the SAME script release.yml's matrix calls, so the per-platform build logic
-      # is DRY (REL-009). Each step inside (build-opencode/build-llama/stage-ripgrep/build-bundle)
-      # is independently tested.
+      # One script builds the full bundle (aegis + OpenCode + llama-server + the platform's pinned
+      # rg) — each step inside (build-opencode/build-llama/stage-ripgrep/build-bundle) is tested.
       - name: Build the platform bundle
         run: scripts/build-platform-bundle.sh "${{ matrix.goos }}" "${{ matrix.goarch }}" "${{ inputs.version }}"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: aegis-${{ inputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/aegis-${{ inputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+          name: bundle-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/aegis-*.tar.gz
           if-no-files-found: error

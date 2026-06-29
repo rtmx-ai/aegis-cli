@@ -21,13 +21,16 @@ func TestV1ReleaseManifest(t *testing.T) {
 			t.Errorf("release.sh must produce %s", want)
 		}
 	}
-	// Bundled OpenCode per platform comes from the matrix calling build-platform-bundle.sh, and
-	// the release runner installs minisign so the manifest is actually signed.
+	// Bundled OpenCode per platform comes from release.yml calling the reusable bundle-matrix
+	// workflow, and the release runner installs minisign so the manifest is actually signed.
 	wf := readRepoFile(t, ".github/workflows/release.yml")
-	for _, want := range []string{"bundle:", "build-platform-bundle.sh", "Install minisign"} {
+	for _, want := range []string{"bundle:", "bundle-matrix.yml", "Install minisign"} {
 		if !strings.Contains(wf, want) {
 			t.Errorf("release.yml must wire %q", want)
 		}
+	}
+	if bm := readRepoFile(t, ".github/workflows/bundle-matrix.yml"); !strings.Contains(bm, "build-platform-bundle.sh") {
+		t.Error("bundle-matrix.yml must call build-platform-bundle.sh per platform")
 	}
 	if bp := readRepoFile(t, "scripts/build-platform-bundle.sh"); !strings.Contains(bp, "build-opencode.sh") {
 		t.Error("build-platform-bundle.sh must build OpenCode per platform")

@@ -19,45 +19,14 @@ permissions:
   contents: write
 
 jobs:
-  # REL-009/010: build the per-platform Homebrew bundle tarballs on NATIVE runners (OpenCode +
-  # llama-server are host-built, so each platform needs its own runner). continue-on-error +
-  # the release job's if:!cancelled() mean a platform that fails to build degrades gracefully —
-  # fill-formula prunes it — rather than sinking the whole release. This is the heavy matrix;
-  # validate it via the bundle-matrix (DRAFT) workflow_dispatch before relying on it for a tag.
+  # REL-009/010: build the per-platform Homebrew bundle tarballs by CALLING the reusable
+  # bundle-matrix workflow (one definition, also runnable standalone via workflow_dispatch). Its
+  # matrix fail-fast:false + the release job's if:!cancelled() mean a platform that fails to build
+  # degrades gracefully — fill-formula prunes it — rather than sinking the whole release.
   bundle:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: ubuntu-latest,    goos: linux,  goarch: amd64 }
-          - { os: ubuntu-24.04-arm, goos: linux,  goarch: arm64 }
-          - { os: macos-latest,     goos: darwin, goarch: arm64 }
-          # macos-13 (Intel/darwin-amd64) dropped: those runners never allocate (stuck queued)
-          # and would hang this job's needs:bundle. fill-formula prunes darwin-amd64.
-    runs-on: ${{ matrix.os }}
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25.11"
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3"
-      - name: Install Bun (for the OpenCode build)
-        run: |
-          # Pin bun: CI installs latest by default, which re-resolves opencode v1.17.9's
-          # lockfile and breaks build-opencode.sh's --frozen-lockfile (OC-003). 1.3.14 is the
-          # version whose resolution matches the committed lockfile.
-          curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.14"
-          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
-      - name: Build the platform bundle (aegis + OpenCode + llama-server + rg)
-        run: scripts/build-platform-bundle.sh "${{ matrix.goos }}" "${{ matrix.goarch }}" "$GITHUB_REF_NAME"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: bundle-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/aegis-*.tar.gz
-          if-no-files-found: error
+    uses: ./.github/workflows/bundle-matrix.yml
+    with:
+      version: ${{ github.ref_name }}
 
   release:
     needs: bundle

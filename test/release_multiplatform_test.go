@@ -15,14 +15,24 @@ import (
 func TestReleaseMultiplatform(t *testing.T) {
 	rel := readRepoFile(t, ".github/workflows/release.yml")
 	for _, want := range []string{
-		"bundle:",                          // the per-platform matrix job
-		"scripts/build-platform-bundle.sh", // shared per-platform build
-		"bundle-${{ matrix.goos }}-${{ matrix.goarch }}", // artifact naming
+		"bundle:", // the bundle job
+		"uses: ./.github/workflows/bundle-matrix.yml", // ...calls the reusable matrix workflow
 		"needs: bundle",     // release consumes the matrix
 		"download-artifact", // ...by downloading the tarballs
 	} {
 		if !strings.Contains(rel, want) {
-			t.Errorf("release.yml must wire the bundle matrix — missing %q", want)
+			t.Errorf("release.yml must call the bundle matrix + consume it — missing %q", want)
+		}
+	}
+	// The per-platform build lives once, in the reusable bundle-matrix workflow release.yml calls.
+	bm := readRepoFile(t, ".github/workflows/bundle-matrix.yml")
+	for _, want := range []string{
+		"workflow_call",                                  // reusable — release.yml calls it
+		"scripts/build-platform-bundle.sh",               // shared per-platform build
+		"bundle-${{ matrix.goos }}-${{ matrix.goarch }}", // artifact naming release.yml downloads
+	} {
+		if !strings.Contains(bm, want) {
+			t.Errorf("bundle-matrix.yml must build the per-platform matrix — missing %q", want)
 		}
 	}
 	// release.sh ingests the downloaded matrix bundles into dist/ before checksums, so they are
