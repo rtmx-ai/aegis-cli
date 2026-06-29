@@ -3,6 +3,7 @@ package opencode
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // StagedRipgrepRelPath is where the air-gap-staged ripgrep binary lives, alongside
@@ -35,18 +36,34 @@ func ResolveRipgrep() (string, bool) {
 	return "", false
 }
 
-// hardenedPath returns PATH with the staged ripgrep's directory prepended, so
-// OpenCode's which("rg") resolves the bundled binary instead of fetching ripgrep
-// from github at bootstrap (OC-009). It returns "" when no rg is staged, leaving
-// PATH to the inherited environment rather than overriding it needlessly.
+// hardenedPath returns PATH with the bundled helpers' directories prepended: the staged ripgrep
+// (so OpenCode's which("rg") resolves it instead of fetching from github, OC-009) and the bundled
+// rtmx (so the TUI's rtmx MCP command resolves the bundled intent engine, OC-019). It returns ""
+// when neither is bundled, leaving PATH to the inherited environment rather than overriding it.
 func hardenedPath() string {
-	rg, ok := ResolveRipgrep()
-	if !ok {
+	var dirs []string
+	if rg, ok := ResolveRipgrep(); ok {
+		dirs = append(dirs, filepath.Dir(rg))
+	}
+	if rtmx, ok := ResolveRtmx(); ok {
+		if d := filepath.Dir(rtmx); !contains(dirs, d) {
+			dirs = append(dirs, d)
+		}
+	}
+	if len(dirs) == 0 {
 		return ""
 	}
-	dir := filepath.Dir(rg)
 	if orig := os.Getenv("PATH"); orig != "" {
-		return dir + string(os.PathListSeparator) + orig
+		dirs = append(dirs, orig)
 	}
-	return dir
+	return strings.Join(dirs, string(os.PathListSeparator))
+}
+
+func contains(ss []string, s string) bool {
+	for _, x := range ss {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }

@@ -27,6 +27,9 @@ install -m 0755 "$aegis" "$b/bin/aegis"
 install -m 0755 deploy/opencode/bin/opencode "$b/libexec/opencode"
 [ -x deploy/opencode/bin/rg ] && install -m 0755 deploy/opencode/bin/rg "$b/libexec/rg"
 [ -x deploy/llama-server/bin/llama-server ] && install -m 0755 deploy/llama-server/bin/llama-server "$b/libexec/llama-server"
+# OC-019: bundle the rtmx intent engine so the TUI's rtmx MCP works out of the box (it lands on
+# the launch PATH via hardenedPath, so the MCP command `["rtmx", ...]` resolves the bundled one).
+[ -x deploy/rtmx/bin/rtmx ] && install -m 0755 deploy/rtmx/bin/rtmx "$b/libexec/rtmx"
 
 # OC-016: ship the license notices alongside the binaries — the rebrand of OpenCode is lawful
 # only if its MIT license + copyright travel with the distribution.

@@ -28,6 +28,8 @@ if [ "$arch" = "$host_arch" ]; then
 	[ -x deploy/opencode/bin/rg ] && install -m 0755 deploy/opencode/bin/rg "$libexec/rg"
 	[ -d deploy/opencode/oc-config ] && cp -r deploy/opencode/oc-config "$libexec/oc-config"
 	[ -x deploy/llama-server/bin/llama-server ] && install -m 0755 deploy/llama-server/bin/llama-server "$libexec/llama-server"
+	# OC-019: bundle rtmx so the TUI's rtmx MCP works out of the box (resolved on the launch PATH).
+	[ -x deploy/rtmx/bin/rtmx ] && install -m 0755 deploy/rtmx/bin/rtmx "$libexec/rtmx"
 	echo "build-deb: .deb($arch) bundles the harness into /usr/lib/aegis [$(ls "$libexec" 2>/dev/null | tr '\n' ' ')]" >&2
 else
 	echo "build-deb: NOTE — .deb($arch) is binary-only (helpers are host-arch=$host_arch)" >&2

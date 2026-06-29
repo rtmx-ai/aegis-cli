@@ -55,3 +55,4 @@ __pycache__/
 /deploy/opencode/oc-config/
 /.rtmx/claims/
 /eval/bakeoff/cfg-*.json
+deploy/rtmx/bin/
