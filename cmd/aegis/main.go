@@ -57,6 +57,17 @@ var (
 	commit  = "unknown"
 )
 
+// tuiLaunch is the TUI launch seam (overridable in tests). errNoModel marks the "no model
+// provisioned" state (OC-025) as a NON-fatal signal — the TUI launches anyway so the operator can
+// provision in-app, rather than exiting to the shell.
+var (
+	tuiLaunch  = opencode.Launch
+	errNoModel = errors.New("no local model is provisioned")
+)
+
+// noModelErr wraps the provisioning guidance behind the errNoModel sentinel.
+func noModelErr() error { return fmt.Errorf("%w\n%s", errNoModel, provisionGuidance()) }
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
@@ -398,8 +409,14 @@ func cmdTUI(stdout, stderr io.Writer) int {
 	// be resolved, guide the operator to provision one rather than launching an unusable TUI.
 	stop, modelID, serr := ensureModelServing(cfg, stderr)
 	if serr != nil {
-		fmt.Fprintf(stderr, "aegis: %v\n", serr)
-		return 1
+		if !errors.Is(serr, errNoModel) {
+			fmt.Fprintf(stderr, "aegis: %v\n", serr)
+			return 1
+		}
+		// OC-025: no model is NOT fatal — launch the TUI in the no-model state (the OC-022 screen
+		// consumes AEGIS_NO_MODEL to render in-app provisioning) rather than exiting to the shell.
+		_ = os.Setenv("AEGIS_NO_MODEL", "1")
+		fmt.Fprintln(stderr, "aegis: no model yet — provision one in the TUI (or run `aegis provision`)")
 	}
 	if stop != nil {
 		defer stop()
@@ -416,7 +433,7 @@ func cmdTUI(stdout, stderr io.Writer) int {
 	if h := profileHint(cfg.ModelID); h != "" {
 		fmt.Fprintln(stderr, "aegis: "+h)
 	}
-	if err := opencode.Launch(cfg, "", ""); err != nil {
+	if err := tuiLaunch(cfg, "", ""); err != nil {
 		if opencode.IsMissing(err) {
 			fmt.Fprintln(stderr, opencode.MissingGuidance)
 			return 1
@@ -550,11 +567,11 @@ func ensureModelServing(cfg config.Config, out io.Writer) (stop func(), modelID 
 		// is present at all do we fall back to provisioning guidance.
 		gguf := resolveAnyModelGGUF()
 		if gguf == "" {
-			return nil, "", fmt.Errorf("%s", provisionGuidance())
+			return nil, "", noModelErr()
 		}
 		seed, werr := writeSeedCalibration(gguf)
 		if werr != nil {
-			return nil, "", fmt.Errorf("%s", provisionGuidance())
+			return nil, "", noModelErr()
 		}
 		fmt.Fprintf(out, "aegis: no calibration yet — starting %s with default tuning (run `aegis profile` to tune for this host)\n", filepath.Base(gguf))
 		calPath = seed
@@ -564,10 +581,10 @@ func ensureModelServing(cfg config.Config, out io.Writer) (stop func(), modelID 
 		return nil, "", fmt.Errorf("calibration %s: %w", calPath, lerr)
 	}
 	if cal.Model == "" {
-		return nil, "", fmt.Errorf("%s", provisionGuidance())
+		return nil, "", noModelErr()
 	}
 	if _, serr := os.Stat(cal.Model); serr != nil {
-		return nil, "", fmt.Errorf("the calibrated model is not present (%s).\n%s", cal.Model, provisionGuidance())
+		return nil, "", fmt.Errorf("%w (the calibrated model is not present: %s)", errNoModel, cal.Model)
 	}
 	fmt.Fprintf(out, "aegis: no model running — bringing up %s (loopback)\n", filepath.Base(cal.Model))
 	cmd, berr := buildServeCommand(calPath)
