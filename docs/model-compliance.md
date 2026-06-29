@@ -78,6 +78,22 @@ What does **not** go away:
 - **Rule of thumb:** a non-US-origin model is a compliance item to **clear explicitly per
   contract** before opting in — not something 889 settles.
 
+## Derived / fine-tuned models — origin follows the base, not the publisher
+
+Provenance tracks the **base-model lineage**, not the Hugging Face uploader or the company that did
+the fine-tuning. A US-based lab post-training a PRC base model does **not** launder the weights'
+origin — the result carries the base's provenance and supply-chain envelope.
+
+**Worked example — DeepReinforce Ornith-1.0 (Jun 2026).** An MIT-licensed, agentic-coding model
+family from a Santa Clara company (DeepReinforce, founder ex-Shannon.AI). Its self-scaffolding RL is a
+US contribution, but the **published GGUF weights (9B, 35B) are post-trained on Qwen 3.5** (Alibaba,
+PRC) → **CN lineage → opt-in only**, exactly like raw Qwen. The only announced US-lineage member (a
+31B on a Gemma 4 base) is **not published**, so there is no US-origin Ornith to bundle. A US wrapper
+around PRC weights stays CN.
+
+**Rule:** classify a catalog model's `origin` by its **base model's** country. A fine-tune inherits
+the base's disposition under the origin policy — `internal/origin` gates the result, not the uploader.
+
 ## Enforcement (MODEL-005..008)
 
 The posture above is **enforced**, not just documented:
