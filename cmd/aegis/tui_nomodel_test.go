@@ -29,6 +29,9 @@ func TestTUINoModelLaunchesNotExits(t *testing.T) {
 		return nil
 	}
 	defer func() { tuiLaunch = orig }()
+	origR := resolveOpencode
+	resolveOpencode = func(string) (string, error) { return "opencode", nil } // CI has no built opencode binary
+	defer func() { resolveOpencode = origR }()
 
 	var o, e bytes.Buffer
 	code := cmdTUI(&o, &e)

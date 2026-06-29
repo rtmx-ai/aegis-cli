@@ -61,8 +61,9 @@ var (
 // provisioned" state (OC-025) as a NON-fatal signal — the TUI launches anyway so the operator can
 // provision in-app, rather than exiting to the shell.
 var (
-	tuiLaunch  = opencode.Launch
-	errNoModel = errors.New("no local model is provisioned")
+	tuiLaunch       = opencode.Launch
+	resolveOpencode = opencode.ResolveBinary
+	errNoModel      = errors.New("no local model is provisioned")
 )
 
 // noModelErr wraps the provisioning guidance behind the errNoModel sentinel.
@@ -400,7 +401,7 @@ func cmdTUI(stdout, stderr io.Writer) int {
 	}
 	// Don't spin up a model if the harness isn't even present: a cheap opencode-resolve first means a
 	// missing OpenCode guides immediately, and bare `aegis` never loads a 14 GB model just to fail.
-	if _, rerr := opencode.ResolveBinary(""); rerr != nil {
+	if _, rerr := resolveOpencode(""); rerr != nil {
 		fmt.Fprintln(stderr, opencode.MissingGuidance)
 		return 1
 	}
