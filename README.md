@@ -40,8 +40,8 @@ package, and an air gap wants it staged deliberately anyway.
 # Homebrew — macOS (Apple Silicon) and Linux
 brew install rtmx-ai/tap/aegis
 
-# Debian / Ubuntu — grab aegis_<version>_<arch>.deb from the latest release (v1.7.0), then:
-sudo apt install ./aegis_1.7.0_amd64.deb      # installs aegis + the harness under /usr/lib/aegis
+# Debian / Ubuntu — grab aegis_<version>_<arch>.deb from the latest release (v1.7.1), then:
+sudo apt install ./aegis_1.7.1_amd64.deb      # installs aegis + the harness under /usr/lib/aegis
 
 # Build everything from source on a connected build host (full stack):
 git clone https://github.com/rtmx-ai/aegis-cli && cd aegis-cli
