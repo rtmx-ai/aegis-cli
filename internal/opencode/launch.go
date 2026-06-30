@@ -92,6 +92,7 @@ func Command(cfg config.Config, bin, configPath string) *exec.Cmd {
 	// airgapEnv carries the air-gap markers + the operator's model rendered inline
 	// (OPENCODE_CONFIG_CONTENT, OC-006), with rtmx wired as the intent layer. An
 	// explicit config path overrides it.
+	cfg.Interactive = true // PERSONA-001: the interactive TUI uses the proactive persona
 	env := append(os.Environ(), airgapEnv(cfg, true)...)
 	if configPath != "" {
 		env = append(env, "OPENCODE_CONFIG="+configPath)

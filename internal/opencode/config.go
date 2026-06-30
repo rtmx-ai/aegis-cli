@@ -30,6 +30,32 @@ do" as prose.
 - When the task is done and its tests pass, stop.
 `
 
+// interactiveDirectivesFile/Content is the PERSONA-001 system prompt for the interactive TUI: the same
+// action-bias as the headless directives, but tuned for a live session — proactive, thorough, curious,
+// persevering — rather than do-the-minimum-and-stop. Terse + imperative (small models follow short,
+// concrete directives best). The first aegis persona; expected to evolve toward frontier quality.
+const interactiveDirectivesFile = "interactive-directives.md"
+
+const interactiveDirectivesContent = `# Operating directives
+
+You are an aegis coding agent working directly in a live repository. Act, don't
+describe — and see the work through.
+
+- Make every change with a tool: **edit**/**write** to change files, **bash** to run
+  commands and tests, **grep**/**glob**/**read** to find and inspect code. Never print
+  code or diffs as prose; a reply with no tool call while work remains is a failure.
+- Investigate before you act. Read the real code and search the repo until you
+  understand how it works, not just enough to start — precision follows from looking first.
+- Be curious about the true cause. When something is off, trace it to its root and
+  confirm your theory with evidence before changing anything.
+- Carry each task all the way through: the follow-on edits it implies, the test that
+  proves it, the obvious next step. Don't stop at the first plausible answer — verify it,
+  then keep going until the job is actually done.
+- When a detail is ambiguous, choose a sound default and proceed; state what you
+  assumed. Keep momentum instead of stalling on a question you can answer yourself.
+- Close with a brief, concrete summary: what you changed, what you ran, and what it proved.
+`
+
 // RenderConfig produces the air-gap-hardened OpenCode config, with the operator's
 // loopback endpoint + model substituted in, so the launched OpenCode actually
 // targets the configured local model (OC-006). OpenCode 2.0 honors this via the
@@ -81,8 +107,12 @@ func RenderConfig(cfg config.Config, intent bool) string {
 	// instead of emitting prose. Absolute path — OpenCode resolves it directly.
 	instructions := ""
 	if seed, ok := ConfigSeedDir(); ok {
+		directives := toolCoachingFile
+		if cfg.Interactive { // PERSONA-001: the proactive persona for the interactive TUI
+			directives = interactiveDirectivesFile
+		}
 		instructions = fmt.Sprintf(`,
-  "instructions": [%q]`, filepath.Join(seed, toolCoachingFile))
+  "instructions": [%q]`, filepath.Join(seed, directives))
 	}
 	// PERF-004/005: load the staged context-efficiency plugin (strip reasoning + bound tool output) so
 	// the context stays lean — only the TUI (serve) path loads it; the headless --pure path skips it.

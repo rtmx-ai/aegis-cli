@@ -88,6 +88,9 @@ type Config struct {
 	// allowed to run away (best-effort via the Ollama num_predict option). Set it high
 	// enough that a normal turn is not truncated. 0 -> DefaultMaxOutputTokens at run.
 	MaxOutputTokens int `json:"max_output_tokens,omitempty"`
+	// Interactive marks an interactive TUI session (vs a headless run). It selects the proactive
+	// persona over the tight headless directives (PERSONA-001). Launch-set, never persisted.
+	Interactive bool `json:"-"`
 }
 
 // Run-policy limit defaults (RUNQ-003): bound a slow/rambling local model without

@@ -112,6 +112,13 @@ func ConfigSeedDir() (string, bool) {
 				continue
 			}
 		}
+		// PERSONA-001: stage the interactive persona alongside the headless directives.
+		interactive := filepath.Join(c, interactiveDirectivesFile)
+		if _, err := os.Stat(interactive); err != nil {
+			if err := os.WriteFile(interactive, []byte(interactiveDirectivesContent), 0o644); err != nil {
+				continue
+			}
+		}
 		return absOf(c), true
 	}
 	return "", false

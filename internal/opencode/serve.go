@@ -35,7 +35,7 @@ import (
 
 // HardenedEnv returns the air-gap launch environment with the rtmx intent layer
 // wired (exported for the pass-through namespaces, SURFACE-003).
-func HardenedEnv(cfg config.Config) []string { return airgapEnv(cfg, true) }
+func HardenedEnv(cfg config.Config) []string { cfg.Interactive = true; return airgapEnv(cfg, true) }
 
 // airgapEnv is the hardened launch environment shared by the TUI launch and the
 // serve API: air-gap markers + the operator's model rendered inline (OC-006).
