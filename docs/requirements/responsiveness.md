@@ -33,3 +33,17 @@ final content — reclaiming the window from the model's thinking. **Verify:** `
 Emit a per-turn metric (prefill tokens + cache-hit ratio) so the agent loop's context efficiency is
 measured and regression-gated — the prefix-stability guard that catches a harness change silently
 defeating the cache. **Verify:** `internal/metrics::TestContextEfficiencyMetric`. **Deps:** PERF-001
+
+## Mechanic update (2026-06-30, after diagnosing the latency cliff)
+Path confirmed: aegis's own llama-server on :8080 serving a dedicated GGUF at 32k. The skyrocket is
+opencode's COMPACTION rewriting history when 32k fills → the cached prefix changes → cold re-prefill
+(measured: a turn re-prefilling ~2x its predecessor at the same token count). A reasoning model fills
+the window fastest. Fix is aegis-side, no fork: opencode exposes `experimental.chat.messages.transform`
+(a plugin hook). PERF-004 + PERF-005 are implemented as ONE bundled context-efficiency plugin hooking
+it (drop stale `reasoning` parts; truncate oversized tool-result parts), plus tuning opencode's
+compaction config (tail_turns / preserve_recent_tokens) so it preserves the cache-anchored prefix.
+
+## REQ-PERF-007 — TUI shows the real served model
+aegis's opencode.json hardcodes "local-moe" as the model name, so the TUI displays a placeholder
+instead of the actual served model (the operator sees a name that doesn't match `aegis status`). Label
+the model with its real id. **Verify:** `test::TestHarnessRealModelLabel`. **Deps:** —
