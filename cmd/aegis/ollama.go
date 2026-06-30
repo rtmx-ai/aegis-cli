@@ -16,7 +16,7 @@ import (
 // ollamaCtxTokens is the context aegis bakes into its derived Ollama model (OC-029). opencode's agent
 // prompt (system + tool schemas) overflows Ollama's small default num_ctx, so without this the prompt
 // is truncated and the model flails. 16k fits the prompt + a working conversation.
-const ollamaCtxTokens = 16384
+const ollamaCtxTokens = 32768
 
 // ollamaHost returns the Ollama base URL — OLLAMA_HOST or the default localhost:11434, normalized.
 func ollamaHost() string {

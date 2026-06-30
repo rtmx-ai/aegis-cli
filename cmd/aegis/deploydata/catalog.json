@@ -16,7 +16,7 @@
         "top_k": 64,
         "top_p": 0.95,
         "min_p": 0.0,
-        "num_ctx": 16384,
+        "num_ctx": 32768,
         "think": false
       },
       "origin": "US",
@@ -38,7 +38,7 @@
         "top_k": 20,
         "min_p": 0.0,
         "repeat_penalty": 1.05,
-        "num_ctx": 16384
+        "num_ctx": 32768
       },
       "origin": "CN",
       "active_params": 3000000000
@@ -71,7 +71,7 @@
         "top_k": 20,
         "min_p": 0.0,
         "repeat_penalty": 1.05,
-        "num_ctx": 16384
+        "num_ctx": 32768
       },
       "origin": "CN"
     },
@@ -91,7 +91,7 @@
         "top_k": 20,
         "min_p": 0.0,
         "repeat_penalty": 1.05,
-        "num_ctx": 16384,
+        "num_ctx": 32768,
         "think": false
       },
       "origin": "CN",
@@ -125,7 +125,7 @@
         "top_k": 20,
         "min_p": 0.0,
         "repeat_penalty": 1.05,
-        "num_ctx": 16384
+        "num_ctx": 32768
       },
       "origin": "CN"
     },
@@ -145,7 +145,7 @@
         "top_k": 20,
         "min_p": 0.0,
         "repeat_penalty": 1.05,
-        "num_ctx": 16384
+        "num_ctx": 32768
       },
       "origin": "CN",
       "active_params": 3000000000

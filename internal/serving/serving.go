@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -52,16 +53,21 @@ type Calibration struct {
 	CtxSize int `json:"ctx_size,omitempty"`
 }
 
-// DefaultCtxSize is the context window the production launch uses when the
-// calibration sets none. 16384 is the floor agentic harnesses (OpenCode/Cline/aider)
-// need so their front-loaded tool definitions are not truncated — smaller is the
-// observed cause of tool-call failures. See docs/serve-016-bakeoff.md.
-const DefaultCtxSize = 16384
+// DefaultCtxSize is the context window the production launch uses when the calibration sets none.
+// Raised to 32768 (PERF-003): agentic harnesses front-load large tool definitions, and since the cold
+// prefill is amortized by KV cache reuse (verified: 68ms cached vs 5727ms cold), a larger window is
+// cheap after the one-time warm — 16k was the observed cause of "context size exceeded" on real tasks.
+const DefaultCtxSize = 32768
 
-// CtxSizeOrDefault returns the context window to serve: the calibrated CtxSize, or
-// DefaultCtxSize when unset/too small. The production launch never serves a small
-// default context.
+// CtxSizeOrDefault returns the context window to serve: AEGIS_CTX_SIZE if the operator set it (the
+// PERF-003 tunable), else the calibrated CtxSize, else DefaultCtxSize. The production launch never
+// serves a small default context.
 func (c *Calibration) CtxSizeOrDefault() int {
+	if v := os.Getenv("AEGIS_CTX_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 512 {
+			return n
+		}
+	}
 	if c.CtxSize >= 512 {
 		return c.CtxSize
 	}
