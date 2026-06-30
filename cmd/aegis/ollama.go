@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,8 +18,7 @@ import (
 // is truncated and the model flails. 16k fits the prompt + a working conversation.
 const ollamaCtxTokens = 16384
 
-// ollamaHost returns the Ollama base URL — OLLAMA_HOST (the standard Ollama env) or the default
-// localhost:11434. Always normalized to a scheme-qualified, trailing-slash-free URL.
+// ollamaHost returns the Ollama base URL — OLLAMA_HOST or the default localhost:11434, normalized.
 func ollamaHost() string {
 	h := os.Getenv("OLLAMA_HOST")
 	if h == "" {
@@ -31,8 +31,7 @@ func ollamaHost() string {
 }
 
 // detectOllama probes a running Ollama's tag list and returns its installed model names, or nil when
-// Ollama is not running. OC-028. (Probe only — connecting to a local Ollama the operator already runs
-// is loopback, not egress.)
+// Ollama is not running. OC-028.
 func detectOllama() []string {
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(ollamaHost() + "/api/tags") //nolint:gosec // operator's local Ollama, loopback
@@ -60,49 +59,122 @@ func detectOllama() []string {
 	return names
 }
 
-// ensureOllamaCtxModel makes a usable-context variant of the Ollama model: a lightweight derived model
-// (aegis-<model>, sharing the base weights) with num_ctx baked in, so opencode's large agent prompt is
-// not truncated by Ollama's small default context — which the OpenAI-compatible /v1 endpoint cannot
-// override per request (verified). Returns the derived model name, or the base unchanged on any
-// failure (degrade, don't block). Idempotent: skips the create when the derived model already exists.
+func ollamaDerivedName(base string) string {
+	return "aegis-" + strings.NewReplacer(":", "-", "/", "-").Replace(base)
+}
+
+// ensureOllamaCtxModel creates a lightweight derived model (aegis-<model>) with num_ctx baked in, so
+// opencode's large agent prompt is not truncated — the OpenAI-compat /v1 endpoint cannot override
+// num_ctx per request. Returns the derived name, or the base unchanged on failure or when a prior
+// launch found the derived model hangs this base's load (OC-031). Idempotent.
 func ensureOllamaCtxModel(base string) string {
-	derived := "aegis-" + strings.NewReplacer(":", "-", "/", "-").Replace(base)
+	if ollamaCtxBroken(base) {
+		return base // OC-031: a prior launch found the derived ctx model hangs this model's load
+	}
+	derived := ollamaDerivedName(base)
 	for _, m := range detectOllama() {
 		if m == derived || m == derived+":latest" {
 			return derived
 		}
 	}
 	body, err := json.Marshal(map[string]any{
-		"model":      derived,
-		"from":       base,
-		"parameters": map[string]any{"num_ctx": ollamaCtxTokens},
-		"stream":     false,
+		"model": derived, "from": base,
+		"parameters": map[string]any{"num_ctx": ollamaCtxTokens}, "stream": false,
 	})
 	if err != nil {
 		return base
 	}
 	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Post(ollamaHost()+"/api/create", "application/json", bytes.NewReader(body)) //nolint:gosec // local Ollama
+	resp, err := client.Post(ollamaHost()+"/api/create", "application/json", bytes.NewReader(body)) //nolint:gosec
 	if err != nil {
 		return base
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body) // drain the streamed status lines
+	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return base
 	}
 	return derived
 }
 
-// ollamaFallback points cfg at a running Ollama (its OpenAI-compatible endpoint + a context-sized
-// variant of its first model) when no local model is provisioned but Ollama is up. Returns
-// (cfg, models, true) on a hit, (cfg, nil, false) otherwise. OC-028 + OC-029.
+// ollamaModelResponds probes a model with a 1-token generation under a deadline — true if it loads +
+// answers, false if it hangs/errors. OC-031: a derived num_ctx model can hang Ollama's Metal load
+// (Gemma 3n), so aegis verifies it works before handing it to opencode.
+func ollamaModelResponds(model string, timeout time.Duration) bool {
+	body, err := json.Marshal(map[string]any{
+		"model":      model,
+		"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+		"max_tokens": 1, "stream": false,
+	})
+	if err != nil {
+		return false
+	}
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Post(ollamaHost()+"/v1/chat/completions", "application/json", bytes.NewReader(body)) //nolint:gosec
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode == http.StatusOK
+}
+
+func removeOllamaModel(model string) {
+	body, err := json.Marshal(map[string]string{"model": model})
+	if err != nil {
+		return
+	}
+	req, err := http.NewRequest(http.MethodDelete, ollamaHost()+"/api/delete", bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("content-type", "application/json")
+	if resp, derr := (&http.Client{Timeout: 10 * time.Second}).Do(req); derr == nil { //nolint:gosec
+		_ = resp.Body.Close()
+	}
+}
+
+// ollamaSkipCtxMarker / ollamaCtxBroken / markOllamaCtxBroken remember that a base model's derived
+// ctx variant hangs its load, so aegis does not recreate + re-probe it every launch (OC-031).
+func ollamaSkipCtxMarker(base string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "aegis", "ollama-no-ctx-"+strings.NewReplacer(":", "-", "/", "-").Replace(base))
+}
+func ollamaCtxBroken(base string) bool {
+	m := ollamaSkipCtxMarker(base)
+	if m == "" {
+		return false
+	}
+	_, err := os.Stat(m)
+	return err == nil
+}
+func markOllamaCtxBroken(base string) {
+	if m := ollamaSkipCtxMarker(base); m != "" {
+		_ = os.MkdirAll(filepath.Dir(m), 0o755)
+		_ = os.WriteFile(m, []byte("derived ctx model hangs this model's Ollama load; using the base\n"), 0o644)
+	}
+}
+
+// ollamaFallback points cfg at a running Ollama (its OpenAI-compatible endpoint + a usable model)
+// when no local model is provisioned but Ollama is up. OC-028/029/031: prefers a num_ctx-sized
+// derived model, but only after verifying it actually loads + answers — else it drops the derived
+// model and uses the base, never handing opencode a model that hangs.
 func ollamaFallback(cfg config.Config) (config.Config, []string, bool) {
 	models := detectOllama()
 	if len(models) == 0 {
 		return cfg, nil, false
 	}
 	cfg.Endpoint = ollamaHost()
-	cfg.ModelID = ensureOllamaCtxModel(models[0]) // OC-029: a num_ctx-sized variant so the agent prompt fits
+	base := models[0]
+	model := ensureOllamaCtxModel(base)
+	if model != base && !ollamaModelResponds(model, 25*time.Second) {
+		markOllamaCtxBroken(base)
+		removeOllamaModel(model)
+		model = base
+	}
+	cfg.ModelID = model
 	return cfg, models, true
 }

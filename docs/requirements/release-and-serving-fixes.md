@@ -37,3 +37,12 @@ OpenAI-compat `/v1` request is ignored** by Ollama — so aegis cannot fix it vi
 **Fix:** aegis creates a lightweight derived model (`aegis-<model>`, `FROM <model>` + `PARAMETER
 num_ctx N`, via `/api/create` — shares the base weights) and points opencode at it, so the full agent
 prompt fits. **Verify:** `cmd/aegis::TestOllamaCtxModel`. **Deps:** OC-028.
+
+## REQ-OC-031 — Verify the Ollama ctx model loads; fall back if it hangs
+**Bug (v1.3.2, M5):** OC-029's derived num_ctx model hangs Ollama's load for some architectures on
+Metal — confirmed with Gemma 3n (`gemma…:e4b`): the derived model hangs even on a 4-token prompt
+(empty `ollama ps`), while the base loads fine. So v1.3.2 turned a slow base model into a hard hang.
+**Fix:** after creating the derived model, aegis **probes** it (a 1-token generation under a short
+deadline). If it doesn't answer, drop it (delete + a marker so it isn't recreated/re-probed) and use
+the base model. A detected Ollama then either works or degrades to the base — never hangs.
+**Verify:** `cmd/aegis::TestOllamaModelResponds`. **Deps:** OC-029.
