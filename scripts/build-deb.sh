@@ -12,6 +12,7 @@ arch="${1:?usage: build-deb.sh <arch> <aegis-binary> <out-dir> [version]}"
 bin="${2:?aegis binary required}"
 out="${3:?out dir required}"
 VERSION="${4:-$(tr -d ' \n' < VERSION 2>/dev/null || echo dev)}"
+libexec_src="${5:-}" # REL-011: a prebuilt native harness dir (that arch's matrix bundle) for a cross-arch .deb
 
 command -v dpkg-deb >/dev/null 2>&1 || { echo "build-deb: dpkg-deb not found" >&2; exit 2; }
 [ -x "$bin" ] || { echo "build-deb: aegis binary not executable: $bin" >&2; exit 1; }
@@ -22,7 +23,14 @@ mkdir -p "$root/usr/bin" "$root/DEBIAN"
 install -m 0755 "$bin" "$root/usr/bin/aegis"
 
 host_arch="$(dpkg --print-architecture 2>/dev/null || echo unknown)"
-if [ "$arch" = "$host_arch" ]; then
+# REL-011: bundle the harness when a native harness dir is supplied (the cross-arch case — that
+# arch's helpers extracted from its matrix bundle), OR when this .deb's arch is the build host's
+# (use the host-built helpers). Only a .deb with no available native harness stays binary-only.
+if [ -n "$libexec_src" ] && [ -d "$libexec_src" ]; then
+	libexec="$root/usr/lib/aegis"; mkdir -p "$libexec"
+	cp -a "$libexec_src"/. "$libexec/"
+	echo "build-deb: .deb($arch) bundles the bundle harness into /usr/lib/aegis [$(ls "$libexec" 2>/dev/null | tr '\n' ' ')]" >&2
+elif [ "$arch" = "$host_arch" ]; then
 	libexec="$root/usr/lib/aegis"; mkdir -p "$libexec"
 	[ -x deploy/opencode/bin/opencode ] && install -m 0755 deploy/opencode/bin/opencode "$libexec/opencode"
 	[ -x deploy/opencode/bin/rg ] && install -m 0755 deploy/opencode/bin/rg "$libexec/rg"
@@ -32,7 +40,7 @@ if [ "$arch" = "$host_arch" ]; then
 	[ -x deploy/rtmx/bin/rtmx ] && install -m 0755 deploy/rtmx/bin/rtmx "$libexec/rtmx"
 	echo "build-deb: .deb($arch) bundles the harness into /usr/lib/aegis [$(ls "$libexec" 2>/dev/null | tr '\n' ' ')]" >&2
 else
-	echo "build-deb: NOTE — .deb($arch) is binary-only (helpers are host-arch=$host_arch)" >&2
+	echo "build-deb: NOTE — .deb($arch) is binary-only (no native harness for $arch on host-arch=$host_arch)" >&2
 fi
 
 # OC-016: ship the license notices (lawful rebrand of bundled OpenCode — MIT) under the Debian

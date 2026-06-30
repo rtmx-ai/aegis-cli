@@ -118,8 +118,34 @@ elif [ -x "$DIST/aegis-$VERSION-$host_os-$host_arch_go" ] && [ -x deploy/opencod
 		&& echo "release: bundled tarball aegis-$VERSION-$host_os-$host_arch_go.tar.gz"
 fi
 
-# BUILD-004: SHA-256 checksums manifest over every artifact (aegis binaries,
-# .exe, .deb, the bundled opencode if present, and the SBOM).
+# REL-011: rebuild cross-arch .debs from the ingested matrix bundles — their libexec/ is that arch's
+# NATIVE harness, so e.g. the linux-arm64 .deb becomes harness-complete instead of binary-only. The
+# host-arch .deb is already harness-complete (host helpers, above).
+host_deb_arch="$(dpkg --print-architecture 2>/dev/null || echo unknown)"
+for tb in "$DIST"/aegis-"$VERSION"-linux-*.tar.gz; do
+	[ -f "$tb" ] || continue
+	barch="${tb##*-linux-}"; barch="${barch%.tar.gz}"
+	[ "$barch" = "$host_deb_arch" ] && continue
+	command -v dpkg-deb >/dev/null 2>&1 || continue
+	hx="$(mktemp -d)"
+	if tar -C "$hx" -xzf "$tb" libexec 2>/dev/null; then
+		scripts/build-deb.sh "$barch" "$DIST/aegis-$VERSION-linux-$barch" "$DIST" "$VERSION" "$hx/libexec" >/dev/null \
+			&& echo "release: rebuilt aegis_${VERSION}_${barch}.deb from the matrix bundle (harness-complete)"
+	fi
+	rm -rf "$hx"
+done
+
+# REL-011: drop the bare, harness-less cross-binaries so every PUBLISHED asset launches the TUI —
+# only the per-platform bundle tarballs (.tar.gz) + the harness-complete .debs ship. The bare
+# binaries were build inputs (the bundles + .debs consumed them) and are removed before the manifest.
+for f in "$DIST"/aegis-"$VERSION"-*; do
+	case "$f" in
+		*.tar.gz) ;; # keep the runnable bundles
+		*) rm -f "$f" && echo "release: dropped bare binary $(basename "$f")" ;;
+	esac
+done
+
+# BUILD-004: SHA-256 checksums manifest over every published artifact (bundle tarballs, .deb, SBOM).
 (
 	cd "$DIST"
 	files="$(ls | grep -v '^SHA256SUMS$')"
