@@ -399,6 +399,7 @@ func cmdTUI(stdout, stderr io.Writer) int {
 	if err != nil {
 		cfg = config.Default()
 	}
+	_ = os.Setenv("AEGIS_VERSION", version) // OC-030: the TUI footer shows the aegis version, not OpenCode's
 	// Don't spin up a model if the harness isn't even present: a cheap opencode-resolve first means a
 	// missing OpenCode guides immediately, and bare `aegis` never loads a 14 GB model just to fail.
 	if _, rerr := resolveOpencode(""); rerr != nil {

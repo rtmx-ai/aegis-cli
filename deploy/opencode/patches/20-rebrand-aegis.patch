@@ -487,6 +487,25 @@ index 16354a59f..c78465bd6 100644
  ]
  
  const INPUT_UNDO_TIP: Tip = (shortcuts) => press(shortcuts.inputUndo(), "to undo changes in your prompt")
+diff --git a/packages/tui/src/feature-plugins/sidebar/footer.tsx b/packages/tui/src/feature-plugins/sidebar/footer.tsx
+index c59046a01..2e399627c 100644
+--- a/packages/tui/src/feature-plugins/sidebar/footer.tsx
++++ b/packages/tui/src/feature-plugins/sidebar/footer.tsx
+@@ -69,11 +69,11 @@ function View(props: { api: TuiPluginApi; sessionID: string }) {
+         <span style={{ fg: theme().text }}>{path().name}</span>
+       </text>
+       <text fg={theme().textMuted}>
+-        <span style={{ fg: theme().success }}>•</span> <b>Open</b>
++        <span style={{ fg: theme().success }}>•</span>{" "}
+         <span style={{ fg: theme().text }}>
+-          <b>Code</b>
++          <b>aegis</b>
+         </span>{" "}
+-        <span>{props.api.app.version}</span>
++        <span>{process.env.AEGIS_VERSION || props.api.app.version}</span>
+       </text>
+     </box>
+   )
 diff --git a/packages/tui/src/logo.ts b/packages/tui/src/logo.ts
 index a58a8cf99..12105b84e 100644
 --- a/packages/tui/src/logo.ts

@@ -45,7 +45,15 @@ func TestHarnessRebranded(t *testing.T) {
 	// Regression guard: useTheme() returns { theme } (an object); calling the result — theme() —
 	// crashes the TUI home render with "is not a function". The splash must use the destructure +
 	// property access (like logo.tsx), never a call. (Headless verify-env can't catch this.)
-	if strings.Contains(patch, "theme().textMuted") {
+	// Scoped to the home.tsx hunk — footer.tsx legitimately uses its own theme() helper.
+	homeHunk := patch
+	if i := strings.Index(patch, "a/packages/tui/src/routes/home.tsx"); i >= 0 {
+		homeHunk = patch[i:]
+		if j := strings.Index(homeHunk, "\ndiff --git "); j >= 0 {
+			homeHunk = homeHunk[:j]
+		}
+	}
+	if strings.Contains(homeHunk, "theme().textMuted") {
 		t.Error("home.tsx splash must use `const { theme } = useTheme()` + theme.textMuted, not theme() — TUI crash")
 	}
 }
