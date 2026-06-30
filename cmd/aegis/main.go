@@ -657,24 +657,22 @@ func servingModelID() string {
 // "" when the catalog or a match is absent.
 func catalogIDForGGUF(ggufPath string) string {
 	base := filepath.Base(ggufPath)
-	for _, p := range catalogCandidates() {
-		b, err := os.ReadFile(p)
-		if err != nil {
-			continue
-		}
-		var cat struct {
-			Models []struct {
-				ID   string `json:"id"`
-				File string `json:"file"`
-			} `json:"models"`
-		}
-		if json.Unmarshal(b, &cat) != nil {
-			continue
-		}
-		for _, m := range cat.Models {
-			if m.File == base {
-				return m.ID
-			}
+	b, err := catalogBytes() // embedded-aware: an installed binary has no catalog file (PERF-007)
+	if err != nil {
+		return ""
+	}
+	var cat struct {
+		Models []struct {
+			ID   string `json:"id"`
+			File string `json:"file"`
+		} `json:"models"`
+	}
+	if json.Unmarshal(b, &cat) != nil {
+		return ""
+	}
+	for _, m := range cat.Models {
+		if m.File == base {
+			return m.ID
 		}
 	}
 	return ""
@@ -696,12 +694,8 @@ func loadCatalogTuning(modelID string) *config.ModelTuning {
 	if modelID == "" {
 		return nil
 	}
-	for _, p := range catalogCandidates() {
-		if b, err := os.ReadFile(p); err == nil {
-			if t := config.TuningForModel(modelID, b); t != nil {
-				return t
-			}
-		}
+	if b, err := catalogBytes(); err == nil { // embedded-aware (PERF-007)
+		return config.TuningForModel(modelID, b)
 	}
 	return nil
 }
@@ -712,27 +706,12 @@ func catalogCtxSizeForGGUF(ggufPath string) int {
 	if ggufPath == "" {
 		return 0
 	}
-	for _, p := range catalogCandidates() {
-		if b, err := os.ReadFile(p); err == nil {
-			if t := config.TuningForGGUF(ggufPath, b); t != nil && t.NumCtx != nil {
-				return *t.NumCtx
-			}
+	if b, err := catalogBytes(); err == nil { // embedded-aware (PERF-007)
+		if t := config.TuningForGGUF(ggufPath, b); t != nil && t.NumCtx != nil {
+			return *t.NumCtx
 		}
 	}
 	return 0
-}
-
-// catalogCandidates resolves the model catalog: alongside the aegis binary first,
-// then cwd-relative deploy/models/catalog.json.
-func catalogCandidates() []string {
-	var cands []string
-	if p := os.Getenv("AEGIS_CATALOG"); p != "" { // OC-040: an operator-supplied catalog wins
-		cands = append(cands, p)
-	}
-	if self, err := os.Executable(); err == nil {
-		cands = append(cands, filepath.Join(filepath.Dir(self), "deploy", "models", "catalog.json"))
-	}
-	return append(cands, filepath.Join("deploy", "models", "catalog.json"))
 }
 
 // deployFileBytes reads a deploy-relative file, looking alongside the aegis binary first,
