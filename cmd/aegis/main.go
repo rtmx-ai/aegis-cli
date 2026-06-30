@@ -430,7 +430,10 @@ func cmdTUI(stdout, stderr io.Writer) int {
 			_ = os.Setenv("AEGIS_NO_MODEL", "1")
 			_ = os.Setenv("AEGIS_BEST_FIT", bestFitCard())                    // OC-022: the in-TUI screen shows this
 			_ = os.Setenv("AEGIS_MODEL_RATIONALE", recommendationRationale()) // OC-042: why this model is recommended
-			_ = os.Setenv("AEGIS_AUTO_PROVISION", "1")                        // OC-034: the screen auto-starts the download
+			if av := bestAvailableModel(); av != nil {
+				_ = os.Setenv("AEGIS_AVAILABLE_MODEL", av.Kind+":"+av.ID) // OC-046: best already-present model, for one-keypress use
+			}
+			_ = os.Setenv("AEGIS_AUTO_PROVISION", "1") // OC-034: the screen auto-starts the download
 			if exe, eerr := os.Executable(); eerr == nil {
 				_ = os.Setenv("AEGIS_BIN", exe) // OC-026: the screen spawns this for `aegis provision`
 			}

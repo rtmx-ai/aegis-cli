@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -35,8 +36,16 @@ func cmdProvision(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	id := fs.String("id", "", "catalog model id to provision (default: the best-fitting US model)")
 	browse := fs.String("browse", "", "source a local GGUF path instead of downloading")
+	find := fs.Bool("find", false, "scan the machine for compatible models already present, then list them")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if *find {
+		filter := ""
+		if fs.NArg() > 0 {
+			filter = fs.Arg(0)
+		}
+		return cmdProvisionFind(filter, stdout)
 	}
 	cfg, err := config.Load("")
 	if err != nil {
@@ -261,4 +270,101 @@ func bestFitCard() string {
 		return ""
 	}
 	return fmt.Sprintf("%s · US-origin · ~%.0f GB", spec.ID, float64(spec.Size)/1e9)
+}
+
+// availableModel describes a model already present on the host that aegis can use without a download.
+type availableModel struct {
+	Kind string // "gguf" (a file in the model dir) or "ollama" (a working Ollama tag)
+	ID   string // display name: gguf basename or ollama tag
+	Path string // gguf path; "" for ollama
+}
+
+// bestAvailableModel returns the best model already on this host — a GGUF in the model dir, else a
+// working Ollama model — for one-keypress use on the provisioning screen, or nil when none. A local
+// GGUF wins (origin-controllable + faster to serve) over an Ollama tag. It is surfaced for explicit
+// consent, never silently auto-served, since an on-disk model is not origin-verified (OC-046).
+func bestAvailableModel() *availableModel {
+	if g := resolveAnyModelGGUF(); g != "" {
+		return &availableModel{Kind: "gguf", ID: filepath.Base(g), Path: g}
+	}
+	if m := usableOllamaCandidate(); m != "" {
+		return &availableModel{Kind: "ollama", ID: m}
+	}
+	return nil
+}
+
+// modelSearchDirs returns the model-specific locations the deep scan (--find) walks — well-known GGUF
+// stores plus operator-set AEGIS_MODEL_PATHS — never the whole home tree (OC-045).
+func modelSearchDirs() []string {
+	var dirs []string
+	if d := os.Getenv("MODEL_DOWNLOAD_DIR"); d != "" {
+		dirs = append(dirs, d)
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs,
+			filepath.Join(home, "models"),
+			filepath.Join(home, ".cache", "huggingface"),
+			filepath.Join(home, ".cache", "lm-studio", "models"),
+			filepath.Join(home, ".lmstudio", "models"),
+			filepath.Join(home, ".ollama", "models"),
+		)
+	}
+	for _, p := range filepath.SplitList(os.Getenv("AEGIS_MODEL_PATHS")) {
+		if p != "" {
+			dirs = append(dirs, p)
+		}
+	}
+	return dirs
+}
+
+func matchesFilter(name, filter string) bool {
+	return filter == "" || strings.Contains(strings.ToLower(name), strings.ToLower(filter))
+}
+
+// findModels scans the model dirs for GGUF files and lists Ollama models, filtered by a name
+// substring — the explicit deep scan behind `aegis provision --find` (OC-045).
+func findModels(filter string) []availableModel {
+	var out []availableModel
+	seen := map[string]bool{}
+	for _, dir := range modelSearchDirs() {
+		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil //nolint:nilerr // skip unreadable entries, keep scanning
+			}
+			if strings.HasSuffix(d.Name(), ".gguf") && matchesFilter(d.Name(), filter) && !seen[path] {
+				seen[path] = true
+				out = append(out, availableModel{Kind: "gguf", ID: d.Name(), Path: path})
+			}
+			return nil
+		})
+	}
+	for _, m := range detectOllama() {
+		if !strings.HasPrefix(m, "aegis-") && matchesFilter(m, filter) {
+			out = append(out, availableModel{Kind: "ollama", ID: m})
+		}
+	}
+	return out
+}
+
+// cmdProvisionFind lists models already on the machine that aegis can use without a download (OC-045).
+func cmdProvisionFind(filter string, stdout io.Writer) int {
+	note := ""
+	if filter != "" {
+		note = fmt.Sprintf(" matching %q", filter)
+	}
+	models := findModels(filter)
+	if len(models) == 0 {
+		fmt.Fprintf(stdout, "aegis: no compatible models found%s — run `aegis provision` to download the recommended one\n", note)
+		return 0
+	}
+	fmt.Fprintf(stdout, "aegis: found %d compatible model(s)%s:\n", len(models), note)
+	for _, m := range models {
+		loc := m.Path
+		if m.Kind == "ollama" {
+			loc = "ollama (loopback)"
+		}
+		fmt.Fprintf(stdout, "  %-7s %s\n          %s\n", m.Kind, m.ID, loc)
+	}
+	fmt.Fprintln(stdout, "use one with:  aegis provision --browse <path>   (or just launch aegis to pick on the screen)")
+	return 0
 }

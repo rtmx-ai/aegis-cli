@@ -210,3 +210,35 @@ func TestOllamaFallbackIgnoresDerived(t *testing.T) {
 		t.Errorf("must derive from the real base: model=%q", oc.ModelID)
 	}
 }
+
+// TestOllamaUsableCandidate -> REQ-OC-043: iterate past a crashing Ollama model to the first working
+// one (and mark the crasher), so the screen can offer a real use-now model.
+func TestOllamaUsableCandidate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			_, _ = w.Write([]byte(`{"models":[{"name":"bad:1"},{"name":"good:1"}]}`))
+		case "/v1/chat/completions":
+			var req struct {
+				Model string `json:"model"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			if req.Model == "bad:1" {
+				w.WriteHeader(http.StatusInternalServerError)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("OLLAMA_HOST", srv.URL)
+	if got := usableOllamaCandidate(); got != "good:1" {
+		t.Errorf("must iterate past the crasher to the working model, got %q", got)
+	}
+	if !ollamaModelUnusable("bad:1") {
+		t.Error("the skipped crasher must be marked unusable")
+	}
+}

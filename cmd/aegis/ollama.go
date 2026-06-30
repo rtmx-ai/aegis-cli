@@ -220,3 +220,21 @@ func ollamaFallback(cfg config.Config) (config.Config, []string, bool) {
 	cfg.ModelID = model
 	return cfg, models, true
 }
+
+// usableOllamaCandidate returns the first Ollama model that actually loads + generates — iterating
+// past aegis's own derivatives, marked-unusable models, and a model that fails the probe (a crashing
+// one like Gemma 3n), marking the crashers it skips so the next launch is fast. "" when none work. The
+// provisioning screen offers it as a "use now" stopgap while still recommending the dedicated
+// download (OC-043).
+func usableOllamaCandidate() string {
+	for _, m := range detectOllama() {
+		if strings.HasPrefix(m, "aegis-") || ollamaModelUnusable(m) {
+			continue
+		}
+		if ollamaModelResponds(m, 30*time.Second) {
+			return m
+		}
+		markOllamaModelUnusable(m)
+	}
+	return ""
+}

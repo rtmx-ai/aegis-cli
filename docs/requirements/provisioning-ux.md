@@ -28,7 +28,7 @@ host-fit, US-origin — versus the operator's local Ollama models. **Verify:** `
 ## REQ-OC-043 — Offer a working Ollama model as a "use now" stopgap
 aegis iterates past a crashing Ollama model (OC-036) to find a working one and surfaces it on the
 provisioning screen with a key to use it immediately, while still recommending the dedicated download.
-Resolves the "gemma4-qat:32k shows as local but isn't used" inconsistency. **Verify:** `cmd/aegis::TestOllamaUsableCandidate`. **Deps:** OC-036, OC-038.
+Resolves the "gemma4-qat:32k shows as local but isn't used" inconsistency. **Verify:** `cmd/aegis::TestOllamaUsableCandidate`. **Deps:** OC-036.
 
 ## REQ-OC-044 — Explain why provisioning failed
 The provisioning screen's failure state shows the actual error (sha256 mismatch, no network, disk full,
@@ -43,4 +43,4 @@ path stays cheap (configured dir only); the deep scan is explicit. **Verify:** `
 On launch, aegis surfaces the best already-available model (a GGUF in the configured dir + a working
 Ollama model) on the provisioning screen for one-keypress use — recommending the dedicated download as
 the alternative; download is the last resort. An available-but-unverified model is surfaced for
-explicit consent, never silently auto-connected. **Verify:** `cmd/aegis::TestBestAvailableModel`. **Deps:** OC-043, OC-038.
+explicit consent, never silently auto-connected. **Verify:** `cmd/aegis::TestBestAvailableModel`. **Deps:** OC-043.
