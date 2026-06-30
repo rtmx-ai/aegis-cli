@@ -428,8 +428,9 @@ func cmdTUI(stdout, stderr io.Writer) int {
 			// OC-025: no model is NOT fatal — launch the TUI in the no-model state (the OC-022 screen
 			// consumes AEGIS_NO_MODEL to render in-app provisioning) rather than exiting to the shell.
 			_ = os.Setenv("AEGIS_NO_MODEL", "1")
-			_ = os.Setenv("AEGIS_BEST_FIT", bestFitCard()) // OC-022: the in-TUI screen shows this
-			_ = os.Setenv("AEGIS_AUTO_PROVISION", "1")     // OC-034: the screen auto-starts the download
+			_ = os.Setenv("AEGIS_BEST_FIT", bestFitCard())                    // OC-022: the in-TUI screen shows this
+			_ = os.Setenv("AEGIS_MODEL_RATIONALE", recommendationRationale()) // OC-042: why this model is recommended
+			_ = os.Setenv("AEGIS_AUTO_PROVISION", "1")                        // OC-034: the screen auto-starts the download
 			if exe, eerr := os.Executable(); eerr == nil {
 				_ = os.Setenv("AEGIS_BIN", exe) // OC-026: the screen spawns this for `aegis provision`
 			}
@@ -719,6 +720,9 @@ func catalogCtxSizeForGGUF(ggufPath string) int {
 // then cwd-relative deploy/models/catalog.json.
 func catalogCandidates() []string {
 	var cands []string
+	if p := os.Getenv("AEGIS_CATALOG"); p != "" { // OC-040: an operator-supplied catalog wins
+		cands = append(cands, p)
+	}
 	if self, err := os.Executable(); err == nil {
 		cands = append(cands, filepath.Join(filepath.Dir(self), "deploy", "models", "catalog.json"))
 	}
@@ -773,7 +777,7 @@ func verifyModelOrigin(stdout io.Writer) int {
 		fmt.Fprintf(stdout, "origin=SKIP (MODEL_REF unreadable)\n")
 		return 0
 	}
-	catalog, err := deployFileBytes(filepath.Join("deploy", "models", "catalog.json"))
+	catalog, err := catalogBytes()
 	if err != nil {
 		fmt.Fprintf(stdout, "origin=SKIP (no model catalog)\n")
 		return 0

@@ -83,7 +83,7 @@ func benchRunningModel(stdout, stderr io.Writer, rec *profile.Recommendation) {
 
 // catalogModelSpecs parses the model catalog into the fields the profiler needs.
 func catalogModelSpecs() ([]profile.ModelSpec, error) {
-	b, err := deployFileBytes("deploy/models/catalog.json")
+	b, err := catalogBytes()
 	if err != nil {
 		return nil, fmt.Errorf("model catalog not found (deploy/models/catalog.json) — run from the repo or an aegis bundle: %w", err)
 	}

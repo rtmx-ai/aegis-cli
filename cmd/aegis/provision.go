@@ -121,7 +121,7 @@ func resolveProvisionSpec(id string) (provisionSpec, error) {
 			return provisionSpec{}, fmt.Errorf("no US-origin model fits this host — pass --browse <path.gguf> or --id <catalog-id>")
 		}
 	}
-	b, err := deployFileBytes("deploy/models/catalog.json")
+	b, err := catalogBytes()
 	if err != nil {
 		return provisionSpec{}, fmt.Errorf("model catalog not found: %w", err)
 	}
@@ -136,10 +136,30 @@ func resolveProvisionSpec(id string) (provisionSpec, error) {
 			if m.URL == "" || m.SHA256 == "" {
 				return provisionSpec{}, fmt.Errorf("catalog model %q has no download URL/sha256", id)
 			}
+			m.URL = modelGardenURL(m.File, m.URL) // OC-040: enterprise mirror override
 			return m, nil
 		}
 	}
 	return provisionSpec{}, fmt.Errorf("unknown catalog model %q", id)
+}
+
+// catalogBytes returns the model catalog — an operator-supplied AEGIS_CATALOG if set (an enterprise
+// model garden), else the built-in catalog (OC-040).
+func catalogBytes() ([]byte, error) {
+	if p := os.Getenv("AEGIS_CATALOG"); p != "" {
+		return os.ReadFile(p)
+	}
+	return deployFileBytes("deploy/models/catalog.json")
+}
+
+// modelGardenURL rewrites a catalog download URL to the operator's mirror (AEGIS_MODEL_GARDEN base +
+// the pinned filename) when set, keeping the catalog's sha256 so integrity verification is unchanged
+// (OC-040).
+func modelGardenURL(file, catalogURL string) string {
+	if g := os.Getenv("AEGIS_MODEL_GARDEN"); g != "" {
+		return strings.TrimRight(g, "/") + "/" + file
+	}
+	return catalogURL
 }
 
 // downloadModel streams spec.URL to dest with progress, verifying the sha256 before committing; a

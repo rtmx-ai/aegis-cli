@@ -95,3 +95,26 @@ func profileHint(runningModel string) string {
 	}
 	return fmt.Sprintf("best-fitting model for this host: %s (run `aegis profile` for the full table)", best)
 }
+
+// rationaleFor formats the one-line "why this model" the provisioning screen shows (OC-042): the most
+// capable origin-allowed model that fits this host, host-calibrated + origin-verified — versus an
+// unvetted Ollama pull. Pure (no probe) so it is deterministically testable.
+func rationaleFor(modelID, grade string) string {
+	if modelID == "" {
+		return ""
+	}
+	return fmt.Sprintf("Recommended: %s is the most capable US-origin model that fits this host at %s speed — host-calibrated and origin-verified, vs an unvetted Ollama pull.", modelID, grade)
+}
+
+// recommendationRationale profiles the host and explains why the recommended model is recommended,
+// for the in-TUI provisioning screen (OC-042). "" when nothing origin-allowed fits.
+func recommendationRationale() string {
+	rec, err := computeRecommendation(16384)
+	if err != nil {
+		return ""
+	}
+	if rec.Interactive != "" {
+		return rationaleFor(rec.Interactive, "interactive")
+	}
+	return rationaleFor(rec.Unattended, "unattended")
+}
