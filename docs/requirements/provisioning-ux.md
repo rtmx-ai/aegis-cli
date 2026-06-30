@@ -44,3 +44,9 @@ On launch, aegis surfaces the best already-available model (a GGUF in the config
 Ollama model) on the provisioning screen for one-keypress use — recommending the dedicated download as
 the alternative; download is the last resort. An available-but-unverified model is surfaced for
 explicit consent, never silently auto-connected. **Verify:** `cmd/aegis::TestBestAvailableModel`. **Deps:** OC-043.
+
+## REQ-OC-047 — One-keypress connect to a surfaced available model
+OC-046 surfaces the best already-available model; OC-047 adds the connect mechanic — a keypress that
+serves a GGUF via `--browse` on the local endpoint, or relaunches opencode pointed at the Ollama
+endpoint for an Ollama tag (opencode's backend can't be repointed live). Deferred from OC-046, which
+surfaces it. **Verify:** `cmd/aegis::TestConnectAvailable`. **Deps:** OC-046.

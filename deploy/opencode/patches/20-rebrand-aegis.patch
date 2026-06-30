@@ -527,7 +527,7 @@ index a58a8cf99..12105b84e 100644
  
  export const go = {
 diff --git a/packages/tui/src/routes/home.tsx b/packages/tui/src/routes/home.tsx
-index d4145e2d8..c71100d76 100644
+index d4145e2d8..08e4544b0 100644
 --- a/packages/tui/src/routes/home.tsx
 +++ b/packages/tui/src/routes/home.tsx
 @@ -1,5 +1,7 @@
@@ -555,7 +555,7 @@ index d4145e2d8..c71100d76 100644
    const [ref, setRef] = createSignal<PromptRef | undefined>()
    const args = useArgs()
    const local = useLocal()
-@@ -37,8 +41,76 @@ export function Home() {
+@@ -37,8 +41,73 @@ export function Home() {
    })
    let sent = false
  
@@ -625,14 +625,11 @@ index d4145e2d8..c71100d76 100644
 +
    onMount(() => {
      editor.clearSelection()
-+    // OC-034: on a fresh launch with no model, auto-start provisioning (operator-chosen; Ctrl+G cancels).
-+    if (process.env.AEGIS_NO_MODEL === "1" && process.env.AEGIS_AUTO_PROVISION === "1") {
-+      startProvision()
-+    }
++    // OC-038: provisioning is operator-initiated (Ctrl+G) — no auto-download, safe on a metered link.
    })
  
    const bind = (r: PromptRef | undefined) => {
-@@ -77,12 +149,39 @@ export function Home() {
+@@ -77,12 +146,48 @@ export function Home() {
              <Logo />
            </pluginRuntime.Slot>
          </box>
@@ -642,20 +639,29 @@ index d4145e2d8..c71100d76 100644
 +        {process.env.AEGIS_NO_MODEL === "1" && provPhase() !== "done" && (
 +          <box flexShrink={0} paddingTop={1} flexDirection="column" alignItems="center">
 +            <Switch>
-+              <Match when={provPhase() === "running"}>
-+                <text fg={theme.primary}>Provisioning a local model…</text>
++              <Match when={provPhase() === "running" && provPct() < 100}>
++                <text fg={theme.primary}>Downloading a local model…</text>
 +                <text fg={theme.text}>{provBar(provPct())} {provPct()}%</text>
 +                <text fg={theme.textMuted}>{provLine()}</text>
 +                <text fg={theme.textMuted}>Press  Ctrl+G  to cancel</text>
 +              </Match>
++              <Match when={provPhase() === "running"}>
++                <text fg={theme.primary}>Loading the model into memory…</text>
++                <text fg={theme.textMuted}>{provLine()}</text>
++                <text fg={theme.textMuted}>first load can take a minute · Ctrl+G to cancel</text>
++              </Match>
 +              <Match when={provPhase() === "error"}>
-+                <text fg={theme.text}>Provisioning failed.</text>
-+                <text fg={theme.textMuted}>Type  !aegis provision  to retry, or  !aegis provision --browse path.gguf  for a local file</text>
++                <text fg={theme.text}>Provisioning failed:</text>
++                <text fg={theme.textMuted}>{provLine()}</text>
++                <text fg={theme.textMuted}>Press  Ctrl+G  to retry · or  !aegis provision --browse path.gguf  for a local file</text>
 +              </Match>
 +              <Match when={true}>
 +                <text fg={theme.text}>No model loaded — provision one to begin</text>
 +                <text fg={theme.primary}>{process.env.AEGIS_BEST_FIT || "no model fits this host — browse a local GGUF"}</text>
-+                <text fg={theme.textMuted}>Press  Ctrl+G  to download + serve the best fit · or type  !aegis provision --browse path.gguf  for a local file</text>
++                {process.env.AEGIS_MODEL_RATIONALE ? <text fg={theme.textMuted}>{process.env.AEGIS_MODEL_RATIONALE}</text> : null}
++                {process.env.AEGIS_MODEL_URL ? <text fg={theme.textMuted}>source: {process.env.AEGIS_MODEL_URL}</text> : null}
++                {process.env.AEGIS_AVAILABLE_MODEL ? <text fg={theme.success}>already on this machine: {process.env.AEGIS_AVAILABLE_MODEL}</text> : null}
++                <text fg={theme.textMuted}>Press  Ctrl+G  to download + serve · or  !aegis provision --browse path.gguf  for a local file</text>
 +              </Match>
 +            </Switch>
 +          </box>

@@ -11,7 +11,6 @@ import (
 func TestHarnessAutoProvision(t *testing.T) {
 	patch := readRepoFile(t, "deploy/opencode/patches/20-rebrand-aegis.patch")
 	for _, want := range []string{
-		"AEGIS_AUTO_PROVISION",        // auto-start gate (cmdTUI sets it; home.tsx reads it)
 		"startProvision()",            // the auto-start call on mount
 		"provBar",                     // the live progress bar render
 		"setProvPct",                  // percent parsed from the streamed progress

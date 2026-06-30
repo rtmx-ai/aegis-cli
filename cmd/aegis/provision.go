@@ -368,3 +368,13 @@ func cmdProvisionFind(filter string, stdout io.Writer) int {
 	fmt.Fprintln(stdout, "use one with:  aegis provision --browse <path>   (or just launch aegis to pick on the screen)")
 	return 0
 }
+
+// bestFitURL returns the download URL of the recommended model (garden-overridden), for the in-TUI
+// provisioning screen (OC-039), or "" when nothing fits this host.
+func bestFitURL() string {
+	spec, err := resolveProvisionSpec("")
+	if err != nil {
+		return ""
+	}
+	return spec.URL
+}
