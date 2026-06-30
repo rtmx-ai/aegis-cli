@@ -16,4 +16,9 @@ func TestReleaseUsesTagVersion(t *testing.T) {
 	if !strings.Contains(sh, `VERSION="${GITHUB_REF_NAME#v}"`) {
 		t.Error("release.sh must override VERSION with the tag on a mismatch, so assets + formula agree")
 	}
+	// the override MUST be guarded to tag releases — on a branch CI run GITHUB_REF_NAME is the branch
+	// name ("main"), which must not become the version.
+	if !strings.Contains(sh, `"${GITHUB_REF_TYPE:-}" = "tag"`) {
+		t.Error("release.sh must guard the tag-override with GITHUB_REF_TYPE=tag")
+	}
 }
