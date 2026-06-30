@@ -55,3 +55,12 @@ hang (confirmed: `models[0] = aegis-zzztest`, and the M5 had a stale v1.3.2 `aeg
 **Fix:** `ollamaFallback` filters out `aegis-…` names when choosing the base + the surfaced list, so
 the base is always a real user model; the existence check (`ensureOllamaCtxModel`) still sees them.
 **Verify:** `cmd/aegis::TestOllamaFallbackIgnoresDerived`. **Deps:** OC-031.
+
+## REQ-OC-033 — Embed the model catalog so an installed aegis works outside the repo
+**Bug (v1.3.4, M5):** `aegis provision` fails with "model catalog not found (deploy/models/catalog.json)"
+on a Homebrew/.deb install run from any non-repo directory — the bundle ships the binary + harness but
+not `deploy/models/`, and `deployFileBytes` only checks alongside-binary + cwd. **Fix:** embed the
+three `deploy/models` files (catalog.json, origin-policy.json, MODEL_REF) into the aegis binary;
+`deployFileBytes` falls back to the embedded copy, and the origin policy loads from embedded bytes when
+no file is found — so provision/profile/the origin gate work anywhere. A sync test keeps the embedded
+copies identical to `deploy/models/`. **Verify:** `cmd/aegis::TestDeployFileBytesEmbedded`. **Deps:** —

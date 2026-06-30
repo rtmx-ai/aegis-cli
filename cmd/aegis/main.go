@@ -732,6 +732,12 @@ func deployFileBytes(rel string) ([]byte, error) {
 			return b, nil
 		}
 	}
+	if b, err := os.ReadFile(rel); err == nil {
+		return b, nil
+	}
+	if b, ok := embeddedDeploy[filepath.ToSlash(rel)]; ok { // OC-033: embedded default for an installed aegis
+		return b, nil
+	}
 	return os.ReadFile(rel)
 }
 
@@ -771,7 +777,7 @@ func verifyModelOrigin(stdout io.Writer) int {
 		fmt.Fprintf(stdout, "origin=SKIP (no model catalog)\n")
 		return 0
 	}
-	pol, err := origin.LoadPolicy(originPolicyPath())
+	pol, err := aegisOriginPolicy()
 	if err != nil {
 		fmt.Fprintf(stdout, "origin=FAIL (policy: %v)\n", err)
 		return 1

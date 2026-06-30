@@ -40,6 +40,18 @@ func PolicyPath() string {
 
 // LoadPolicy reads + validates the origin policy from path, or from PolicyPath() when path
 // is empty.
+// ParsePolicy parses + validates a policy from bytes (e.g. the embedded default). OC-033.
+func ParsePolicy(b []byte) (*Policy, error) {
+	var p Policy
+	if err := json.Unmarshal(b, &p); err != nil {
+		return nil, fmt.Errorf("origin: parse policy: %w", err)
+	}
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
 func LoadPolicy(path string) (*Policy, error) {
 	if path == "" {
 		path = PolicyPath()

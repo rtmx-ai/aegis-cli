@@ -1,0 +1,7 @@
+{
+  "note": "Per-country model-origin policy (MODEL-006/007). `default` is the disposition for any origin not listed below AND for unknown/unclassified origins. Shipped DEFAULT-DENY with ONLY US-origin models allowed: CN (e.g. Qwen/DeepSeek) and every other non-US origin are DENIED unless the operator EXPLICITLY opts in by adding that country with \"allow\" here. We classify model origins to map the ITAR / supply-chain envelope; allowing a non-US origin is a deliberate, auditable operator decision, never the default. The origin gate (aegis verify-env --check-origin, make origin-gate) fails when the selected model's (MODEL_REF) origin is not allowed. See docs/model-compliance.md.",
+  "default": "deny",
+  "countries": {
+    "US": "allow"
+  }
+}

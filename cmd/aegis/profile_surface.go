@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/rtmx-ai/aegis-cli/internal/origin"
 	"github.com/rtmx-ai/aegis-cli/internal/profile"
 )
 
@@ -17,7 +16,7 @@ func computeRecommendation(ctxTokens int) (profile.Recommendation, error) {
 		return profile.Recommendation{}, err
 	}
 	allowed := func(string) bool { return true }
-	if pol, perr := origin.LoadPolicy(originPolicyPath()); perr == nil {
+	if pol, perr := aegisOriginPolicy(); perr == nil {
 		allowed = pol.Allows
 	}
 	return profile.Recommend(specs, allowed, profile.Probe(), ctxTokens, profile.DefaultFloors()), nil
