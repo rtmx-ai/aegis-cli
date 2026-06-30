@@ -19,6 +19,15 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 VERSION="$(tr -d ' \n' < VERSION 2>/dev/null || echo dev)"
+# REL-012: in a tag release the tag is authoritative. The bundle-matrix and the published Homebrew
+# formula are both keyed off the tag (github.ref_name); a VERSION file that disagrees ships assets named
+# one version while the formula points at another version's URLs — a broken, URL-less formula (the
+# v1.3.7 break). Key off the tag and warn, so the release stays internally consistent even if a flaky
+# cut left the VERSION file stale.
+if [ -n "${GITHUB_REF_NAME:-}" ] && [ "${GITHUB_REF_NAME#v}" != "$VERSION" ]; then
+	echo "release: WARNING: VERSION file ($VERSION) != release tag $GITHUB_REF_NAME; using the tag." >&2
+	VERSION="${GITHUB_REF_NAME#v}"
+fi
 COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 DIST="${DIST:-dist}"
 rm -rf "$DIST"

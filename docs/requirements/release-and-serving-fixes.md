@@ -92,3 +92,11 @@ provisioning screen. Removes the ~30s pause the operator saw on every launch wit
 The 30s `opencode serve` readiness bound flaked the ITAR egress gate when the first bootstrap (plugin
 install) ran under test-suite CPU contention, costing release-push retries. Bump to 90s
 (`ServeReadyTimeout`, regression-guarded). **Verify:** `internal/opencode::TestServeReadyTimeoutGenerous`. **Deps:** —
+
+## REQ-REL-012 — Release version is tag-authoritative
+`scripts/release.sh` read the VERSION file for the asset names + the formula SHA-fill, while the
+bundle-matrix and the published Homebrew formula were keyed off the tag (`github.ref_name`). A flaky
+cut that left VERSION stale (v1.3.7: tag v1.3.7 on a VERSION=1.3.6 commit) shipped assets named 1.3.6
+with a formula pointing at 1.3.7 URLs → a broken, URL-less formula (`brew: formula requires at least a
+URL`). **Fix:** release.sh keys off the tag when it diverges from VERSION (warns), so assets + formula
+always agree. **Verify:** `test::TestReleaseUsesTagVersion`.
