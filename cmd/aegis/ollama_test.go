@@ -113,6 +113,34 @@ func TestOllamaFallbackUnusableModel(t *testing.T) {
 	if _, _, ok := ollamaFallback(config.Default()); ok {
 		t.Error("a backend-crashing model must make ollamaFallback report no usable Ollama (ok=false)")
 	}
+	if !ollamaModelUnusable("llama3:8b") {
+		t.Error("OC-036: a crashing model must be marked unusable so the next launch skips it")
+	}
+}
+
+// TestOllamaSkipsMarkedUnusable -> REQ-OC-036: a model marked unusable is skipped on the next launch —
+// aegis uses the next usable model instead of re-probing the bad one for 30s.
+func TestOllamaSkipsMarkedUnusable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			_, _ = w.Write([]byte(`{"models":[{"name":"bad:1"},{"name":"good:1"}]}`))
+		case "/api/create":
+			_, _ = w.Write([]byte(`{"status":"success"}`))
+		case "/v1/chat/completions":
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("OLLAMA_HOST", srv.URL)
+	markOllamaModelUnusable("bad:1")
+	oc, _, ok := ollamaFallback(config.Default())
+	if !ok || oc.ModelID != "aegis-good-1" {
+		t.Errorf("a marked-unusable model must be skipped for the next usable one: ok=%v model=%q", ok, oc.ModelID)
+	}
 }
 
 func TestOllamaCtxModel(t *testing.T) {

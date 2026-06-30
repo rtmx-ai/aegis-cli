@@ -81,3 +81,14 @@ unprobed — which loads but **crashes llama-server on generation** (GGML_SCHED_
 500), freezing the TUI on the first prompt with no provisioning screen. **Fix:** probe the FINAL model;
 if it can't generate, report no usable Ollama → cmdTUI renders the provisioning screen (auto-provision,
 OC-034) instead of a silent hang. **Verify:** `cmd/aegis::TestOllamaFallbackUnusableModel`. **Deps:** OC-031, OC-034.
+
+## REQ-OC-036 — Remember an unusable Ollama model so the next launch skips it
+When ollamaFallback's final probe (OC-035) finds a model that crashes generation, mark it; subsequent
+launches skip the marked model (no 30s re-probe) — going straight to the next usable model or the
+provisioning screen. Removes the ~30s pause the operator saw on every launch with a crashing Ollama.
+**Verify:** `cmd/aegis::TestOllamaSkipsMarkedUnusable`. **Deps:** OC-035.
+
+## REQ-OC-037 — Generous opencode-serve readiness bound (de-flake the ITAR gate)
+The 30s `opencode serve` readiness bound flaked the ITAR egress gate when the first bootstrap (plugin
+install) ran under test-suite CPU contention, costing release-push retries. Bump to 90s
+(`ServeReadyTimeout`, regression-guarded). **Verify:** `internal/opencode::TestServeReadyTimeoutGenerous`. **Deps:** —

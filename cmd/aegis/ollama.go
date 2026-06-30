@@ -158,6 +158,31 @@ func markOllamaCtxBroken(base string) {
 	}
 }
 
+// ollamaUnusableMarker / ollamaModelUnusable / markOllamaModelUnusable remember that a base model
+// crashes the backend on generation (Gemma 3n: GGML_SCHED_MAX_SPLIT_INPUTS), so aegis skips it on the
+// next launch instead of re-probing it for 30s (OC-036).
+func ollamaUnusableMarker(model string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "aegis", "ollama-unusable-"+strings.NewReplacer(":", "-", "/", "-").Replace(model))
+}
+func ollamaModelUnusable(model string) bool {
+	m := ollamaUnusableMarker(model)
+	if m == "" {
+		return false
+	}
+	_, err := os.Stat(m)
+	return err == nil
+}
+func markOllamaModelUnusable(model string) {
+	if m := ollamaUnusableMarker(model); m != "" {
+		_ = os.MkdirAll(filepath.Dir(m), 0o755)
+		_ = os.WriteFile(m, []byte("this Ollama model crashes the backend on generation; aegis skips it\n"), 0o644)
+	}
+}
+
 // ollamaFallback points cfg at a running Ollama (its OpenAI-compatible endpoint + a usable model)
 // when no local model is provisioned but Ollama is up. OC-028/029/031: prefers a num_ctx-sized
 // derived model, but only after verifying it actually loads + answers — else it drops the derived
@@ -165,9 +190,13 @@ func markOllamaCtxBroken(base string) {
 func ollamaFallback(cfg config.Config) (config.Config, []string, bool) {
 	var models []string
 	for _, m := range detectOllama() {
-		if !strings.HasPrefix(m, "aegis-") { // OC-032: never treat aegis's own derived models as the base
-			models = append(models, m)
+		if strings.HasPrefix(m, "aegis-") { // OC-032: never treat aegis's own derived models as the base
+			continue
 		}
+		if ollamaModelUnusable(m) { // OC-036: a prior launch found this model crashes generation — skip it
+			continue
+		}
+		models = append(models, m)
 	}
 	if len(models) == 0 {
 		return cfg, nil, false
@@ -185,6 +214,7 @@ func ollamaFallback(cfg config.Config) (config.Config, []string, bool) {
 	// the first prompt. If it can't generate, report no usable Ollama so the caller shows the
 	// provisioning screen instead of a silent hang.
 	if !ollamaModelResponds(model, 30*time.Second) {
+		markOllamaModelUnusable(base) // OC-036: remember so the next launch skips the 30s re-probe
 		return cfg, nil, false
 	}
 	cfg.ModelID = model

@@ -298,7 +298,7 @@ func StartServe(ctx context.Context, bin string, cfg config.Config, workdir stri
 	}
 	c := NewServeClient(fmt.Sprintf("http://127.0.0.1:%d", port))
 	c.dir = workdir
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(ServeReadyTimeout)
 	for time.Now().Before(deadline) {
 		if c.Ready(ctx) {
 			c.SetAuth("opencode", statePassword())
@@ -307,5 +307,10 @@ func StartServe(ctx context.Context, bin string, cfg config.Config, workdir stri
 		time.Sleep(200 * time.Millisecond)
 	}
 	stop()
-	return nil, nil, errors.New("opencode serve: API did not become ready within 30s")
+	return nil, nil, errors.New("opencode serve: API did not become ready within 90s")
 }
+
+// ServeReadyTimeout bounds how long we wait for `opencode serve` to bootstrap to readiness. Generous
+// on purpose: the first bootstrap installs plugins and can be slow under CPU contention (the ITAR
+// egress test runs it inside a netns alongside the whole suite), where a tight bound flakes the gate.
+const ServeReadyTimeout = 90 * time.Second
