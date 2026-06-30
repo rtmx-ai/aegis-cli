@@ -414,14 +414,25 @@ func cmdTUI(stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "aegis: %v\n", serr)
 			return 1
 		}
-		// OC-025: no model is NOT fatal — launch the TUI in the no-model state (the OC-022 screen
-		// consumes AEGIS_NO_MODEL to render in-app provisioning) rather than exiting to the shell.
-		_ = os.Setenv("AEGIS_NO_MODEL", "1")
-		_ = os.Setenv("AEGIS_BEST_FIT", bestFitCard()) // OC-022: the in-TUI screen shows this
-		if exe, eerr := os.Executable(); eerr == nil {
-			_ = os.Setenv("AEGIS_BIN", exe) // OC-026: the screen spawns this for `aegis provision`
+		// OC-028: no local model — but if the operator already runs Ollama, use those models rather
+		// than claiming there are none. Detected + surfaced, with provisioning offered as the alternative.
+		if oc, models, ok := ollamaFallback(cfg); ok {
+			cfg = oc
+			fmt.Fprintf(stderr, "aegis: no local model provisioned — using your Ollama model %q\n", models[0])
+			if len(models) > 1 {
+				fmt.Fprintf(stderr, "        other Ollama models (switch in the model picker): %s\n", strings.Join(models[1:], ", "))
+			}
+			fmt.Fprintln(stderr, "        run `aegis provision` for a dedicated, host-calibrated local model instead")
+		} else {
+			// OC-025: no model is NOT fatal — launch the TUI in the no-model state (the OC-022 screen
+			// consumes AEGIS_NO_MODEL to render in-app provisioning) rather than exiting to the shell.
+			_ = os.Setenv("AEGIS_NO_MODEL", "1")
+			_ = os.Setenv("AEGIS_BEST_FIT", bestFitCard()) // OC-022: the in-TUI screen shows this
+			if exe, eerr := os.Executable(); eerr == nil {
+				_ = os.Setenv("AEGIS_BIN", exe) // OC-026: the screen spawns this for `aegis provision`
+			}
+			fmt.Fprintln(stderr, "aegis: no model yet — provision one in the TUI (or run `aegis provision`)")
 		}
-		fmt.Fprintln(stderr, "aegis: no model yet — provision one in the TUI (or run `aegis provision`)")
 	}
 	if stop != nil {
 		defer stop()
