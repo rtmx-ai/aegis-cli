@@ -24,9 +24,39 @@ const StagedConfigSeedRelPath = "deploy/opencode/oc-config/opencode"
 // present + the dep locked => no reify). The package is a stub; OpenCode's plugin
 // runtime types are compiled into the binary, so a stub entry is enough to suppress
 // the install without changing behavior.
+// ContextEfficiencyPluginFile is the staged aegis plugin that trims the model context before each
+// model call (PERF-004/005). It loads via the rendered config's "plugin" field on the TUI (serve)
+// path; the headless --pure path skips plugins by design.
+const ContextEfficiencyPluginFile = "aegis-context-efficiency.js"
+
+// contextEfficiencyPlugin strips stale reasoning parts and bounds oversized tool results before each
+// model call (opencode's experimental.chat.messages.transform hook), so the context stays lean and
+// opencode's compaction (which rewrites the cached prefix on overflow, forcing a cold re-prefill)
+// triggers later — keeping prompt-cache reuse valid for more turns. Pure-local, no egress.
+const contextEfficiencyPlugin = `export const ContextEfficiency = async () => ({
+  "experimental.chat.messages.transform": async (_input, output) => {
+    const MAX = 8000
+    const trunc = (s) => s.slice(0, MAX) + "\n... [aegis: truncated " + (s.length - MAX) + " chars to preserve context]"
+    for (const msg of (output && output.messages) || []) {
+      if (!msg || !Array.isArray(msg.parts)) continue
+      msg.parts = msg.parts.filter((p) => p && p.type !== "reasoning")
+      for (const p of msg.parts) {
+        if (!p) continue
+        const inv = p.toolInvocation
+        if (inv && typeof inv.result === "string" && inv.result.length > MAX) inv.result = trunc(inv.result)
+        const st = p.state
+        if (st && typeof st.output === "string" && st.output.length > MAX) st.output = trunc(st.output)
+      }
+    }
+  },
+})
+export default ContextEfficiency
+`
+
 var pluginSeedFiles = map[string]string{
-	"package.json":      "{\"name\":\"opencode-config\",\"private\":true,\"dependencies\":{\"@opencode-ai/plugin\":\"*\"}}\n",
-	"package-lock.json": "{\"name\":\"opencode-config\",\"lockfileVersion\":3,\"requires\":true,\"packages\":{\"\":{\"dependencies\":{\"@opencode-ai/plugin\":\"*\"}},\"node_modules/@opencode-ai/plugin\":{\"version\":\"0.0.0\"}}}\n",
+	ContextEfficiencyPluginFile:                     contextEfficiencyPlugin,
+	"package.json":                                  "{\"name\":\"opencode-config\",\"private\":true,\"dependencies\":{\"@opencode-ai/plugin\":\"*\"}}\n",
+	"package-lock.json":                             "{\"name\":\"opencode-config\",\"lockfileVersion\":3,\"requires\":true,\"packages\":{\"\":{\"dependencies\":{\"@opencode-ai/plugin\":\"*\"}},\"node_modules/@opencode-ai/plugin\":{\"version\":\"0.0.0\"}}}\n",
 	"node_modules/@opencode-ai/plugin/package.json": "{\"name\":\"@opencode-ai/plugin\",\"version\":\"0.0.0\",\"type\":\"module\",\"main\":\"index.js\"}\n",
 	"node_modules/@opencode-ai/plugin/index.js":     "export {};\n",
 }

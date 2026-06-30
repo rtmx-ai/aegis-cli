@@ -84,6 +84,13 @@ func RenderConfig(cfg config.Config, intent bool) string {
 		instructions = fmt.Sprintf(`,
   "instructions": [%q]`, filepath.Join(seed, toolCoachingFile))
 	}
+	// PERF-004/005: load the staged context-efficiency plugin (strip reasoning + bound tool output) so
+	// the context stays lean — only the TUI (serve) path loads it; the headless --pure path skips it.
+	plugin := ""
+	if seed, ok := ConfigSeedDir(); ok {
+		plugin = fmt.Sprintf(`,
+  "plugin": [%q]`, filepath.Join(seed, ContextEfficiencyPluginFile))
+	}
 	// SERVE-020 (per-model tuning) + RUNQ-003 (step/output limits) on the build agent:
 	// tuning shapes sampling so the model tool-calls reliably; the limits bound a
 	// capable-but-rambling model so it completes instead of running away.
@@ -103,8 +110,8 @@ func RenderConfig(cfg config.Config, intent bool) string {
       "models": { %q: { "name": %q } }
     }
   },
-  "model": %q%s%s%s%s
-}`, baseURL, model, model, "local/"+model, mcp, command, instructions, agent)
+  "model": %q%s%s%s%s%s
+}`, baseURL, model, model, "local/"+model, mcp, command, instructions, plugin, agent)
 }
 
 // renderAgent emits the OpenCode `agent.build` block: per-model tuning (SERVE-020) plus the
