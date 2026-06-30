@@ -527,7 +527,7 @@ index a58a8cf99..12105b84e 100644
  
  export const go = {
 diff --git a/packages/tui/src/routes/home.tsx b/packages/tui/src/routes/home.tsx
-index d4145e2d8..b3de2103f 100644
+index d4145e2d8..c71100d76 100644
 --- a/packages/tui/src/routes/home.tsx
 +++ b/packages/tui/src/routes/home.tsx
 @@ -1,5 +1,7 @@
@@ -555,7 +555,7 @@ index d4145e2d8..b3de2103f 100644
    const [ref, setRef] = createSignal<PromptRef | undefined>()
    const args = useArgs()
    const local = useLocal()
-@@ -37,6 +41,42 @@ export function Home() {
+@@ -37,8 +41,76 @@ export function Home() {
    })
    let sent = false
  
@@ -564,11 +564,19 @@ index d4145e2d8..b3de2103f 100644
 +  // once the model is serving — so the operator never leaves the TUI. No spawn until the keypress.
 +  const [provPhase, setProvPhase] = createSignal<"idle" | "running" | "done" | "error">("idle")
 +  const [provLine, setProvLine] = createSignal("starting…")
++  const [provPct, setProvPct] = createSignal(0) // OC-034: 0-100 for the progress bar
++  let provChild: ReturnType<typeof spawn> | undefined // OC-034: handle so Ctrl+G can cancel the download
++  const provBar = (pct: number) => {
++    const w = 24
++    const f = Math.max(0, Math.min(w, Math.round((pct / 100) * w)))
++    return "[" + "█".repeat(f) + "░".repeat(w - f) + "]"
++  }
 +  function startProvision() {
 +    if (provPhase() !== "idle") return
 +    setProvPhase("running")
 +    setProvLine("starting…")
 +    const child = spawn(process.env.AEGIS_BIN || "aegis", ["provision"], { stdio: ["ignore", "pipe", "pipe"] })
++    provChild = child
 +    let buffer = ""
 +    const onData = (chunk: Buffer) => {
 +      buffer += chunk.toString()
@@ -577,8 +585,14 @@ index d4145e2d8..b3de2103f 100644
 +      for (const raw of parts) {
 +        const line = raw.replace(/^aegis: provision: /, "").trim()
 +        if (!line) continue
-+        const m = line.match(/^downloaded [\d.]+\/[\d.]+ GB \((\d+)%\)/)
-+        setProvLine(m ? `downloading the model… ${m[1]}%` : line)
++        const m = line.match(/^downloaded ([\d.]+\/[\d.]+ GB) \((\d+)%\)/)
++        if (m) {
++          setProvPct(parseInt(m[2], 10))
++          const rate = line.match(/[\d.]+ MB\/s[^\n]*/)
++          setProvLine(`${m[1]}${rate ? "  ·  " + rate[0] : ""}`)
++        } else {
++          setProvLine(line)
++        }
 +      }
 +    }
 +    child.stdout?.on("data", onData)
@@ -588,17 +602,37 @@ index d4145e2d8..b3de2103f 100644
 +  }
 +  useBindings(() => ({
 +    mode: OPENCODE_BASE_MODE, // OC-027: without the active mode the bind sat below the prompt's keys and never fired
-+    enabled: () => process.env.AEGIS_NO_MODEL === "1" && provPhase() === "idle",
++    enabled: () => process.env.AEGIS_NO_MODEL === "1" && provPhase() !== "done",
 +    bindings: [
++      // ctrl+g toggles: start the download when idle, cancel it when running (OC-034).
 +      // ctrl+g, not ctrl+d: ctrl+d is input-delete (and app-exit on an empty prompt).
-+      { key: "ctrl+g", desc: "Download the best-fit model", group: "Provisioning", cmd: () => startProvision() },
++      {
++        key: "ctrl+g",
++        desc: "Download / cancel the model",
++        group: "Provisioning",
++        cmd: () => {
++          if (provPhase() === "running") {
++            provChild?.kill()
++            setProvPhase("idle")
++            setProvPct(0)
++          } else {
++            startProvision()
++          }
++        },
++      },
 +    ],
 +  }))
 +
    onMount(() => {
      editor.clearSelection()
++    // OC-034: on a fresh launch with no model, auto-start provisioning (operator-chosen; Ctrl+G cancels).
++    if (process.env.AEGIS_NO_MODEL === "1" && process.env.AEGIS_AUTO_PROVISION === "1") {
++      startProvision()
++    }
    })
-@@ -77,12 +117,37 @@ export function Home() {
+ 
+   const bind = (r: PromptRef | undefined) => {
+@@ -77,12 +149,39 @@ export function Home() {
              <Logo />
            </pluginRuntime.Slot>
          </box>
@@ -609,8 +643,10 @@ index d4145e2d8..b3de2103f 100644
 +          <box flexShrink={0} paddingTop={1} flexDirection="column" alignItems="center">
 +            <Switch>
 +              <Match when={provPhase() === "running"}>
-+                <text fg={theme.primary}>Provisioning the model…</text>
++                <text fg={theme.primary}>Provisioning a local model…</text>
++                <text fg={theme.text}>{provBar(provPct())} {provPct()}%</text>
 +                <text fg={theme.textMuted}>{provLine()}</text>
++                <text fg={theme.textMuted}>Press  Ctrl+G  to cancel</text>
 +              </Match>
 +              <Match when={provPhase() === "error"}>
 +                <text fg={theme.text}>Provisioning failed.</text>

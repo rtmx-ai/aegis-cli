@@ -64,3 +64,12 @@ three `deploy/models` files (catalog.json, origin-policy.json, MODEL_REF) into t
 `deployFileBytes` falls back to the embedded copy, and the origin policy loads from embedded bytes when
 no file is found — so provision/profile/the origin gate work anywhere. A sync test keeps the embedded
 copies identical to `deploy/models/`. **Verify:** `cmd/aegis::TestDeployFileBytesEmbedded`. **Deps:** —
+
+## REQ-OC-034 — Auto-provision a dedicated model on launch (prefer dedicated over Ollama)
+Operator choices (2026-06-30): auto-start the download (visible + cancelable); always prefer a
+dedicated llama.cpp model (Ollama is a stopgap).
+**Behavior:** on launch with no dedicated local model, the no-model screen **auto-starts** downloading
+the best-fitting US model with a live progress bar and a cancel key — even when Ollama is detected. A
+dedicated model is the preferred target; Ollama is offered as a "use now while it downloads / instead"
+option and used if the operator cancels. Requires the embedded catalog (OC-033). **Verify:**
+`test::TestHarnessAutoProvision` + `cmd/aegis` for the cmdTUI prioritization. **Deps:** OC-026, OC-028, OC-033.

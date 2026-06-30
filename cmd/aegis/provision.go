@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rtmx-ai/aegis-cli/internal/config"
@@ -178,22 +179,48 @@ func downloadModel(spec provisionSpec, dest string, progress io.Writer) error {
 // progressTracker emits a download-progress line at most once a second (parseable by the TUI screen).
 type progressTracker struct {
 	total, done uint64
-	last        time.Time
+	start, last time.Time
 	w           io.Writer
 }
 
 func (p *progressTracker) Write(b []byte) (int, error) {
 	p.done += uint64(len(b))
-	if time.Since(p.last) > time.Second {
-		p.last = time.Now()
+	now := time.Now()
+	if p.start.IsZero() {
+		p.start = now
+	}
+	if now.Sub(p.last) > time.Second || (p.total > 0 && p.done >= p.total) {
+		p.last = now
 		pct := 0.0
 		if p.total > 0 {
 			pct = 100 * float64(p.done) / float64(p.total)
 		}
-		fmt.Fprintf(p.w, "aegis: provision: downloaded %.1f/%.1f GB (%.0f%%)\n",
-			float64(p.done)/1e9, float64(p.total)/1e9, pct)
+		mbps, eta := 0.0, ""
+		if el := now.Sub(p.start).Seconds(); el > 0 {
+			mbps = float64(p.done) / 1e6 / el
+			if mbps > 0 && p.total > p.done {
+				secs := float64(p.total-p.done) / 1e6 / mbps
+				eta = " ETA " + (time.Duration(secs) * time.Second).Round(time.Second).String()
+			}
+		}
+		// The TUI parses the "downloaded X/Y GB (Z%)" prefix; the bar + rate follow for CLI-direct use.
+		fmt.Fprintf(p.w, "aegis: provision: downloaded %.1f/%.1f GB (%.0f%%) %s %.0f MB/s%s\n",
+			float64(p.done)/1e9, float64(p.total)/1e9, pct, progressBar(pct), mbps, eta)
 	}
 	return len(b), nil
+}
+
+// progressBar renders a fixed-width unicode bar for a 0-100 percentage.
+func progressBar(pct float64) string {
+	const width = 20
+	filled := int(pct / 100 * float64(width))
+	if filled < 0 {
+		filled = 0
+	}
+	if filled > width {
+		filled = width
+	}
+	return "[" + strings.Repeat("█", filled) + strings.Repeat("░", width-filled) + "]"
 }
 
 func modelDownloadDir() string {
