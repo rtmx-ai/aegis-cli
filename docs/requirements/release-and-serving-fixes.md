@@ -73,3 +73,11 @@ the best-fitting US model with a live progress bar and a cancel key — even whe
 dedicated model is the preferred target; Ollama is offered as a "use now while it downloads / instead"
 option and used if the operator cancels. Requires the embedded catalog (OC-033). **Verify:**
 `test::TestHarnessAutoProvision` + `cmd/aegis` for the cmdTUI prioritization. **Deps:** OC-026, OC-028, OC-033.
+
+## REQ-OC-035 — Probe the final Ollama model; route a backend-crashing one to provisioning
+**Bug (v1.3.6, M5):** `ollamaFallback` probed only the *derived* ctx model, not the base it ultimately
+handed opencode. With the OC-031 marker routing Gemma 3n to its base, aegis handed opencode `gemma4:e4b`
+unprobed — which loads but **crashes llama-server on generation** (GGML_SCHED_MAX_SPLIT_INPUTS → HTTP
+500), freezing the TUI on the first prompt with no provisioning screen. **Fix:** probe the FINAL model;
+if it can't generate, report no usable Ollama → cmdTUI renders the provisioning screen (auto-provision,
+OC-034) instead of a silent hang. **Verify:** `cmd/aegis::TestOllamaFallbackUnusableModel`. **Deps:** OC-031, OC-034.

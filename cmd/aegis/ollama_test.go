@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,16 +67,51 @@ func TestOllamaFallback(t *testing.T) {
 }
 
 func TestOllamaFallbackBrokenDerived(t *testing.T) {
-	srv := httptest.NewServer(ollamaMux(http.StatusInternalServerError, nil)) // derived model hangs/fails the probe
+	// the derived ctx model load-hangs (500), but the base generates fine (200) -> fall back to the base.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			_, _ = w.Write([]byte(`{"models":[{"name":"llama3:8b"}]}`))
+		case "/api/create":
+			_, _ = w.Write([]byte(`{"status":"success"}`))
+		case "/v1/chat/completions":
+			var req struct {
+				Model string `json:"model"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			if strings.HasPrefix(req.Model, "aegis-") {
+				w.WriteHeader(http.StatusInternalServerError) // derived hangs
+			} else {
+				w.WriteHeader(http.StatusOK) // base works
+			}
+		case "/api/delete":
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
 	defer srv.Close()
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("OLLAMA_HOST", srv.URL)
 	oc, _, ok := ollamaFallback(config.Default())
 	if !ok || oc.ModelID != "llama3:8b" {
-		t.Errorf("a hanging derived model must fall back to the base: model=%q", oc.ModelID)
+		t.Errorf("a hanging derived model must fall back to the working base: ok=%v model=%q", ok, oc.ModelID)
 	}
 	if !ollamaCtxBroken("llama3:8b") {
-		t.Error("a failed probe must mark the base so the derived model is not recreated next launch")
+		t.Error("a failed derived probe must mark the base so it is not recreated next launch")
+	}
+}
+
+// TestOllamaFallbackUnusableModel -> REQ-OC-035: a model that loads but crashes the backend on
+// generation (Gemma 3n: HTTP 500) must NOT be handed to opencode — ollamaFallback reports no usable
+// Ollama so the caller shows the provisioning screen instead of a frozen TUI.
+func TestOllamaFallbackUnusableModel(t *testing.T) {
+	srv := httptest.NewServer(ollamaMux(http.StatusInternalServerError, nil)) // every generation crashes
+	defer srv.Close()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("OLLAMA_HOST", srv.URL)
+	if _, _, ok := ollamaFallback(config.Default()); ok {
+		t.Error("a backend-crashing model must make ollamaFallback report no usable Ollama (ok=false)")
 	}
 }
 

@@ -180,6 +180,13 @@ func ollamaFallback(cfg config.Config) (config.Config, []string, bool) {
 		removeOllamaModel(model)
 		model = base
 	}
+	// OC-035: probe the FINAL model we'd hand opencode. A model that loads but crashes the backend on
+	// generation (Gemma 3n: GGML_SCHED_MAX_SPLIT_INPUTS -> HTTP 500) would otherwise freeze the TUI on
+	// the first prompt. If it can't generate, report no usable Ollama so the caller shows the
+	// provisioning screen instead of a silent hang.
+	if !ollamaModelResponds(model, 30*time.Second) {
+		return cfg, nil, false
+	}
 	cfg.ModelID = model
 	return cfg, models, true
 }
