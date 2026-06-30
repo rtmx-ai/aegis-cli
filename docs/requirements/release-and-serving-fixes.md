@@ -27,3 +27,13 @@ catalog/serving layer already understands ollama tags.
 **Fix:** detect a running Ollama (probe `localhost:11434/api/tags`) and surface its installed models on
 the no-model screen as a pickable serving option (operator chooses Ollama vs provisioning a fresh
 model). **Verify:** `cmd/aegis::TestDetectOllama`. **Deps:** OC-022.
+
+## REQ-OC-029 — Make a detected Ollama actually usable (context fix)
+**Bug (v1.3.1, found on the M5):** the Ollama fallback (OC-028) is detected but unusable — opencode's
+agent prompt (system + tool schemas) overflows Ollama's default `num_ctx` (~2048), so Ollama
+**truncates** it, the model loses its instructions/tools, and flails (slow/wrong/looping). Verified:
+the model fails to recall a system rule placed before an 8k-token prompt, and **`num_ctx` sent on the
+OpenAI-compat `/v1` request is ignored** by Ollama — so aegis cannot fix it via opencode options.
+**Fix:** aegis creates a lightweight derived model (`aegis-<model>`, `FROM <model>` + `PARAMETER
+num_ctx N`, via `/api/create` — shares the base weights) and points opencode at it, so the full agent
+prompt fits. **Verify:** `cmd/aegis::TestOllamaCtxModel`. **Deps:** OC-028.

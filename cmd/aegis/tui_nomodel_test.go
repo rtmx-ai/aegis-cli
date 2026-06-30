@@ -77,7 +77,7 @@ func TestTUIUsesOllama(t *testing.T) {
 	if code := cmdTUI(&o, &e); code != 0 {
 		t.Fatalf("cmdTUI = %d, want 0 (stderr %s)", code, e.String())
 	}
-	if gotEndpoint != srv.URL || gotModel != "llama3:8b" {
+	if gotEndpoint != srv.URL || gotModel != "aegis-llama3-8b" {
 		t.Errorf("cmdTUI must launch opencode against Ollama: endpoint=%q model=%q", gotEndpoint, gotModel)
 	}
 	if os.Getenv("AEGIS_NO_MODEL") == "1" {
