@@ -119,3 +119,30 @@ func TestOllamaModelResponds(t *testing.T) {
 		t.Error("a model slower than the deadline must be reported as NOT responding (the hang case)")
 	}
 }
+
+// TestOllamaFallbackIgnoresDerived → REQ-OC-032: aegis's own aegis-<model> derivatives (which Ollama
+// sorts first) must not be chosen as the base — the base must be a real user model.
+func TestOllamaFallbackIgnoresDerived(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			_, _ = w.Write([]byte(`{"models":[{"name":"aegis-stale:latest"},{"name":"gemma:7b"}]}`)) // aegis-* first
+		case "/api/create":
+			_, _ = w.Write([]byte(`{"status":"success"}`))
+		case "/v1/chat/completions":
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("OLLAMA_HOST", srv.URL)
+	oc, models, ok := ollamaFallback(config.Default())
+	if !ok || len(models) != 1 || models[0] != "gemma:7b" {
+		t.Errorf("the base must be the real user model, not aegis's derivative: models=%v", models)
+	}
+	if oc.ModelID != "aegis-gemma-7b" {
+		t.Errorf("must derive from the real base: model=%q", oc.ModelID)
+	}
+}

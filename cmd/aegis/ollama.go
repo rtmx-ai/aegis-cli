@@ -163,7 +163,12 @@ func markOllamaCtxBroken(base string) {
 // derived model, but only after verifying it actually loads + answers — else it drops the derived
 // model and uses the base, never handing opencode a model that hangs.
 func ollamaFallback(cfg config.Config) (config.Config, []string, bool) {
-	models := detectOllama()
+	var models []string
+	for _, m := range detectOllama() {
+		if !strings.HasPrefix(m, "aegis-") { // OC-032: never treat aegis's own derived models as the base
+			models = append(models, m)
+		}
+	}
 	if len(models) == 0 {
 		return cfg, nil, false
 	}

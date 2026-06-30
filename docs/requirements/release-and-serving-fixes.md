@@ -46,3 +46,12 @@ Metal — confirmed with Gemma 3n (`gemma…:e4b`): the derived model hangs even
 deadline). If it doesn't answer, drop it (delete + a marker so it isn't recreated/re-probed) and use
 the base model. A detected Ollama then either works or degrades to the base — never hangs.
 **Verify:** `cmd/aegis::TestOllamaModelResponds`. **Deps:** OC-029.
+
+## REQ-OC-032 — Ignore aegis's own derived models as Ollama base candidates
+**Bug (v1.3.3, M5):** `detectOllama` lists ALL Ollama models including aegis's own `aegis-<model>`
+derivatives (OC-029), and Ollama sorts them first (alphabetical). So `ollamaFallback` picked aegis's
+own (possibly broken) derived model as the "base" — then OC-031's fall-back landed right back on it →
+hang (confirmed: `models[0] = aegis-zzztest`, and the M5 had a stale v1.3.2 `aegis-gemma4-e4b`).
+**Fix:** `ollamaFallback` filters out `aegis-…` names when choosing the base + the surfaced list, so
+the base is always a real user model; the existence check (`ensureOllamaCtxModel`) still sees them.
+**Verify:** `cmd/aegis::TestOllamaFallbackIgnoresDerived`. **Deps:** OC-031.
