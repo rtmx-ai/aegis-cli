@@ -238,3 +238,37 @@ func usableOllamaCandidate() string {
 	}
 	return ""
 }
+
+// ollamaModelGGUF resolves an Ollama model to its on-disk GGUF blob via /api/show (the Modelfile's
+// FROM line), so aegis can serve it through its own llama-server on the local endpoint — the same path
+// as a browsed GGUF, no opencode relaunch (OC-047). "" if unresolved or the blob is gone.
+func ollamaModelGGUF(model string) string {
+	body, err := json.Marshal(map[string]string{"model": model})
+	if err != nil {
+		return ""
+	}
+	resp, err := http.Post(ollamaHost()+"/api/show", "application/json", bytes.NewReader(body)) //nolint:gosec
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var out struct {
+		Modelfile string `json:"modelfile"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(out.Modelfile, "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "FROM "); ok {
+			p := strings.TrimSpace(rest)
+			if fi, serr := os.Stat(p); serr == nil && !fi.IsDir() {
+				return p
+			}
+		}
+	}
+	return ""
+}

@@ -41,3 +41,14 @@ func TestHarnessProvisionFailureReason(t *testing.T) {
 		t.Error("OC-044: the failure state must show the reason (Provisioning failed: + provLine)")
 	}
 }
+
+// TestHarnessUseAvailable → REQ-OC-047 (UI guard): the screen offers Ctrl+O to use a model already on
+// the machine, serving its GGUF via --browse.
+func TestHarnessUseAvailable(t *testing.T) {
+	p := provScreenPatch(t)
+	for _, want := range []string{`key: "ctrl+o"`, "AEGIS_AVAILABLE_PATH", `"--browse"`, "Ctrl+O to use it now"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("OC-047: the use-available UI must include %q", want)
+		}
+	}
+}

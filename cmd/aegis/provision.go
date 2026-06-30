@@ -288,7 +288,7 @@ func bestAvailableModel() *availableModel {
 		return &availableModel{Kind: "gguf", ID: filepath.Base(g), Path: g}
 	}
 	if m := usableOllamaCandidate(); m != "" {
-		return &availableModel{Kind: "ollama", ID: m}
+		return &availableModel{Kind: "ollama", ID: m, Path: ollamaModelGGUF(m)}
 	}
 	return nil
 }

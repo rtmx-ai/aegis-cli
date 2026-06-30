@@ -527,7 +527,7 @@ index a58a8cf99..12105b84e 100644
  
  export const go = {
 diff --git a/packages/tui/src/routes/home.tsx b/packages/tui/src/routes/home.tsx
-index d4145e2d8..08e4544b0 100644
+index d4145e2d8..9f37bc02f 100644
 --- a/packages/tui/src/routes/home.tsx
 +++ b/packages/tui/src/routes/home.tsx
 @@ -1,5 +1,7 @@
@@ -555,7 +555,7 @@ index d4145e2d8..08e4544b0 100644
    const [ref, setRef] = createSignal<PromptRef | undefined>()
    const args = useArgs()
    const local = useLocal()
-@@ -37,8 +41,73 @@ export function Home() {
+@@ -37,8 +41,85 @@ export function Home() {
    })
    let sent = false
  
@@ -571,11 +571,11 @@ index d4145e2d8..08e4544b0 100644
 +    const f = Math.max(0, Math.min(w, Math.round((pct / 100) * w)))
 +    return "[" + "█".repeat(f) + "░".repeat(w - f) + "]"
 +  }
-+  function startProvision() {
++  function startProvision(extraArgs: string[] = []) {
 +    if (provPhase() !== "idle") return
 +    setProvPhase("running")
 +    setProvLine("starting…")
-+    const child = spawn(process.env.AEGIS_BIN || "aegis", ["provision"], { stdio: ["ignore", "pipe", "pipe"] })
++    const child = spawn(process.env.AEGIS_BIN || "aegis", ["provision", ...extraArgs], { stdio: ["ignore", "pipe", "pipe"] })
 +    provChild = child
 +    let buffer = ""
 +    const onData = (chunk: Buffer) => {
@@ -620,6 +620,18 @@ index d4145e2d8..08e4544b0 100644
 +          }
 +        },
 +      },
++      // OC-047: use a model already on this machine — aegis serves its GGUF on the local endpoint, the
++      // same path as a download, so opencode connects without a relaunch.
++      ...(process.env.AEGIS_AVAILABLE_PATH
++        ? [
++            {
++              key: "ctrl+o",
++              desc: "Use the model already on this machine",
++              group: "Provisioning",
++              cmd: () => startProvision(["--browse", process.env.AEGIS_AVAILABLE_PATH!]),
++            },
++          ]
++        : []),
 +    ],
 +  }))
 +
@@ -629,7 +641,7 @@ index d4145e2d8..08e4544b0 100644
    })
  
    const bind = (r: PromptRef | undefined) => {
-@@ -77,12 +146,48 @@ export function Home() {
+@@ -77,12 +158,48 @@ export function Home() {
              <Logo />
            </pluginRuntime.Slot>
          </box>
@@ -660,7 +672,7 @@ index d4145e2d8..08e4544b0 100644
 +                <text fg={theme.primary}>{process.env.AEGIS_BEST_FIT || "no model fits this host — browse a local GGUF"}</text>
 +                {process.env.AEGIS_MODEL_RATIONALE ? <text fg={theme.textMuted}>{process.env.AEGIS_MODEL_RATIONALE}</text> : null}
 +                {process.env.AEGIS_MODEL_URL ? <text fg={theme.textMuted}>source: {process.env.AEGIS_MODEL_URL}</text> : null}
-+                {process.env.AEGIS_AVAILABLE_MODEL ? <text fg={theme.success}>already on this machine: {process.env.AEGIS_AVAILABLE_MODEL}</text> : null}
++                {process.env.AEGIS_AVAILABLE_MODEL ? <text fg={theme.success}>already on this machine: {process.env.AEGIS_AVAILABLE_MODEL}{process.env.AEGIS_AVAILABLE_PATH ? " — Ctrl+O to use it now" : ""}</text> : null}
 +                <text fg={theme.textMuted}>Press  Ctrl+G  to download + serve · or  !aegis provision --browse path.gguf  for a local file</text>
 +              </Match>
 +            </Switch>

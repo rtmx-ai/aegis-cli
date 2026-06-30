@@ -431,7 +431,10 @@ func cmdTUI(stdout, stderr io.Writer) int {
 			_ = os.Setenv("AEGIS_BEST_FIT", bestFitCard())                    // OC-022: the in-TUI screen shows this
 			_ = os.Setenv("AEGIS_MODEL_RATIONALE", recommendationRationale()) // OC-042: why this model is recommended
 			if av := bestAvailableModel(); av != nil {
-				_ = os.Setenv("AEGIS_AVAILABLE_MODEL", av.ID+" ("+av.Kind+")") // OC-046: best already-present model, for one-keypress use
+				_ = os.Setenv("AEGIS_AVAILABLE_MODEL", av.ID+" ("+av.Kind+")") // OC-046: best already-present model
+				if av.Path != "" {
+					_ = os.Setenv("AEGIS_AVAILABLE_PATH", av.Path) // OC-047: the GGUF aegis serves on Ctrl+O
+				}
 			}
 			_ = os.Setenv("AEGIS_MODEL_URL", bestFitURL()) // OC-039: the screen shows the download source URL
 			if exe, eerr := os.Executable(); eerr == nil {
