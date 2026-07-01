@@ -95,6 +95,34 @@ of MEM-002 skills). Recommendation: **don't revive the full fan-out** (redundant
 these three are captured here. A single targeted pass on the unsurveyed tools (OpenHands, Aider, Cline,
 Goose, RA.Aid) can produce a formal appendix on request.
 
+## Deep-dive net-new (OpenHands / Aider / Cline / Goose / RA.Aid)
+
+A targeted pass on the five unsurveyed tools surfaced net-new, air-gap-feasible borrowables, now
+registered as requirements:
+
+- **LONGRUN-009** — Semantic stuck/loop detector (OpenHands `StuckDetector`): a pure-Go check that flags repetition, ping-pong, agent monologue, and repeated-condensation *even when nothing errors* — the gap our failure-only circuit breaker misses. Hash the last N action/observation pairs (ignore ids), park on the pattern. No model call.
+- **LONGRUN-010** — Model/temperature fallback before park (RA.Aid FallbackHandler; OpenHands temp 0→1.0): after M identical tool failures, retry once at higher temperature or on the lead quant, then park.
+- **LONGRUN-011** — Research pre-stage (RA.Aid stage 1): a bounded grep/LSP discovery pass that emits curated facts/snippets to the working-memory store *before* planning, so the plan starts from curated context, not raw file dumps.
+- **THINK-006** — Grammar-constrained structured output (llama.cpp GBNF): enforce a JSON/grammar schema on `aegis run` output so a weak local model returns deterministically parseable results — a genuine *local* advantage (Goose does schema output; GBNF does it offline).
+- **THINK-007** *(gated/experimental)* — Two-quant lead/worker split (Aider architect+editor; Goose `GOOSE_LEAD_MODEL`): a bigger-quant reasoner plans, a fast small-quant editor emits diffs, revert-to-lead after K failures. Unproven that a *local* architect lifts a *local* editor — validate with a bake-off first.
+- **MEM-005** — Structured, auto-pruned working-memory store (RA.Aid SQLite `KeyFact`/`KeySnippet` + GC agents): a queryable, size-bounded, *machine-written* scratch store (emit_fact/emit_snippet via MCP) with count caps to protect the 32k window — distinct from human-authored file memory, kept separate from intent.
+- **MEM-006** — Lazy/tiered context loading (Cline `load_mcp_documentation`; rules-vs-workflows split): keep verbose tool/procedure docs out of the base prompt, load them only when invoked; lean AGENTS.md + slash-invoked workflow files.
+- **E2E-009** — Diff/edit-format bake-off per local model (Aider udiff; Cline per-family formats + `diffEditSuccess` telemetry proving success varies materially by model): sweep edit encodings against gemma-4-26B-A4B and record the winner in `calibration.json`.
+- **E2E-010** — Native tool-call verification (RA.Aid CiaynAgent; Goose tool-shimming caveat): confirm the model emits *native* tool-calls, not a shim/code path, before trusting TCVR/MTC — else the bake-off measures a different execution path than the published numbers.
+
+**Reject / wall off** (network- or frontier-dependent): OpenHands **CodeAct** (needs a sandbox + frontier
+model; worse for small models), Cline **MCP Marketplace / on-the-fly MCP authoring** (outbound fetch —
+GUARD-blocked; only pre-staged STDIO servers), RA.Aid **Tavily** web research (SaaS egress), cloud
+**expert/lead** defaults (borrowable only with a local alt-quant — see THINK-007). Considered but not
+registered: Goose **recipe format** with embedded checks (overlaps rtmx-as-intent — revisit only if
+skills/ prove insufficient), Cline **order-invariant multi-diff apply** (fold into E2E-004 precision if
+the small model emits out-of-order blocks), Aider **AI!/AI? watch-file triggers** (zero-egress inline
+intent, but rtmx is the primary intent layer).
+
+**Bake-off datapoint:** Devstral Small 1.1 (24B, Apache-2.0) scored **53.6% SWE-bench Verified on the
+OpenHands scaffold** (Jul 2025) — a concrete *local-model* result worth including in the gemma↔qwen
+bake-off (relates to SERVE-016).
+
 ## Deferred (recorded so they aren't re-litigated)
 
 - **Local embedding RAG over the codebase** — a fully-local embedding model (nomic-embed/bge via llama.cpp) + local store (sqlite-vec) is *possible* offline, but the research favors grep/LSP/repo-map/SCIP for a small model + air-gap + CPU cost. Re-entry trigger: only if INDEX-001/002/005 prove insufficient on a measured retrieval task.
