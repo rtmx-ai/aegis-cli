@@ -22,6 +22,9 @@ type Fake struct {
 	MalformedThenOK bool
 	// Calls counts Drive invocations.
 	Calls int
+	// Trace, if set, is returned as the Diff's step trajectory — lets a test
+	// drive the loop's live stuck detector (LONGRUN-009).
+	Trace []Event
 }
 
 // NewFake returns a Fake with a default name.
@@ -58,6 +61,7 @@ func (f *Fake) Drive(ctx context.Context, req *rtmx.Requirement) (Diff, error) {
 		d.ValidToolCalls = 1
 		d.Turns = 2
 	}
+	d.Trace = f.Trace
 	return d, nil
 }
 

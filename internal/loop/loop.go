@@ -82,6 +82,9 @@ type Result struct {
 	BreakerTripped bool
 	// BudgetExhausted is true if the run budget halted the run.
 	BudgetExhausted bool
+	// Stuck is the number parked because the agent was detected looping
+	// (LONGRUN-009), distinct from retry-exhausted parks.
+	Stuck int
 }
 
 // Run drains the backlog until it is empty or a stop condition fires. When
@@ -118,7 +121,7 @@ func (l *Loop) Run(ctx context.Context, once bool) (Result, error) {
 			return res, nil
 		}
 
-		outcome, err := l.work(ctx, req)
+		outcome, stuck, err := l.work(ctx, req)
 		if err != nil {
 			return res, err
 		}
@@ -131,6 +134,9 @@ func (l *Loop) Run(ctx context.Context, once bool) (Result, error) {
 		case OutcomeParked:
 			res.Parked++
 			consecutiveFailures++
+			if stuck != NotStuck {
+				res.Stuck++
+			}
 		default:
 			consecutiveFailures++
 		}
@@ -151,9 +157,9 @@ func (l *Loop) Run(ctx context.Context, once bool) (Result, error) {
 // → close or park. Generation and verification are sequenced so they never run
 // concurrently on the memory bus. The claim is released on every exit path,
 // making the loop resumable after interruption.
-func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, error) {
+func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, StuckReason, error) {
 	if err := l.deps.RTMX.Claim(ctx, req.ID); err != nil {
-		return OutcomeError, fmt.Errorf("loop: claim %s: %w", req.ID, err)
+		return OutcomeError, NotStuck, fmt.Errorf("loop: claim %s: %w", req.ID, err)
 	}
 	l.record(audit.Entry{Action: audit.ActionClaim, RequirementID: req.ID, MachineAuthored: true})
 
@@ -161,6 +167,8 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, error)
 	start := l.deps.Now()
 
 	var closed bool
+	var trace []Step
+	var stuck StuckReason
 	attempts := l.cfg.Retries + 1
 	for i := 0; i < attempts; i++ {
 		// Generation phase.
@@ -169,6 +177,12 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, error)
 		att.ToolCalls += diff.ToolCalls
 		att.ValidToolCalls += diff.ValidToolCalls
 		att.Tokens += diff.Tokens
+		// LONGRUN-009 (live): stop a spinning agent before verifying or burning
+		// the remaining retries — the failure-only breaker would miss a loop.
+		trace = append(trace, stepsFromTrace(diff.Trace)...)
+		if stuck = DetectStuck(trace, DefaultStuckThresholds()); stuck != NotStuck {
+			break
+		}
 		if derr != nil {
 			// Drive failed this attempt; retry if budget remains.
 			continue
@@ -194,30 +208,34 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, error)
 	if closed {
 		att.Closed = true
 		if err := l.deps.RTMX.WriteStatus(ctx, req.ID, rtmx.StatusClosed); err != nil {
-			return OutcomeError, fmt.Errorf("loop: write closed %s: %w", req.ID, err)
+			return OutcomeError, NotStuck, fmt.Errorf("loop: write closed %s: %w", req.ID, err)
 		}
 		_ = l.deps.RTMX.Release(ctx, req.ID)
 		l.record(audit.Entry{Action: audit.ActionRelease, RequirementID: req.ID, Result: "closed", MachineAuthored: true})
 		l.collect(att)
-		return OutcomeClosed, nil
+		return OutcomeClosed, NotStuck, nil
 	}
 
 	// Escalation: unattended, park rather than wait.
 	att.Escalated = true
 	if err := l.deps.RTMX.WriteStatus(ctx, req.ID, rtmx.StatusBlocked); err != nil {
-		return OutcomeError, fmt.Errorf("loop: write blocked %s: %w", req.ID, err)
+		return OutcomeError, NotStuck, fmt.Errorf("loop: write blocked %s: %w", req.ID, err)
+	}
+	detail := "retries exhausted; parked unattended"
+	if stuck != NotStuck {
+		detail = "stuck (" + string(stuck) + "); parked unattended"
 	}
 	l.record(audit.Entry{
 		Action:          audit.ActionEscalate,
 		RequirementID:   req.ID,
 		Result:          "blocked",
 		MachineAuthored: true,
-		Detail:          "retries exhausted; parked unattended",
+		Detail:          detail,
 	})
 	_ = l.deps.RTMX.Release(ctx, req.ID)
 	l.record(audit.Entry{Action: audit.ActionPark, RequirementID: req.ID, Result: "blocked", MachineAuthored: true})
 	l.collect(att)
-	return OutcomeParked, nil
+	return OutcomeParked, stuck, nil
 }
 
 // record writes an audit entry if an audit log is configured.

@@ -27,6 +27,27 @@ type Diff struct {
 	ValidToolCalls int
 	// Tokens is total tokens consumed.
 	Tokens int
+	// Trace is the per-step action->observation trajectory the harness took, when
+	// the adapter surfaces it (nil otherwise). It feeds the loop's live stuck
+	// detector (LONGRUN-009) and the inner run->test->fix loop (LONGRUN-001).
+	// Additive: adapters that don't populate it keep working unchanged.
+	Trace []Event
+}
+
+// Event is one action->observation step in a harness trajectory: a tool call and
+// its result, or a plain agent message (Tool==""). Content only — no ids or
+// timestamps — so a semantic repeat matches.
+type Event struct {
+	// Tool is the action's tool name; "" for a plain agent message.
+	Tool string
+	// Args is the normalized action content/arguments.
+	Args string
+	// Obs is the observation/result content; "" when there is none.
+	Obs string
+	// Err reports that the observation was an error.
+	Err bool
+	// Kind is an optional tag, e.g. "condense" for a context-condensation step.
+	Kind string
 }
 
 // Adapter drives a single requirement headless to a Diff.

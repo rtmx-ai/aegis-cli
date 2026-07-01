@@ -1,5 +1,16 @@
 package loop
 
+import "github.com/rtmx-ai/aegis-cli/internal/harness"
+
+// stepsFromTrace converts a harness trajectory into detector steps.
+func stepsFromTrace(evs []harness.Event) []Step {
+	steps := make([]Step, len(evs))
+	for i, e := range evs {
+		steps[i] = Step{Tool: e.Tool, Args: e.Args, Obs: e.Obs, Err: e.Err, Kind: e.Kind}
+	}
+	return steps
+}
+
 // Step is one action->observation pair in an agent trajectory: a tool call and
 // its result, or a plain agent message with no tool call (a "monologue" step).
 // Ids and timestamps are intentionally excluded — the detector compares semantic
