@@ -46,6 +46,12 @@ type Budget struct {
 	MaxRequirements int `json:"max_requirements"`
 	// WallClock caps total session duration.
 	WallClock time.Duration `json:"wall_clock"`
+	// PerTaskTokens caps the tokens spent working a single requirement before it is
+	// parked (LONGRUN-008); 0 = unlimited. Distinct from the session-wide caps.
+	PerTaskTokens int `json:"per_task_tokens"`
+	// PerTaskWallClock caps the wall-clock spent working a single requirement before
+	// it is parked (LONGRUN-008); 0 = unlimited.
+	PerTaskWallClock time.Duration `json:"per_task_wall_clock"`
 }
 
 // Config is the fully-resolved orchestrator configuration.

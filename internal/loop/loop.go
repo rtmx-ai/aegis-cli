@@ -178,6 +178,7 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, StuckR
 	var closed bool
 	var trace []Step
 	var stuck StuckReason
+	var overBudget bool
 	var feedback string // LONGRUN-001: prior attempt's verify output, fed into the next drive
 	attempts := l.cfg.Retries + 1
 	for i := 0; i < attempts; i++ {
@@ -226,6 +227,12 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, StuckR
 		if verr == nil {
 			feedback = out
 		}
+		// LONGRUN-008: park a task that has consumed its per-task budget — distinct
+		// from the retry count and the session-wide budget.
+		if l.overPerTaskBudget(att, start) {
+			overBudget = true
+			break
+		}
 	}
 
 	att.WallClock = l.deps.Now().Sub(start)
@@ -247,8 +254,11 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, StuckR
 		return OutcomeError, NotStuck, fmt.Errorf("loop: write blocked %s: %w", req.ID, err)
 	}
 	detail := "retries exhausted; parked unattended"
-	if stuck != NotStuck {
+	switch {
+	case stuck != NotStuck:
 		detail = "stuck (" + string(stuck) + "); parked unattended"
+	case overBudget:
+		detail = "per-task budget exhausted; parked unattended"
 	}
 	l.record(audit.Entry{
 		Action:          audit.ActionEscalate,
@@ -261,6 +271,19 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, StuckR
 	l.record(audit.Entry{Action: audit.ActionPark, RequirementID: req.ID, Result: "blocked", MachineAuthored: true})
 	l.collect(att)
 	return OutcomeParked, stuck, nil
+}
+
+// overPerTaskBudget reports whether the attempt has consumed its per-task cap
+// (tokens or wall-clock), so the loop parks the requirement (LONGRUN-008).
+func (l *Loop) overPerTaskBudget(att metrics.Attempt, start time.Time) bool {
+	b := l.cfg.Budget
+	if b.PerTaskTokens > 0 && att.Tokens >= b.PerTaskTokens {
+		return true
+	}
+	if b.PerTaskWallClock > 0 && l.deps.Now().Sub(start) >= b.PerTaskWallClock {
+		return true
+	}
+	return false
 }
 
 // record writes an audit entry if an audit log is configured.
