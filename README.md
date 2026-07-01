@@ -6,8 +6,6 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/rtmx-ai/aegis-cli)](https://goreportcard.com/report/github.com/rtmx-ai/aegis-cli)
 [![License](https://img.shields.io/github/license/rtmx-ai/aegis-cli)](LICENSE)
 
-<sub>CI status, statement coverage, and component version regenerate live on every green `main` build (`make badges` → `badges` branch); Go grade is served by goreportcard.com; license reads from `LICENSE` (Apache-2.0).</sub>
-
 **aegis is an air-gap-native, top-tier agentic coding experience for closed
 environments.** Running `aegis` launches a hardened **OpenCode TUI** (MIT), driven by a
 **local model** (llama.cpp / Ollama, loopback only), with **rtmx as the intent layer**.
