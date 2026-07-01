@@ -93,6 +93,13 @@ func Command(cfg config.Config, bin, configPath string) *exec.Cmd {
 	// (OPENCODE_CONFIG_CONTENT, OC-006), with rtmx wired as the intent layer. An
 	// explicit config path overrides it.
 	cfg.Interactive = true // PERSONA-001: the interactive TUI uses the proactive persona
+	// INDEX-001: auto-stage the repo map so the model always has the codebase
+	// skeleton in context (best-effort; /map refreshes it on demand).
+	if seed, ok := ConfigSeedDir(); ok {
+		if cwd, err := os.Getwd(); err == nil {
+			StageRepoMap(seed, cwd)
+		}
+	}
 	env := append(os.Environ(), airgapEnv(cfg, true)...)
 	if configPath != "" {
 		env = append(env, "OPENCODE_CONFIG="+configPath)

@@ -115,8 +115,15 @@ func RenderConfig(cfg config.Config, intent bool) string {
 		if cfg.Interactive { // PERSONA-001: the proactive persona for the interactive TUI
 			directives = interactiveDirectivesFile
 		}
-		instructions = fmt.Sprintf(`,
-  "instructions": [%q]`, filepath.Join(seed, directives))
+		list := fmt.Sprintf("%q", filepath.Join(seed, directives))
+		// INDEX-001: auto-inject the repo map (codebase skeleton) as context on the
+		// interactive path, so the model has real symbols without invoking /map.
+		if cfg.Interactive {
+			if rm := filepath.Join(seed, RepoMapFile); fileExists(rm) {
+				list += ", " + fmt.Sprintf("%q", rm)
+			}
+		}
+		instructions = ",\n  \"instructions\": [" + list + "]"
 	}
 	// PERF-004/005: load the staged context-efficiency plugin (strip reasoning + bound tool output) so
 	// the context stays lean — only the TUI (serve) path loads it; the headless --pure path skips it.
