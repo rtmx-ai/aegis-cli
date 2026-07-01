@@ -64,3 +64,35 @@ close a requirement against). Depends on INDEX-003.
 - Bundling Node/.NET runtimes to give Python/JS/C# precise nav out-of-the-box (violates the static
   constraint) — deferred; those languages get Structural + Grep until C9 (E2E MTC/TCR) justifies it.
 - First-classing languages rtmx doesn't cover (PHP, Elixir, Zig, Java, …) — parked behind the parity rule.
+
+## INDEX-001-P01 sizing outcome — pure-Go structural extractor first
+
+A spike sized the committed wazero/WASM path for INDEX-001-P01 and found it heavier than assumed:
+`web-tree-sitter` ships an **Emscripten-built** `tree-sitter.wasm` (not a clean WASI module), so running
+it under `wazero` needs Emscripten runtime shims, **plus** a per-language grammar-`.wasm` acquisition +
+provenance + air-gap-staging pipeline, **plus** authored `.scm` queries — a multi-week effort with
+integration risk. The repo map's plug-in point, by contrast, is trivial: `Build` assembles `defsByFile`
+from `Symbol{Name,Sig}` lists, so any per-language extractor drops straight in.
+
+**Decision:** populate the Structural tier now with a **pure-Go, ctags-style extractor** (zero blobs,
+zero WASM runtime, zero CGO, zero downloads — full out-of-the-box static compliance). tree-sitter
+(INDEX-001-P01) is **deferred as an accuracy upgrade**, justified later by E2E metrics (C9) if the
+pattern-based fidelity proves insufficient.
+
+### INDEX-009 — Pure-Go multi-language structural extractor (ctags-style)
+Extract top-level definition symbols per first-class language via pure-Go patterns, yielding the same
+`Symbol{Name,Sig}` list the repo map consumes — no CGO/WASM/blobs/downloads — and wire the covered
+languages into `Capabilities.Structural` so the INDEX-007 ladder reports Structural (not Grep) for the
+mission set.
+
+**Acceptance criteria**
+- `ExtractSymbols(lang, src)` returns the top-level defs for Python, Ruby, JS/TS, Rust, C#, C/C++
+  (best-effort for C/C++); Go continues via go/ast.
+- An unsupported language returns nil (caller degrades to grep — ties to INDEX-007).
+- `DefaultCapabilities` marks the covered languages Structural, so `RetrievalTier` returns Structural
+  for all 7 first-class languages.
+
+*Test:* `internal/index::TestMultiLangExtract`
+
+**Non-goal (follow-on):** walking + ranking non-Go files inside the repo map's `Build`/PageRank graph is
+a separate step (INDEX-010, proposed) — INDEX-009 delivers the extractor + the tier.
