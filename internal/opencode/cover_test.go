@@ -40,6 +40,16 @@ func TestModelsFetchDisabled(t *testing.T) {
 	}
 }
 
+// TestLspDownloadDisabled → REQ-GUARD-004: the hardened launch env pins opencode's
+// LSP server download shut (github/npm/tarball fetches when a server is not on PATH),
+// so LSP can only ever use bundled, on-PATH servers — never an egress.
+func TestLspDownloadDisabled(t *testing.T) {
+	joined := strings.Join(HardenedEnv(config.Default()), "\n")
+	if !strings.Contains(joined, "OPENCODE_DISABLE_LSP_DOWNLOAD=1") {
+		t.Error("hardened env must disable LSP server downloads (OPENCODE_DISABLE_LSP_DOWNLOAD=1)")
+	}
+}
+
 func TestSetAuth(t *testing.T) {
 	c := NewServeClient("http://x")
 	c.SetAuth("opencode", "secret")

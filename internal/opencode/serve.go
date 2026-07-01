@@ -57,6 +57,13 @@ func airgapEnv(cfg config.Config, intent bool) []string {
 		// hand-configured — cloud is unreachable, not just absent from the picker (OC-012). The
 		// local provider (@ai-sdk/openai-compatible) is bundled, so it is unaffected.
 		"OPENCODE_PURE=1",
+		// GUARD-004 (ITAR): opencode's LSP feature downloads language servers from the
+		// network (github zips / npm install / release tarballs — lsp/server.ts) when a
+		// server is not already on PATH. The download is gated by disableLspDownload
+		// (runtime-flags.ts, env OPENCODE_DISABLE_LSP_DOWNLOAD). Pin it shut so LSP — even
+		// if a config layer turns it on — can only use bundled, on-PATH servers, never a
+		// fetch. Defense-in-depth: LSP is also off by default (no "lsp": true in config).
+		"OPENCODE_DISABLE_LSP_DOWNLOAD=1",
 		"OPENAI_BASE_URL=" + cfg.Endpoint + "/v1",
 		"OPENAI_API_KEY=not-needed-loopback",
 		"OPENCODE_CONFIG_CONTENT=" + RenderConfig(cfg, intent),
