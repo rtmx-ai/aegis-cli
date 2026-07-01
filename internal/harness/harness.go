@@ -56,7 +56,9 @@ type Adapter interface {
 	Name() string
 	// Drive runs the harness on req and returns the produced Diff. A malformed
 	// tool call must be detected and retried internally, not surfaced as a crash.
-	Drive(ctx context.Context, req *rtmx.Requirement) (Diff, error)
+	// feedback is the prior attempt's verify/test output to inject ("" on the
+	// first attempt), so the agent fixes the actual failure (LONGRUN-001).
+	Drive(ctx context.Context, req *rtmx.Requirement, feedback string) (Diff, error)
 	// Health reports whether the harness is launchable and configured offline.
 	Health(ctx context.Context) error
 }

@@ -57,7 +57,7 @@ func TestRealModelValidation(t *testing.T) {
 		Title: "Create a Go file greet.go in package demo with a function Greet() string that returns \"hello\".",
 		Tests: []string{"demo/greet_test.go::TestGreet"},
 	}
-	diff, err := a.Drive(ctx, req)
+	diff, err := a.Drive(ctx, req, "")
 	if err != nil {
 		t.Fatalf("harness Drive against real model: %v", err)
 	}

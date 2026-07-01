@@ -11,7 +11,7 @@ func TestWriteStatusWritesBack(t *testing.T) {
 	f.VerifyResult["A-001"] = true
 	ctx := context.Background()
 
-	ok, err := f.Verify(ctx, "A-001")
+	ok, _, err := f.Verify(ctx, "A-001")
 	if err != nil || !ok {
 		t.Fatalf("verify = (%v,%v), want (true,nil)", ok, err)
 	}

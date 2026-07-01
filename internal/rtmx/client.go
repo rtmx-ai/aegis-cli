@@ -16,7 +16,7 @@ import (
 // VerifyFunc runs verification for a requirement and reports pass/fail. It is
 // injectable so the clients can be tested without a toolchain; the default runs
 // the requirement's mapped Go test.
-type VerifyFunc func(ctx context.Context, id string) (bool, error)
+type VerifyFunc func(ctx context.Context, id string) (ok bool, output string, err error)
 
 // ClientOption configures a real client.
 type ClientOption func(*clientBase)
@@ -58,13 +58,13 @@ func repoRootOf(dbPath string) string {
 func defaultVerify(dbPath string) VerifyFunc {
 	store := NewStore(dbPath)
 	root := repoRootOf(dbPath)
-	return func(ctx context.Context, id string) (bool, error) {
+	return func(ctx context.Context, id string) (bool, string, error) {
 		r, err := store.ByID(id)
 		if err != nil {
-			return false, err
+			return false, "", err
 		}
 		if len(r.Tests) == 0 {
-			return false, nil
+			return false, "", nil
 		}
 		mod, fn, _ := strings.Cut(r.Tests[0], "::")
 		pkg := "./..."
@@ -78,14 +78,17 @@ func defaultVerify(dbPath string) VerifyFunc {
 		args = append(args, pkg)
 		cmd := exec.CommandContext(ctx, "go", args...)
 		cmd.Dir = root
-		if err := cmd.Run(); err != nil {
+		// CombinedOutput captures the test failure text so the loop can feed it
+		// back into the next drive (LONGRUN-001).
+		out, err := cmd.CombinedOutput()
+		if err != nil {
 			var ee *exec.ExitError
 			if errors.As(err, &ee) {
-				return false, nil
+				return false, string(out), nil
 			}
-			return false, err
+			return false, "", err
 		}
-		return true, nil
+		return true, "", nil
 	}
 }
 
@@ -106,7 +109,7 @@ func NewCLIClient(dbPath string, opts ...ClientOption) *CLIClient {
 func (c *CLIClient) Next(ctx context.Context) (*Requirement, error) { return c.store.Next() }
 func (c *CLIClient) Claim(ctx context.Context, id string) error     { return c.store.Claim(id, c.agent) }
 func (c *CLIClient) Release(ctx context.Context, id string) error   { return c.store.Release(id) }
-func (c *CLIClient) Verify(ctx context.Context, id string) (bool, error) {
+func (c *CLIClient) Verify(ctx context.Context, id string) (bool, string, error) {
 	return c.verify(ctx, id)
 }
 func (c *CLIClient) WriteStatus(ctx context.Context, id string, s Status) error {
@@ -278,7 +281,9 @@ func (c *MCPClient) Release(ctx context.Context, id string) error {
 
 // Verify runs the injected/default verifier (the MCP verify tool runs the whole
 // suite; per-requirement verification stays in the shared verifier for parity).
-func (c *MCPClient) Verify(ctx context.Context, id string) (bool, error) { return c.verify(ctx, id) }
+func (c *MCPClient) Verify(ctx context.Context, id string) (bool, string, error) {
+	return c.verify(ctx, id)
+}
 
 // WriteStatus writes through the CSV store (no MCP status-writeback tool exists).
 func (c *MCPClient) WriteStatus(ctx context.Context, id string, s Status) error {

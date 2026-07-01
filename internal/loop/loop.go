@@ -169,10 +169,11 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, StuckR
 	var closed bool
 	var trace []Step
 	var stuck StuckReason
+	var feedback string // LONGRUN-001: prior attempt's verify output, fed into the next drive
 	attempts := l.cfg.Retries + 1
 	for i := 0; i < attempts; i++ {
 		// Generation phase.
-		diff, derr := l.deps.Harness.Drive(ctx, req)
+		diff, derr := l.deps.Harness.Drive(ctx, req, feedback)
 		att.Turns += diff.Turns
 		att.ToolCalls += diff.ToolCalls
 		att.ValidToolCalls += diff.ValidToolCalls
@@ -189,7 +190,7 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, StuckR
 		}
 
 		// Verify phase — strictly after generation, never concurrent.
-		ok, verr := l.deps.RTMX.Verify(ctx, req.ID)
+		ok, out, verr := l.deps.RTMX.Verify(ctx, req.ID)
 		l.record(audit.Entry{
 			Action:          audit.ActionVerify,
 			RequirementID:   req.ID,
@@ -200,6 +201,11 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, StuckR
 			closed = true
 			att.FirstPass = i == 0
 			break
+		}
+		// LONGRUN-001: feed the failed test output into the next drive so the
+		// agent fixes the actual failure (run -> inspect -> fix).
+		if verr == nil {
+			feedback = out
 		}
 	}
 

@@ -13,7 +13,7 @@ import (
 func TestToolCallMalformedRetriedNotCrashed(t *testing.T) {
 	f := NewFake()
 	f.MalformedThenOK = true
-	d, err := f.Drive(context.Background(), &rtmx.Requirement{ID: "A-001"})
+	d, err := f.Drive(context.Background(), &rtmx.Requirement{ID: "A-001"}, "")
 	if err != nil {
 		t.Fatalf("malformed tool call must not crash the drive: %v", err)
 	}

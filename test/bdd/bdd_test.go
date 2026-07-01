@@ -40,7 +40,7 @@ func (a *servingAdapter) Name() string { return "serving-mock" }
 
 func (a *servingAdapter) Health(ctx context.Context) error { return nil }
 
-func (a *servingAdapter) Drive(ctx context.Context, req *rtmx.Requirement) (harness.Diff, error) {
+func (a *servingAdapter) Drive(ctx context.Context, req *rtmx.Requirement, feedback string) (harness.Diff, error) {
 	resp, err := a.client.ChatCompletion(ctx, serving.ChatRequest{
 		Model:    "test-model",
 		Messages: []serving.Message{{Role: "user", Content: "implement " + req.ID}},

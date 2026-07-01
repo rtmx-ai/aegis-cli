@@ -37,8 +37,8 @@ func (w *world) writeLiveFixture(reqs [][2]any) (string, error) {
 	if err := os.WriteFile(db, []byte(body), 0o644); err != nil {
 		return "", err
 	}
-	w.liveClient = rtmx.NewCLIClient(db, rtmx.WithVerifyFunc(func(_ context.Context, id string) (bool, error) {
-		return verify[id], nil
+	w.liveClient = rtmx.NewCLIClient(db, rtmx.WithVerifyFunc(func(_ context.Context, id string) (bool, string, error) {
+		return verify[id], "", nil
 	}))
 	return db, nil
 }

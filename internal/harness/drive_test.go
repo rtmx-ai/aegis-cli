@@ -10,7 +10,7 @@ import (
 func TestDriveProducesDiff(t *testing.T) {
 	f := NewFake()
 	req := &rtmx.Requirement{ID: "A-001"}
-	d, err := f.Drive(context.Background(), req)
+	d, err := f.Drive(context.Background(), req, "")
 	if err != nil {
 		t.Fatalf("drive: %v", err)
 	}

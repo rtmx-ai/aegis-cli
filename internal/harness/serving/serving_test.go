@@ -36,7 +36,7 @@ func TestServingAdapterDrives(t *testing.T) {
 	defer mock.Close()
 	a := newAdapterAgainst(t, mock, WithWorkspace(ws), WithTestRunner(passRunner))
 
-	diff, err := a.Drive(context.Background(), &rtmx.Requirement{ID: "FEAT-DEMO-1", Title: "do x"})
+	diff, err := a.Drive(context.Background(), &rtmx.Requirement{ID: "FEAT-DEMO-1", Title: "do x"}, "")
 	if err != nil {
 		t.Fatalf("Drive: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestParseEditsRetriesOnMalformed(t *testing.T) {
 	defer mock.Close()
 	a := newAdapterAgainst(t, mock, WithWorkspace(ws), WithTestRunner(passRunner))
 
-	diff, err := a.Drive(context.Background(), &rtmx.Requirement{ID: "R-1", Title: "t"})
+	diff, err := a.Drive(context.Background(), &rtmx.Requirement{ID: "R-1", Title: "t"}, "")
 	if err != nil {
 		t.Fatalf("Drive after retry: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestApplyRejectsOutsideWorkspace(t *testing.T) {
 	defer mock.Close()
 	a := newAdapterAgainst(t, mock, WithWorkspace(ws), WithTestRunner(passRunner))
 
-	if _, err := a.Drive(context.Background(), &rtmx.Requirement{ID: "R-1"}); err == nil {
+	if _, err := a.Drive(context.Background(), &rtmx.Requirement{ID: "R-1"}, ""); err == nil {
 		t.Error("expected an out-of-workspace edit to be refused")
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(ws), "escape.txt")); !os.IsNotExist(err) {
@@ -131,7 +131,7 @@ func TestApplyRollsBackOnFailure(t *testing.T) {
 	failRunner := func(context.Context, string, *rtmx.Requirement) (bool, error) { return false, nil }
 	a := newAdapterAgainst(t, mock, WithWorkspace(ws), WithTestRunner(failRunner))
 
-	if _, err := a.Drive(context.Background(), &rtmx.Requirement{ID: "R-1"}); err == nil {
+	if _, err := a.Drive(context.Background(), &rtmx.Requirement{ID: "R-1"}, ""); err == nil {
 		t.Error("expected Drive to fail when the acceptance test fails")
 	}
 	if b, _ := os.ReadFile(existing); string(b) != "ORIG" {
@@ -155,7 +155,7 @@ func TestRunsTestsAndReportsMetrics(t *testing.T) {
 	}
 	a := newAdapterAgainst(t, mock, WithWorkspace(ws), WithTestRunner(runner))
 
-	diff, err := a.Drive(context.Background(), &rtmx.Requirement{ID: "R-9", Title: "t"})
+	diff, err := a.Drive(context.Background(), &rtmx.Requirement{ID: "R-9", Title: "t"}, "")
 	if err != nil {
 		t.Fatalf("Drive: %v", err)
 	}

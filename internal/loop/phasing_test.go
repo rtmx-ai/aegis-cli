@@ -37,10 +37,10 @@ type phaseHarness struct {
 	tr *phaseTracker
 }
 
-func (h *phaseHarness) Drive(ctx context.Context, req *rtmx.Requirement) (harness.Diff, error) {
+func (h *phaseHarness) Drive(ctx context.Context, req *rtmx.Requirement, feedback string) (harness.Diff, error) {
 	h.tr.enterGen()
 	defer h.tr.leaveGen()
-	return h.Fake.Drive(ctx, req)
+	return h.Fake.Drive(ctx, req, feedback)
 }
 
 type phaseRTMX struct {
@@ -48,7 +48,7 @@ type phaseRTMX struct {
 	tr *phaseTracker
 }
 
-func (r *phaseRTMX) Verify(ctx context.Context, id string) (bool, error) {
+func (r *phaseRTMX) Verify(ctx context.Context, id string) (bool, string, error) {
 	r.tr.enterVer()
 	defer r.tr.leaveVer()
 	return r.Fake.Verify(ctx, id)

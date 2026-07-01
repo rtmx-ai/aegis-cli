@@ -49,8 +49,9 @@ type Client interface {
 	Claim(ctx context.Context, id string) error
 	// Release returns a claimed requirement to the backlog.
 	Release(ctx context.Context, id string) error
-	// Verify runs the requirement's acceptance tests and returns the result.
-	Verify(ctx context.Context, id string) (bool, error)
+	// Verify runs the requirement's acceptance tests and returns the result plus
+	// the test output (the failure text, fed back into the next drive; LONGRUN-001).
+	Verify(ctx context.Context, id string) (ok bool, output string, err error)
 	// WriteStatus writes a status back to the rtmx database.
 	WriteStatus(ctx context.Context, id string, status Status) error
 	// Health reports whether the engine is reachable and the database is sound.

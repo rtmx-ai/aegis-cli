@@ -28,7 +28,7 @@ func New(configPath string) *Adapter {
 func (a *Adapter) Name() string { return "goose" }
 
 // Drive is not yet implemented in the scaffold.
-func (a *Adapter) Drive(ctx context.Context, req *rtmx.Requirement) (harness.Diff, error) {
+func (a *Adapter) Drive(ctx context.Context, req *rtmx.Requirement, feedback string) (harness.Diff, error) {
 	return harness.Diff{RequirementID: req.ID}, errors.New("goose: Drive not implemented")
 }
 

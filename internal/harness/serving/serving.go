@@ -107,9 +107,14 @@ func (a *Adapter) Health(ctx context.Context) error {
 // Drive implements harness.Adapter: prompt → model → parse (retry on malformed)
 // → workspace-sandboxed atomic apply → acceptance test, rolling back on any
 // failure. A returned error makes the loop treat the attempt as failed.
-func (a *Adapter) Drive(ctx context.Context, req *rtmx.Requirement) (harness.Diff, error) {
+func (a *Adapter) Drive(ctx context.Context, req *rtmx.Requirement, feedback string) (harness.Diff, error) {
 	diff := harness.Diff{RequirementID: req.ID}
 	prompt := buildPrompt(req)
+	if feedback != "" {
+		// LONGRUN-001: the previous attempt failed the acceptance test — feed the
+		// output back so the model fixes the actual cause, not a guess.
+		prompt = "The previous attempt did not pass the acceptance test. Test output:\n" + feedback + "\n\nFix the cause, then re-implement.\n\n" + prompt
+	}
 
 	var edits []fileEdit
 	var parseErr error

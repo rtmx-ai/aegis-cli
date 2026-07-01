@@ -83,8 +83,8 @@ func TestClientStatusMapping(t *testing.T) {
 func TestCLIClientFallback(t *testing.T) {
 	db := writeFixture(t)
 	verified := map[string]bool{"REQ-AAA-001": true}
-	c := NewCLIClient(db, WithVerifyFunc(func(_ context.Context, id string) (bool, error) {
-		return verified[id], nil
+	c := NewCLIClient(db, WithVerifyFunc(func(_ context.Context, id string) (bool, string, error) {
+		return verified[id], "", nil
 	}))
 	c.health = func(context.Context) error { return nil } // avoid shelling rtmx in unit test
 	ctx := context.Background()
@@ -100,7 +100,7 @@ func TestCLIClientFallback(t *testing.T) {
 	if err != nil || n == nil || n.ID != "REQ-EEE-001" {
 		t.Fatalf("Next must skip claimed: want REQ-EEE-001, got %v (err %v)", n, err)
 	}
-	ok, err := c.Verify(ctx, "REQ-AAA-001")
+	ok, _, err := c.Verify(ctx, "REQ-AAA-001")
 	if err != nil || !ok {
 		t.Fatalf("Verify: want true, got %v (err %v)", ok, err)
 	}

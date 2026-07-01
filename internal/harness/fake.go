@@ -25,6 +25,9 @@ type Fake struct {
 	// Trace, if set, is returned as the Diff's step trajectory — lets a test
 	// drive the loop's live stuck detector (LONGRUN-009).
 	Trace []Event
+	// LastFeedback records the feedback string of the most recent Drive call, so
+	// a test can assert the loop threaded the prior verify output (LONGRUN-001).
+	LastFeedback string
 }
 
 // NewFake returns a Fake with a default name.
@@ -42,8 +45,9 @@ func (f *Fake) Name() string {
 
 // Drive returns a canned Diff, modeling a retried malformed tool call when
 // MalformedThenOK is set.
-func (f *Fake) Drive(ctx context.Context, req *rtmx.Requirement) (Diff, error) {
+func (f *Fake) Drive(ctx context.Context, req *rtmx.Requirement, feedback string) (Diff, error) {
 	f.Calls++
+	f.LastFeedback = feedback
 	if f.DriveErr != nil {
 		return Diff{RequirementID: req.ID}, f.DriveErr
 	}
