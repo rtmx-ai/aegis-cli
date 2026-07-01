@@ -37,7 +37,7 @@ func TestRetrievalLadder(t *testing.T) {
 	if RetrievalTier("go", d) != TierStructural {
 		t.Error("today Go has the go/ast structural tier")
 	}
-	if RetrievalTier("rust", d) != TierGrep {
-		t.Error("today Rust degrades to grep (awaits INDEX-001-P01)")
+	if RetrievalTier("rust", d) != TierStructural {
+		t.Error("Rust now has the ctags-style structural tier (INDEX-009)")
 	}
 }

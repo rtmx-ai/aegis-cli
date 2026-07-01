@@ -49,12 +49,17 @@ func RetrievalTier(lang string, caps Capabilities) Tier {
 	return TierGrep
 }
 
-// DefaultCapabilities reports what aegis ships TODAY: the go/ast repo map gives Go
-// a structural tier; no precise servers are bundled yet, and the other first-class
-// languages await INDEX-001-P01 (tree-sitter/WASM), so they currently sit at grep.
+// DefaultCapabilities reports what aegis ships TODAY: Go via go/ast plus the
+// INDEX-009 pure-Go ctags-style extractor give every first-class language a
+// structural tier; no precise servers are bundled yet (LSP/SCIP deferred), so the
+// precise tier is currently empty.
 func DefaultCapabilities() Capabilities {
+	structural := map[string]bool{"go": true}
+	for _, l := range StructuralLanguages() {
+		structural[l] = true
+	}
 	return Capabilities{
 		Precise:    map[string]bool{},
-		Structural: map[string]bool{"go": true},
+		Structural: structural,
 	}
 }
