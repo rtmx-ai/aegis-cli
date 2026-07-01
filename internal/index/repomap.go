@@ -1,10 +1,10 @@
 // Package index builds an air-gapped, model-free repo map: a ranked, token-
 // budgeted skeleton of a codebase (definition signatures) so a small local model
 // can call real symbols without loading whole files (INDEX-001, Aider's repo-map
-// approach). It uses go/ast for Go sources — no CGO, no network — and the
-// extractor is deliberately isolated so tree-sitter can add other languages later
-// (the INDEX-001 children). Ranking is personalized PageRank over a file
-// dependency graph, seeded by the task's mentioned identifiers.
+// approach). Go is parsed with go/ast; other first-class languages via the pure-Go
+// ctags-style extractor (INDEX-009/010) — no CGO, no network. Ranking is
+// personalized PageRank over a def/ref file graph (AST edges for Go, text edges for
+// the rest), seeded by the task's mentioned identifiers.
 package index
 
 import (
@@ -14,6 +14,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -37,32 +38,60 @@ func Build(opts Options) (string, error) {
 		opts.TokenBudget = 4000
 	}
 	fset := token.NewFileSet()
-	files, err := goFiles(opts.Root)
+	srcFiles, err := sourceFiles(opts.Root)
 	if err != nil {
 		return "", err
 	}
+	rels := make([]string, 0, len(srcFiles))
+	for rel := range srcFiles {
+		rels = append(rels, rel)
+	}
+	sort.Strings(rels) // deterministic "first defines the name" for edges
+
 	asts := map[string]*ast.File{}
+	otherContent := map[string]string{} // INDEX-010: non-Go content, for text edges
 	defsByFile := map[string][]Symbol{} // renderable (exported + methods)
 	defFileOf := map[string]string{}    // every top-level name -> defining file (for edges)
-	for _, rel := range files {
-		f, perr := parser.ParseFile(fset, filepath.Join(opts.Root, rel), nil, parser.SkipObjectResolution)
-		if perr != nil {
-			continue // skip unparseable files; never fail the whole map
-		}
-		asts[rel] = f
-		for _, decl := range f.Decls {
-			for _, s := range symbolsOf(decl, fset) {
-				if _, ok := defFileOf[s.name]; !ok {
-					defFileOf[s.name] = rel
-				}
-				if s.render {
-					defsByFile[rel] = append(defsByFile[rel], Symbol{Name: s.name, Sig: s.sig})
+	for _, rel := range rels {
+		abs := filepath.Join(opts.Root, rel)
+		if srcFiles[rel] == "go" {
+			f, perr := parser.ParseFile(fset, abs, nil, parser.SkipObjectResolution)
+			if perr != nil {
+				continue // skip unparseable files; never fail the whole map
+			}
+			asts[rel] = f
+			for _, decl := range f.Decls {
+				for _, s := range symbolsOf(decl, fset) {
+					if _, ok := defFileOf[s.name]; !ok {
+						defFileOf[s.name] = rel
+					}
+					if s.render {
+						defsByFile[rel] = append(defsByFile[rel], Symbol{Name: s.name, Sig: s.sig})
+					}
 				}
 			}
+			continue
+		}
+		// INDEX-010: non-Go files via the pure-Go ctags extractor (INDEX-009).
+		data, rerr := os.ReadFile(abs)
+		if rerr != nil {
+			continue
+		}
+		syms := ExtractSymbols(srcFiles[rel], string(data))
+		if len(syms) == 0 {
+			continue
+		}
+		otherContent[rel] = string(data)
+		for _, s := range syms {
+			if _, ok := defFileOf[s.Name]; !ok {
+				defFileOf[s.Name] = rel
+			}
+			defsByFile[rel] = append(defsByFile[rel], s)
 		}
 	}
 
 	edges := buildEdges(asts, defFileOf)
+	addTextEdges(edges, otherContent, defFileOf) // INDEX-010: language-agnostic def/ref edges
 	ranked := make([]string, 0, len(defsByFile))
 	for f := range defsByFile {
 		ranked = append(ranked, f)
@@ -246,6 +275,55 @@ func render(ranked []string, defsByFile map[string][]Symbol, budget int) string 
 		}
 	}
 	return b.String()
+}
+
+// sourceFiles returns recognized source files (rel -> canonical language id) under
+// root, skipping vendor/.git/testdata/node_modules and Go test files (INDEX-010).
+func sourceFiles(root string) (map[string]string, error) {
+	out := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			b := d.Name()
+			if b == "vendor" || b == "testdata" || b == "node_modules" || (strings.HasPrefix(b, ".") && b != ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		lang := LangFromPath(path)
+		if lang == "" {
+			return nil
+		}
+		if lang == "go" && strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, path)
+		out[rel] = lang
+		return nil
+	})
+	return out, err
+}
+
+var identRe = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
+
+// addTextEdges links a non-Go file F -> file G for each identifier in F that names a
+// top-level definition in another file G — the language-agnostic def/ref signal that
+// lets non-Go files rank alongside Go ones under PageRank (INDEX-010).
+func addTextEdges(edges map[string]map[string]float64, contentByFile, defFileOf map[string]string) {
+	for file, content := range contentByFile {
+		for _, w := range identRe.FindAllString(content, -1) {
+			def, ok := defFileOf[w]
+			if !ok || def == file {
+				continue
+			}
+			if edges[file] == nil {
+				edges[file] = map[string]float64{}
+			}
+			edges[file][def]++
+		}
+	}
 }
 
 // goFiles returns non-test .go paths (relative to root), skipping vendor/.git/testdata.
