@@ -28,8 +28,4 @@ func TestSandboxedExecution(t *testing.T) {
 	if argv[len(argv)-2] != "python" || argv[len(argv)-1] != "run.py" {
 		t.Errorf("command must follow the -- separator: %v", argv[len(argv)-3:])
 	}
-
-	if !SandboxAvailable() {
-		t.Skip("bubblewrap not installed; static sandbox contract verified")
-	}
 }

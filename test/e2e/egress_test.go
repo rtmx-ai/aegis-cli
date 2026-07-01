@@ -18,15 +18,17 @@ func TestEgressZeroGate(t *testing.T) {
 		t.Errorf("egress gate must sandbox the command (reuse E2E-007): %s", joined)
 	}
 
-	// Live: inside the denied sandbox, the network canary must be BLOCKED (zero egress).
-	if !SandboxAvailable() {
-		t.Skip("bubblewrap not installed; static egress-deny contract verified")
-	}
-	blocked, err := RunEgressCanary(context.Background())
-	if err != nil {
-		t.Skipf("sandbox launch inconclusive: %v", err)
-	}
-	if !blocked {
-		t.Error("network egress must be BLOCKED inside the --unshare-net sandbox")
-	}
+	// Live canary as a subtest, so a skip here never skips the static contract above.
+	t.Run("live_canary", func(t *testing.T) {
+		if !SandboxAvailable() {
+			t.Skip("bubblewrap not installed; static egress-deny contract verified")
+		}
+		blocked, err := RunEgressCanary(context.Background())
+		if err != nil {
+			t.Skipf("sandbox launch inconclusive: %v", err)
+		}
+		if !blocked {
+			t.Error("network egress must be BLOCKED inside the --unshare-net sandbox")
+		}
+	})
 }
