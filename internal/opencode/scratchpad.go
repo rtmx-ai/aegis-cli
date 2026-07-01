@@ -18,6 +18,9 @@ type Scratchpad struct {
 // Append records a note. Append-only: notes accumulate in order; nothing is
 // overwritten (a resume keeps the full running history).
 func (s Scratchpad) Append(note string) error {
+	if err := GuardIntentWrite(s.Path); err != nil { // MEM-004: never write machine memory to intent files
+		return err
+	}
 	note = strings.TrimSpace(note)
 	if note == "" {
 		return nil
