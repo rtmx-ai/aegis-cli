@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -102,7 +103,7 @@ func resolveOrDownload(id, browse string, stdout, stderr io.Writer) (string, boo
 		return "", false
 	}
 	dest := filepath.Join(modelDownloadDir(), spec.File)
-	if fi, serr := os.Stat(dest); serr == nil && uint64(fi.Size()) == spec.Size {
+	if fi, serr := os.Stat(dest); serr == nil && spec.Size <= math.MaxInt64 && fi.Size() == int64(spec.Size) {
 		fmt.Fprintf(stdout, "aegis: provision: %s already present\n", spec.File)
 		return dest, true
 	}

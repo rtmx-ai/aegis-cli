@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"runtime"
@@ -168,8 +169,8 @@ func detectPhysicalDarwin(s Sources, logical int) int {
 	if err != nil {
 		return logical
 	}
-	if n := int(parseUint(out)); n > 0 {
-		return n
+	if u := parseUint(out); u > 0 && u <= math.MaxInt32 {
+		return int(u) // bounded: a CPU count is well within int32 (gosec G115)
 	}
 	return logical
 }

@@ -108,6 +108,28 @@ vuln:
 	if [ -n "$$bin" ]; then "$$bin" ./...; \
 	else echo "vuln: note — govulncheck not installed (PATH or $(GOBIN_DIR)); CI installs + enforces it."; fi
 
+## security: E2E-006 supply-chain + secret gate — offline scanners (gitleaks secrets, gosec SAST).
+## Tolerant like vuln: runs the scanners that are installed, notes the rest. Findings fail the gate.
+## Enforced in CI once the scanners are added to the toolchain setup (operator step, mirrors metrics
+## needing the model) — so this never breaks an absent-tool environment.
+security:
+	@gl="$$(command -v gitleaks || true)"; \
+	if [ -n "$$gl" ]; then "$$gl" detect --no-git --no-banner --redact --exit-code 1; \
+	else echo "security: note — gitleaks not installed; CI installs + enforces it (secrets)."; fi
+	@gs="$$(command -v gosec || true)"; \
+	[ -n "$$gs" ] || { [ -x "$(GOBIN_DIR)/gosec" ] && gs="$(GOBIN_DIR)/gosec"; }; \
+	if [ -n "$$gs" ]; then "$$gs" -quiet -exclude-dir=vendor $(GOSEC_EXCLUDE) ./...; \
+	else echo "security: note — gosec not installed; CI installs + enforces it (SAST)."; fi
+
+# GOSEC_EXCLUDE: rule classes that are noise for a systems CLI, not signal —
+#   G104 errcheck (golangci-lint's errcheck already enforces this, repo passes it)
+#   G204 subprocess (aegis's job is launching opencode/git/llama-server)
+#   G301/G302/G306 file perms (0644/0755 on local non-secret config/map/ledger files
+#         is intentional; secrets like the audit log are already 0600)
+#   G304 file inclusion (a CLI reads operator/config-supplied paths — its function)
+# The high-signal rules stay on: G101 (creds), G115 (int overflow), crypto (G40x/G50x).
+GOSEC_EXCLUDE ?= -exclude=G104,G204,G301,G302,G304,G306
+
 ## badges: regenerate live README badge data (coverage, version) into badges/
 badges:
 	scripts/gen-badges.sh
@@ -145,15 +167,15 @@ ci-fast: fmt-check lint vet build test health
 	@echo "ci-fast: OK"
 
 ## ci: THE pipeline. Identical target run by GitHub Actions (linux leg) and the pre-push hook.
-## Stages: fmt/lint/vet -> build -> unit + race + cover-gate -> vuln -> airgap (EGRESS=0) -> health (TRACE=100%) -> metrics (ACR-regression)
-ci: fmt-check lint vet build test race cover-gate vuln airgap health metrics
+## Stages: fmt/lint/vet -> build -> unit + race + cover-gate -> vuln -> security -> airgap (EGRESS=0) -> health (TRACE=100%) -> metrics (ACR-regression)
+ci: fmt-check lint vet build test race cover-gate vuln security airgap health metrics
 	@echo "ci: OK (all three hard gates held: EGRESS=0, TRACE=100%, ACR-regression)"
 
 ## ci-darwin: macOS CI leg — `ci` minus `airgap`. The netns/ss egress proof in
 ## scripts/verify-airgap.sh is linux-specific (macOS has neither unshare -rn nor
 ## ss); the EGRESS=0 ITAR gate is enforced on the linux enclave host + linux CI
 ## job. This leg exists for darwin-metal build/test parity, NOT the airgap proof.
-ci-darwin: fmt-check lint vet build test race cover-gate vuln health metrics
+ci-darwin: fmt-check lint vet build test race cover-gate vuln security health metrics
 	@echo "ci-darwin: OK (darwin-metal build/test parity; EGRESS=0 proof runs on the linux leg)"
 
 ## ci-full: BUILD-010 — the full-stack tier (release/nightly cadence) run locally.

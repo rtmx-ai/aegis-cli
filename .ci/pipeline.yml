@@ -62,6 +62,17 @@ stages:
       govulncheck ./... — fails on known vulnerabilities in the dependency
       graph. Installed + enforced in CI; locally degrades to a note if absent.
 
+  - id: security
+    name: Supply-chain & secret gate
+    make: [security]
+    gate: SECURITY=clean
+    hard_gate: true
+    description: >
+      E2E-006 offline scanners — gitleaks (secrets, --no-git) + gosec (SAST,
+      excludes vendor); syft SBOM is informational. Findings fail the gate.
+      Tolerant like vuln: enforced in CI once the scanners are staged into the
+      toolchain (operator step); degrades to a note when a tool is absent.
+
   - id: airgap-gate
     name: Egress gate
     make: [airgap]
@@ -96,3 +107,4 @@ hard_gates:
   - EGRESS=0          # airgap-gate
   - TRACE=100%        # trace-health
   - ACR-regression    # golden-metrics
+  - SECURITY=clean    # security (E2E-006; enforced once scanners are staged in CI)
