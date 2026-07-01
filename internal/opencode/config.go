@@ -96,6 +96,10 @@ func RenderConfig(cfg config.Config, intent bool) string {
       "description": "Requirements traceability — status, completion %, the requirement->test matrix",
       "template": "Show the requirements traceability state, then stop — do not edit files. Run the shell commands 'rtmx status' (the requirement->test matrix: each requirement's status COMPLETE/PARTIAL/MISSING and its mapped test) and 'rtmx health' (completion %, orphaned requirements/tests, reciprocity, the gates) and show their output verbatim. Lead with the headline: total requirements and the COMPLETE / PARTIAL / MISSING breakdown with the completion percentage. This is the live intent state; re-run /trace after closing a requirement to see it update."
     },
+    "map": {
+      "description": "Repo map — a ranked, token-budgeted skeleton of the codebase (real symbols to call)",
+      "template": "Run the shell command 'aegis map $ARGUMENTS' and show its full output verbatim, then stop — do not edit files. It is a ranked, token-budgeted skeleton (definition signatures) of the repository built by static analysis (no model); use it to locate and call real symbols instead of loading whole files. Pass identifiers or paths as arguments to focus the map on the current task."
+    },
     "licenses": {
       "description": "Third-party software notices — the open-source components aegis is built on",
       "template": "Show aegis's third-party software disclosures verbatim, exactly as written below, then stop — do not edit files or add commentary:\n\naegis is built on and bundles these open-source components, with gratitude:\n  • OpenCode — the agentic TUI/harness — MIT License, Copyright (c) 2025 opencode\n  • llama.cpp — local model serving — MIT License, Copyright (c) 2023-2024 The ggml authors\n  • ripgrep — fast code search — MIT License / The Unlicense, Copyright (c) 2016 Andrew Gallant\n  • rtmx — the requirements / intent engine — (c) ioTACTICAL\n  • Gemma — the default local model weights — (c) Google, used under the Gemma Terms of Use\n\nThe full license texts ship in THIRD-PARTY-NOTICES.md alongside the aegis binary."

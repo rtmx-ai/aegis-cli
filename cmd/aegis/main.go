@@ -108,6 +108,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cmdPropose(rest, stdout, stderr)
 	case "frame":
 		return cmdFrame(rest, stdout, stderr)
+	case "map":
+		return cmdMap(rest, stdout, stderr)
 	case "version":
 		fmt.Fprintf(stdout, "%s (%s)\n", version, commit)
 		return 0
