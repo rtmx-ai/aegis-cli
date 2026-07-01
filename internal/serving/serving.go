@@ -51,6 +51,10 @@ type Calibration struct {
 	// silently truncates the harness's front-loaded tool definitions). 0 ->
 	// DefaultCtxSize at launch.
 	CtxSize int `json:"ctx_size,omitempty"`
+	// Reasoning is the calibrated reasoning budget (THINK-001): whether the model
+	// reasons on hard tasks and a token cap. Zero value = reasoning off, the
+	// small-model default (long CoT is a latency tax and can lower accuracy <~10B).
+	Reasoning Reasoning `json:"reasoning,omitempty"`
 }
 
 // DefaultCtxSize is the context window the production launch uses when the calibration sets none.
