@@ -48,6 +48,10 @@ type Deps struct {
 	// (LONGRUN-011/MEM-005): a bounded discovery pass emits facts/snippets on claim,
 	// re-injected into every drive so planning starts from curated context.
 	MemoryDir string
+	// Fallback, when configured (AfterFailures > 0), injects a higher-variance
+	// fallback directive after M consecutive identical failures, before parking
+	// (LONGRUN-010).
+	Fallback FallbackPolicy
 }
 
 // Loop runs requirements according to a Config using injected Deps.
@@ -200,6 +204,8 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, StuckR
 	var stuck StuckReason
 	var overBudget bool
 	var lastHadTest bool
+	var identicalFails int
+	var lastOut string
 	var feedback string // LONGRUN-001: prior attempt's verify output, fed into the next drive
 	attempts := l.cfg.Retries + 1
 	for i := 0; i < attempts; i++ {
@@ -265,7 +271,18 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, StuckR
 		// LONGRUN-001: feed the failed test output into the next drive so the
 		// agent fixes the actual failure (run -> inspect -> fix).
 		if verr == nil {
+			if out != "" && out == lastOut {
+				identicalFails++
+			} else {
+				identicalFails = 1
+			}
+			lastOut = out
 			feedback = out
+			// LONGRUN-010: after M identical failures, inject a fallback directive
+			// (a higher-variance retry) before the loop finally parks.
+			if do, _ := l.deps.Fallback.Fallback(identicalFails); do {
+				feedback = fallbackDirective + "\n\n" + feedback
+			}
 		}
 		// LONGRUN-008: park a task that has consumed its per-task budget — distinct
 		// from the retry count and the session-wide budget.
