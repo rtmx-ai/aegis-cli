@@ -48,3 +48,26 @@ doctrine that any egress is a build-failing condition.
   locally and keep results in-enclave.
 - **eBPF runtime security (Falco/Tetragon)** — powerful syscall/network visibility, but heavier than
   the pcap + network-namespace approach; adopt only if the pcap gate proves insufficient.
+
+## Locked security/sandbox stack (2026-07-01)
+
+The menu above is narrowed to one offline, air-gap-friendly stack (owner-approved), all bundleable:
+
+- **Sandbox (E2E-005/007):** `bubblewrap` (`bwrap`) — unprivileged, no daemon, Linux-native. The
+  network lock is a **kernel network namespace** (`--unshare-net`): a sandboxed process has *no* network
+  interface, so egress is impossible by construction — stronger than post-hoc pcap. (nsjail/firejail dropped.)
+- **Secrets (E2E-006):** `gitleaks` (offline, `--no-git`; trufflehog dropped).
+- **Go vulns:** `govulncheck` (vendored/offline DB).
+- **SBOM:** `syft` (dir scan; grype/trivy dropped for the SBOM role).
+- **SAST:** `gosec` — Go-native, no rule download (semgrep dropped: multi-lang but needs a rules pull,
+  worse air-gap fit for a Go-primary repo).
+
+### E2E-005 reframed — gate mechanism, decoupled from E2E-001
+E2E-005 is the **egress-zero gate mechanism**: build the `--unshare-net` sandbox and prove a network
+canary inside it fails. Wrapping it around the full golden-set run is E2E-008 (CI wiring), so E2E-005 no
+longer depends on the model-blocked E2E-001 — it depends only on the sandbox (E2E-007).
+
+### Harness design (buildable + verifiable headless)
+Each gate is a pure-Go harness — command builder + output parser + gate decision — unit-tested with
+fixtures so it passes without the external tools installed; live checks `t.Skip()` when the tool is
+absent. Package `test/e2e`.
