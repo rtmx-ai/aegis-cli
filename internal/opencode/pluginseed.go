@@ -29,15 +29,20 @@ const StagedConfigSeedRelPath = "deploy/opencode/oc-config/opencode"
 // path; the headless --pure path skips plugins by design.
 const ContextEfficiencyPluginFile = "aegis-context-efficiency.js"
 
-// contextEfficiencyPlugin strips stale reasoning parts and bounds oversized tool results before each
-// model call (opencode's experimental.chat.messages.transform hook), so the context stays lean and
-// opencode's compaction (which rewrites the cached prefix on overflow, forcing a cold re-prefill)
-// triggers later — keeping prompt-cache reuse valid for more turns. Pure-local, no egress.
+// contextEfficiencyPlugin trims the model context before each model call (opencode's
+// experimental.chat.messages.transform hook), all deterministically — no LLM, no egress: it strips
+// stale reasoning parts (PERF-005), bounds oversized tool results (PERF-004), dedupes repeated
+// identical tool calls (re-reading the same file), and elides the stale middle of a long observation
+// stream keeping the first-N and recent-M (LONGRUN-002). Deterministic pruning runs so opencode's
+// expensive LLM compaction triggers later, keeping the prompt cache valid for more turns.
 const contextEfficiencyPlugin = `export const ContextEfficiency = async () => ({
   "experimental.chat.messages.transform": async (_input, output) => {
     const MAX = 8000
+    const KEEP_FIRST = 2, KEEP_RECENT = 6
     const trunc = (s) => s.slice(0, MAX) + "\n... [aegis: truncated " + (s.length - MAX) + " chars to preserve context]"
-    for (const msg of (output && output.messages) || []) {
+    const msgs = (output && output.messages) || []
+    // PERF-005 + PERF-004: strip reasoning; bound oversized tool output.
+    for (const msg of msgs) {
       if (!msg || !Array.isArray(msg.parts)) continue
       msg.parts = msg.parts.filter((p) => p && p.type !== "reasoning")
       for (const p of msg.parts) {
@@ -46,6 +51,34 @@ const contextEfficiencyPlugin = `export const ContextEfficiency = async () => ({
         if (inv && typeof inv.result === "string" && inv.result.length > MAX) inv.result = trunc(inv.result)
         const st = p.state
         if (st && typeof st.output === "string" && st.output.length > MAX) st.output = trunc(st.output)
+      }
+    }
+    // LONGRUN-002 (deterministic pruning): collect every tool observation in order.
+    const tools = []
+    for (const msg of msgs) {
+      if (!msg || !Array.isArray(msg.parts)) continue
+      for (const p of msg.parts) {
+        if (!p) continue
+        const inv = p.toolInvocation
+        if (inv && typeof inv.result === "string") {
+          tools.push({ key: (inv.toolName || "") + "\x00" + JSON.stringify(inv.args || null), get: () => inv.result, set: (v) => { inv.result = v } })
+          continue
+        }
+        const st = p.state
+        if (st && typeof st.output === "string") {
+          tools.push({ key: (p.tool || p.toolName || "") + "\x00" + JSON.stringify(st.input || st.args || null), get: () => st.output, set: (v) => { st.output = v } })
+        }
+      }
+    }
+    // Dedupe repeated identical tool calls (e.g. re-reading the same file): keep the last, mask earlier.
+    const last = new Map()
+    tools.forEach((t, i) => last.set(t.key, i))
+    tools.forEach((t, i) => { if (last.get(t.key) !== i) t.set("[aegis: superseded by a later identical call]") })
+    // Keep the first-N and most-recent-M observations; elide the stale middle of a long run.
+    if (tools.length > KEEP_FIRST + KEEP_RECENT) {
+      for (let i = KEEP_FIRST; i < tools.length - KEEP_RECENT; i++) {
+        const cur = tools[i].get()
+        if (cur && cur.indexOf("[aegis:") !== 0) tools[i].set("[aegis: elided stale observation]")
       }
     }
   },
