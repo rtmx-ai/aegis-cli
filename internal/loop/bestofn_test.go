@@ -2,9 +2,9 @@ package loop
 
 import "testing"
 
-// TestBestOfNSelector → REQ-THINK-005: the test (not a model-judge) selects among
-// up to 2 candidates, and the gate spends best-of-N only on hard requirements.
-func TestBestOfNSelector(t *testing.T) {
+// TestTinyBestOfN → REQ-THINK-005: the test (not a model-judge) selects among up to
+// 2 candidates, and the gate spends best-of-N only on hard requirements.
+func TestTinyBestOfN(t *testing.T) {
 	// The passing candidate is selected — test as selector, not opinion.
 	best := SelectBestOfN([]Candidate{{ID: "a", Passed: false}, {ID: "b", Passed: true}})
 	if best == nil || best.ID != "b" {
