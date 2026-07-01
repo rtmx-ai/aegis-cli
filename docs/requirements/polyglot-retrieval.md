@@ -94,5 +94,19 @@ mission set.
 
 *Test:* `internal/index::TestMultiLangExtract`
 
-**Non-goal (follow-on):** walking + ranking non-Go files inside the repo map's `Build`/PageRank graph is
-a separate step (INDEX-010, proposed) — INDEX-009 delivers the extractor + the tier.
+**Follow-on:** walking + ranking non-Go files inside the repo map's `Build`/PageRank graph is INDEX-010.
+
+### INDEX-010 — Polyglot repo map (walk + rank non-Go files)
+Extend the repo map's `Build` to walk every recognized source file (not just Go), extract its defs via
+INDEX-009 for non-Go languages (Go keeps go/ast), and rank all files together. Because non-Go files have
+no AST import graph, add a **language-agnostic text edge**: file F links to file G for each identifier in
+F that names a top-level definition in G — the same def/ref signal the Go AST edges provide, computed by
+tokenizing content. PageRank + personalization then rank Go and non-Go files uniformly.
+
+**Acceptance criteria**
+- `Build` over a mixed Go/Python/Rust repo renders symbols from all three languages.
+- A non-Go file that references another file's symbol contributes an edge (ranks via PageRank).
+- Personalizing on a non-Go symbol boosts its file (survives a tight budget).
+- A Go-only repo is unchanged (no regression to INDEX-001).
+
+*Test:* `internal/index::TestPolyglotRepoMap`
