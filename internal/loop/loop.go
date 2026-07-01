@@ -37,6 +37,10 @@ type Deps struct {
 	// LedgerDir, when set, enables the per-requirement sub-task TODO ledger
 	// (LONGRUN-003): seeded on claim, re-injected into every drive, survives resume.
 	LedgerDir string
+	// RequireSelfTest, when set, injects the THINK-004 self-check directive into the
+	// drive context until the agent's diff includes a test — proving progress with a
+	// test, not an opinion.
+	RequireSelfTest bool
 }
 
 // Loop runs requirements according to a Config using injected Deps.
@@ -179,6 +183,7 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, StuckR
 	var trace []Step
 	var stuck StuckReason
 	var overBudget bool
+	var lastHadTest bool
 	var feedback string // LONGRUN-001: prior attempt's verify output, fed into the next drive
 	attempts := l.cfg.Retries + 1
 	for i := 0; i < attempts; i++ {
@@ -193,11 +198,20 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, StuckR
 				}
 			}
 		}
+		// THINK-004: nudge the agent to write a test as the self-check, until it does.
+		if l.deps.RequireSelfTest && !lastHadTest {
+			if driveCtx != "" {
+				driveCtx = selfCheckDirective + "\n\n" + driveCtx
+			} else {
+				driveCtx = selfCheckDirective
+			}
+		}
 		diff, derr := l.deps.Harness.Drive(ctx, req, driveCtx)
 		att.Turns += diff.Turns
 		att.ToolCalls += diff.ToolCalls
 		att.ValidToolCalls += diff.ValidToolCalls
 		att.Tokens += diff.Tokens
+		lastHadTest = SelfTestInPatch(diff.Patch)
 		// LONGRUN-009 (live): stop a spinning agent before verifying or burning
 		// the remaining retries — the failure-only breaker would miss a loop.
 		trace = append(trace, stepsFromTrace(diff.Trace)...)
