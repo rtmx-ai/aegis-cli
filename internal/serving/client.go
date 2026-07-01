@@ -40,6 +40,10 @@ type ChatRequest struct {
 	Temperature float64 `json:"temperature,omitempty"`
 	// MaxTokens caps generated tokens; omitted when zero.
 	MaxTokens int `json:"max_tokens,omitempty"`
+	// Grammar is a GBNF grammar (llama-server) constraining the output, so a weak
+	// local model returns deterministically parseable structured output (THINK-006).
+	// Omitted when empty.
+	Grammar string `json:"grammar,omitempty"`
 }
 
 // Choice is one non-streaming completion choice.
