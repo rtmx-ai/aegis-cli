@@ -1,0 +1,9 @@
+language,rtmx_marker,lsp_server,lsp_static_bundleable,scip_indexer,scip_static_bundleable,treesitter_wasm,notes
+Go,"rtmx.Req(t, ""REQ-ID"")",gopls,yes (pure Go),scip-go,yes (pure Go),yes,all three fully static; the case aegis already covers via go/ast
+Python,"@pytest.mark.req(""REQ-ID"")",pyright,no (Node runtime),scip-python,no (Node/Python runtime),yes,precise nav needs a bundled runtime; tree-sitter/WASM covers breadth with no runtime
+Rust,"#[req(""REQ-ID"")]",rust-analyzer,yes (musl static),rust-analyzer --scip,yes (musl static),yes,all static-friendly; one binary serves both LSP and SCIP
+JavaScript/TypeScript,"req(""REQ-ID"")",typescript-language-server,no (Node runtime),scip-typescript,no (Node runtime),yes,runtime-bound for precise nav; tree-sitter/WASM covers breadth
+C#,"[Req(""REQ-ID"")]",roslyn,no (.NET runtime),scip-dotnet,no (.NET runtime),yes,runtime-bound; scip-dotnet is the least mature indexer
+C/C++,"RTMX_REQ(""REQ-ID"")",clangd,yes (static, but LLVM ~100MB+),scip-clang,yes (static, LLVM-heavy),yes,static-linkable but large; tree-sitter/WASM is the light option
+Ruby,"it ..., req: ""REQ-ID""",none,n/a,scip-ruby,yes (Sorbet C++ static),yes,opencode has NO Ruby LSP server; SCIP (scip-ruby) does cover it
+all-others,"// rtmx:req REQ-ID",varies,varies,varies,varies,grammar-dependent,universal comment marker; tree-sitter grammar exists for most
