@@ -34,6 +34,9 @@ type Deps struct {
 	Metrics *metrics.Collector
 	// Now returns the current time; nil uses time.Now. Tests override it.
 	Now func() time.Time
+	// LedgerDir, when set, enables the per-requirement sub-task TODO ledger
+	// (LONGRUN-003): seeded on claim, re-injected into every drive, survives resume.
+	LedgerDir string
 }
 
 // Loop runs requirements according to a Config using injected Deps.
@@ -163,6 +166,12 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, StuckR
 	}
 	l.record(audit.Entry{Action: audit.ActionClaim, RequirementID: req.ID, MachineAuthored: true})
 
+	var ledger *Ledger
+	if l.deps.LedgerDir != "" {
+		ledger = &Ledger{Dir: l.deps.LedgerDir}
+		_ = ledger.Seed(req.ID, req.Title) // LONGRUN-003: on-disk sub-task ledger, survives resume
+	}
+
 	att := metrics.Attempt{RequirementID: req.ID}
 	start := l.deps.Now()
 
@@ -172,8 +181,18 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, StuckR
 	var feedback string // LONGRUN-001: prior attempt's verify output, fed into the next drive
 	attempts := l.cfg.Retries + 1
 	for i := 0; i < attempts; i++ {
-		// Generation phase.
-		diff, derr := l.deps.Harness.Drive(ctx, req, feedback)
+		// Generation phase. LONGRUN-003: re-inject the sub-task ledger every turn.
+		driveCtx := feedback
+		if ledger != nil {
+			if led := ledger.Render(req.ID); led != "" {
+				if driveCtx != "" {
+					driveCtx = led + "\n\n" + driveCtx
+				} else {
+					driveCtx = led
+				}
+			}
+		}
+		diff, derr := l.deps.Harness.Drive(ctx, req, driveCtx)
 		att.Turns += diff.Turns
 		att.ToolCalls += diff.ToolCalls
 		att.ValidToolCalls += diff.ValidToolCalls
