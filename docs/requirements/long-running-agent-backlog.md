@@ -68,6 +68,33 @@ small model** — not the across-task loop, which is solved.
 - **MEM-003** — Project-memory assembly & precedence: assemble CLAUDE.md / AGENTS.md / skills into the prompt within the 32k budget, with clear precedence. (Zed/Amp instruction-file precedence.)
 - **MEM-004** — Guardrail: no auto-learned memory that rewrites human-authored intent files. (Matches the deferred `headroom learn` decision.)
 
+## Landscape borrowables (from the OSS-tool survey)
+
+The landscape thread was consolidating per-tool differentiating features + benchmark trends across
+OpenHands, SWE-agent, Aider, Cline, Roo, Continue, Goose, RA.Aid, opencode, Zed, and Amp. Completed
+sub-digests (opencode, Zed, Amp) plus the long-horizon digest already cover it; ~80% of the borrowables
+map onto backlog items, and the air-gap filter removes the rest (browser tools, cloud "oracle" second
+models, hosted share servers). Mapping:
+
+| Borrowable feature | Seen in | Maps to |
+|---|---|---|
+| Plan/Act (read-only plan → act) via tool-gated profiles | Cline, Zed (Ask/Write), opencode (Plan/Build), RA.Aid 3-stage | LONGRUN-004 |
+| Per-edit checkpoints + hunk review; *defensive* checkpoint design (opencode `/undo` bug history) | Cline, Zed, Amp, opencode | LONGRUN-007 |
+| Handoff = *extract* goal/files into a fresh thread (not lossy summarize) | Amp | LONGRUN-006 |
+| Deterministic condensers / dedup file reads | OpenHands, Cline | LONGRUN-002 |
+| Sequential/parallel sub-agents, orchestrator→worker | Goose, Roo (Boomerang), opencode | LONGRUN-005 |
+| Tree-sitter repo map + PageRank; architect+editor split | Aider | INDEX-001 |
+| Reasoning-depth modes (Deep/smart/rush) | Amp | THINK-001 |
+| AGENTS.md/CLAUDE.md precedence; parameterized workflow "recipes" | opencode, Zed, Goose recipes | MEM-002/003 |
+
+**Net-new, not yet in the backlog (minor):** Zed's **Zeta** (an Apache-2.0, Qwen2.5-Coder-7B-based *local*
+edit-prediction model — an air-gap-friendly precedent for fast local autocomplete, a different surface
+than long-running tasks); **ACP** (Zed's "LSP for agents" — a harness-adapter framing that parallels
+aegis's `internal/harness` seam); Goose **recipes** (parameterized, shareable workflows — an extension
+of MEM-002 skills). Recommendation: **don't revive the full fan-out** (redundant + it was rate-limited);
+these three are captured here. A single targeted pass on the unsurveyed tools (OpenHands, Aider, Cline,
+Goose, RA.Aid) can produce a formal appendix on request.
+
 ## Deferred (recorded so they aren't re-litigated)
 
 - **Local embedding RAG over the codebase** — a fully-local embedding model (nomic-embed/bge via llama.cpp) + local store (sqlite-vec) is *possible* offline, but the research favors grep/LSP/repo-map/SCIP for a small model + air-gap + CPU cost. Re-entry trigger: only if INDEX-001/002/005 prove insufficient on a measured retrieval task.
