@@ -13,11 +13,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rtmx-ai/aegis-cli/internal/audit"
 	"github.com/rtmx-ai/aegis-cli/internal/config"
 	"github.com/rtmx-ai/aegis-cli/internal/harness"
+	"github.com/rtmx-ai/aegis-cli/internal/memory"
 	"github.com/rtmx-ai/aegis-cli/internal/metrics"
 	"github.com/rtmx-ai/aegis-cli/internal/rtmx"
 )
@@ -41,6 +44,10 @@ type Deps struct {
 	// drive context until the agent's diff includes a test — proving progress with a
 	// test, not an opinion.
 	RequireSelfTest bool
+	// MemoryDir, when set, enables the research pre-stage + working-memory store
+	// (LONGRUN-011/MEM-005): a bounded discovery pass emits facts/snippets on claim,
+	// re-injected into every drive so planning starts from curated context.
+	MemoryDir string
 }
 
 // Loop runs requirements according to a Config using injected Deps.
@@ -176,6 +183,15 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, StuckR
 		_ = ledger.Seed(req.ID, req.Title) // LONGRUN-003: on-disk sub-task ledger, survives resume
 	}
 
+	var memStore *memory.Store
+	if l.deps.MemoryDir != "" {
+		if st, err := memory.Open(filepath.Join(l.deps.MemoryDir, strings.ReplaceAll(req.ID, "/", "_")+".json"), 0, 0); err == nil {
+			memStore = st
+			// LONGRUN-011: bounded discovery pass curates context before planning.
+			ResearchPreStage(memStore, ".", termsFromRequirement(req), 20)
+		}
+	}
+
 	att := metrics.Attempt{RequirementID: req.ID}
 	start := l.deps.Now()
 
@@ -195,6 +211,16 @@ func (l *Loop) work(ctx context.Context, req *rtmx.Requirement) (Outcome, StuckR
 					driveCtx = led + "\n\n" + driveCtx
 				} else {
 					driveCtx = led
+				}
+			}
+		}
+		// LONGRUN-011: re-inject the working-memory (research findings) each turn.
+		if memStore != nil {
+			if m := memStore.Render(); m != "" {
+				if driveCtx != "" {
+					driveCtx = m + "\n\n" + driveCtx
+				} else {
+					driveCtx = m
 				}
 			}
 		}
