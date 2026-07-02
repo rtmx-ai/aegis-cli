@@ -11,12 +11,14 @@ import (
 	"time"
 
 	"github.com/rtmx-ai/aegis-cli/internal/config"
+	"github.com/rtmx-ai/aegis-cli/internal/serving"
 )
 
 // ollamaCtxTokens is the context aegis bakes into its derived Ollama model (OC-029). opencode's agent
 // prompt (system + tool schemas) overflows Ollama's small default num_ctx, so without this the prompt
-// is truncated and the model flails. 16k fits the prompt + a working conversation.
-const ollamaCtxTokens = 32768
+// is truncated and the model flails. PERF-009: sourced from the ONE context knob (serving.DefaultCtxSize)
+// so the Ollama path never drifts from the llama-server + OpenCode windows.
+var ollamaCtxTokens = serving.DefaultCtxSize
 
 // ollamaHost returns the Ollama base URL — OLLAMA_HOST or the default localhost:11434, normalized.
 func ollamaHost() string {

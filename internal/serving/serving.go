@@ -63,20 +63,27 @@ type Calibration struct {
 // cheap after the one-time warm — 16k was the observed cause of "context size exceeded" on real tasks.
 const DefaultCtxSize = 32768
 
-// CtxSizeOrDefault returns the context window to serve: AEGIS_CTX_SIZE if the operator set it (the
-// PERF-003 tunable), else the calibrated CtxSize, else DefaultCtxSize. The production launch never
-// serves a small default context.
-func (c *Calibration) CtxSizeOrDefault() int {
+// ResolveCtxSize is the SINGLE decision of the context window used everywhere (PERF-009, DRY): the
+// operator's AEGIS_CTX_SIZE override, else the caller-supplied hint (a model's catalog num_ctx), else
+// DefaultCtxSize. Both the llama-server launch (--ctx-size) and OpenCode's token accounting
+// (limit.context) resolve through this one function so they can never drift. There is deliberately no
+// separate "16k vs 32k" knob to keep in sync — change DefaultCtxSize (or set the env / a catalog
+// num_ctx) and the whole application moves together.
+func ResolveCtxSize(hint int) int {
 	if v := os.Getenv("AEGIS_CTX_SIZE"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 512 {
 			return n
 		}
 	}
-	if c.CtxSize >= 512 {
-		return c.CtxSize
+	if hint >= 512 {
+		return hint
 	}
 	return DefaultCtxSize
 }
+
+// CtxSizeOrDefault returns the context window to serve for this calibration, via the one resolver
+// (ResolveCtxSize). The production launch never serves a small default context.
+func (c *Calibration) CtxSizeOrDefault() int { return ResolveCtxSize(c.CtxSize) }
 
 // LoadCalibration reads and validates a calibration file.
 func LoadCalibration(path string) (*Calibration, error) {

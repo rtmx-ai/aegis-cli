@@ -27,3 +27,22 @@ func TestCtxSizeTunable(t *testing.T) {
 		t.Errorf("unset ctx must be the 32k default: got %d", got)
 	}
 }
+
+// TestResolveCtxSizeSingleSource → REQ-PERF-009: ResolveCtxSize is the ONE decision every consumer routes
+// through — env override, else the caller's hint (a catalog num_ctx), else DefaultCtxSize. A too-small
+// hint below the 512 floor is ignored so a stale/garbage value can never pin a tiny window.
+func TestResolveCtxSizeSingleSource(t *testing.T) {
+	if got := ResolveCtxSize(0); got != DefaultCtxSize {
+		t.Errorf("no hint → default: got %d want %d", got, DefaultCtxSize)
+	}
+	if got := ResolveCtxSize(20480); got != 20480 {
+		t.Errorf("a valid hint must be honored: got %d", got)
+	}
+	if got := ResolveCtxSize(64); got != DefaultCtxSize {
+		t.Errorf("a sub-floor hint must fall to the default (never a tiny window): got %d", got)
+	}
+	t.Setenv("AEGIS_CTX_SIZE", "49152")
+	if got := ResolveCtxSize(20480); got != 49152 {
+		t.Errorf("the operator env override must win over any hint: got %d", got)
+	}
+}

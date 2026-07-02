@@ -97,6 +97,11 @@ type Config struct {
 	// Interactive marks an interactive TUI session (vs a headless run). It selects the proactive
 	// persona over the tight headless directives (PERSONA-001). Launch-set, never persisted.
 	Interactive bool `json:"-"`
+	// CtxSize is the resolved context window (tokens) for this launch — the SINGLE source of truth
+	// for the served window, fed into BOTH the llama-server --ctx-size and OpenCode's limit.context
+	// so the two can never drift (PERF-009). Resolved once at launch (env AEGIS_CTX_SIZE > model
+	// catalog num_ctx > serving.DefaultCtxSize); 0 means "not resolved yet — use the default".
+	CtxSize int `json:"-"`
 }
 
 // Run-policy limit defaults (RUNQ-003): bound a slow/rambling local model without

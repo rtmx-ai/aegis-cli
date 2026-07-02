@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/rtmx-ai/aegis-cli/internal/config"
+	"github.com/rtmx-ai/aegis-cli/internal/serving"
 )
 
 // toolCoachingFile is the instruction file aegis stages into the OpenCode config
@@ -144,6 +145,20 @@ func RenderConfig(cfg config.Config, intent bool) string {
 	// tuning shapes sampling so the model tool-calls reliably; the limits bound a
 	// capable-but-rambling model so it completes instead of running away.
 	agent := renderAgent(cfg)
+	// PERF-009: declare the model's context/output limits on the RENDERED model so OpenCode counts
+	// tokens against the SAME window aegis actually serves — fed from cfg.CtxSize (the one resolved
+	// value, shared with the llama-server --ctx-size). Without this, OpenCode falls back to the baked
+	// catalog (or a small default) and compacts at the wrong window — the "30k requested, 16k
+	// available" field bug where the served ctx and OpenCode's accounting had drifted.
+	ctx := cfg.CtxSize
+	if ctx <= 0 {
+		ctx = serving.DefaultCtxSize
+	}
+	out := cfg.MaxOutputTokens
+	if out <= 0 {
+		out = config.DefaultMaxOutputTokens
+	}
+	limit := fmt.Sprintf(`, "limit": { "context": %d, "output": %d }`, ctx, out)
 	// Classic opencode.json schema: provider + model (+ optional mcp). Air-gap
 	// hardening is enforced via env markers (OPENCODE_TELEMETRY/AUTOUPDATE/
 	// DISABLE_SHARE), `opencode run --pure` (no external plugins), and the egress
@@ -156,11 +171,11 @@ func RenderConfig(cfg config.Config, intent bool) string {
     "local": {
       "npm": "@ai-sdk/openai-compatible",
       "options": { "baseURL": %q, "apiKey": "not-needed-loopback" },
-      "models": { %q: { "name": %q } }
+      "models": { %q: { "name": %q%s } }
     }
   },
   "model": %q%s%s%s%s%s
-}`, baseURL, model, model, "local/"+model, mcp, command, instructions, plugin, agent)
+}`, baseURL, model, model, limit, "local/"+model, mcp, command, instructions, plugin, agent)
 }
 
 // renderAgent emits the OpenCode `agent.build` block: per-model tuning (SERVE-020) plus the

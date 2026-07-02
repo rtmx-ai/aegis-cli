@@ -275,6 +275,41 @@ func (c *Client) Models(ctx context.Context) ([]ModelInfo, error) {
 	return out.Data, nil
 }
 
+// ServedCtxSize returns the context window (n_ctx) the running server is ACTUALLY serving, read from
+// llama.cpp's GET /props (PERF-009). This lets OpenCode's limit.context track the live server's real
+// window rather than aegis's intended value — so a server left running with an older/smaller ctx does
+// not trigger a "request exceeds context" reject; OpenCode simply compacts at the real window. Returns
+// 0 (no error surfaced to the caller as fatal) when the endpoint does not expose /props (e.g. a
+// non-llama.cpp backend), so the caller can fall back to the resolver.
+func (c *Client) ServedCtxSize(ctx context.Context) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/props", nil)
+	if err != nil {
+		return 0, fmt.Errorf("serving: build props request: %w", err)
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("serving: props request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if err := checkStatus(resp); err != nil {
+		return 0, err
+	}
+	// llama-server exposes n_ctx both at the top level and under default_generation_settings; accept either.
+	var out struct {
+		NCtx                     int `json:"n_ctx"`
+		DefaultGenerationSetting struct {
+			NCtx int `json:"n_ctx"`
+		} `json:"default_generation_settings"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return 0, fmt.Errorf("serving: decode props: %w", err)
+	}
+	if out.NCtx > 0 {
+		return out.NCtx, nil
+	}
+	return out.DefaultGenerationSetting.NCtx, nil
+}
+
 // ModelInfo returns the first served model. On a multi-model backend the first
 // entry is arbitrary; use CheckModel to gate against a specific expected model.
 func (c *Client) ModelInfo(ctx context.Context) (ModelInfo, error) {

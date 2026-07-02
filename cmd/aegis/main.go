@@ -465,6 +465,9 @@ func cmdTUI(stdout, stderr io.Writer) int {
 	if h := profileHint(cfg.ModelID); h != "" {
 		fmt.Fprintln(stderr, "aegis: "+h)
 	}
+	// PERF-009: tell OpenCode the SAME window the server actually serves (probed live), so it counts
+	// tokens against the real context and stops compacting (and re-ingesting the prompt) at a phantom 16k.
+	cfg.CtxSize = servedCtxSize(cfg.Endpoint)
 	if err := tuiLaunch(cfg, "", ""); err != nil {
 		if opencode.IsMissing(err) {
 			fmt.Fprintln(stderr, opencode.MissingGuidance)
@@ -542,9 +545,9 @@ func resolveAnyModelGGUF() string {
 func writeSeedCalibration(gguf string) (string, error) {
 	cal := install.Plan(install.Detect()).Calibration
 	cal.Model = gguf
-	if n := catalogCtxSizeForGGUF(gguf); n > 0 {
-		cal.CtxSize = n
-	}
+	// PERF-009: seed the context window via the ONE resolver (env > catalog num_ctx > default), so a
+	// freshly provisioned model never persists a stale/small ctx that later pins the served window.
+	cal.CtxSize = serving.ResolveCtxSize(catalogCtxSizeForGGUF(gguf))
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -645,6 +648,30 @@ func ensureModelServing(cfg config.Config, out io.Writer) (stop func(), modelID 
 	}
 	stop()
 	return nil, "", fmt.Errorf("model did not become ready within 180s (check the model + calibration)")
+}
+
+// servedCtxSize resolves the context window OpenCode should count against (PERF-009). It prefers the
+// window the running server is ACTUALLY serving (llama.cpp /props n_ctx), so OpenCode always matches
+// reality — including a server left running with an older/smaller ctx (no "request exceeds context"
+// reject; it just compacts at the real window). When /props is unavailable it falls back to the ONE
+// resolver applied to the active calibration's model (env > catalog num_ctx > default).
+func servedCtxSize(endpoint string) int {
+	if endpoint != "" {
+		if c, err := serving.NewClient(endpoint); err == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if n, perr := c.ServedCtxSize(ctx); perr == nil && n >= 512 {
+				return n
+			}
+		}
+	}
+	model := ""
+	if cp := resolveCalibrationPath(); cp != "" {
+		if cal, err := serving.LoadCalibration(cp); err == nil {
+			model = cal.Model
+		}
+	}
+	return serving.ResolveCtxSize(catalogCtxSizeForGGUF(model))
 }
 
 // servingModelID resolves the catalog id of the model the active calibration points at, so an
@@ -1048,14 +1075,11 @@ func buildServeCommand(calPath string) (*exec.Cmd, error) {
 	if err != nil {
 		return nil, fmt.Errorf("calibration: %w (run scripts/bench.sh)", err)
 	}
-	// SERVE-017/020: if the calibration sets no ctx_size, carry the selected model's
-	// num_ctx from the catalog (matched by GGUF file) onto --ctx-size, so the production
-	// path serves the tuned context robustly instead of llama.cpp's small default.
-	if cal.CtxSize == 0 {
-		if n := catalogCtxSizeForGGUF(cal.Model); n > 0 {
-			cal.CtxSize = n
-		}
-	}
+	// PERF-009: re-resolve the served context window from the ONE resolver every launch, overwriting
+	// whatever the persisted calibration held. This heals a STALE calibration ctx_size (an old 16384
+	// that survived an aegis upgrade and pinned the window to a 16k default, the field bug) — the
+	// served window now always follows AEGIS_CTX_SIZE > the model's catalog num_ctx > DefaultCtxSize.
+	cal.CtxSize = serving.ResolveCtxSize(catalogCtxSizeForGGUF(cal.Model))
 	argv, err := serving.LaunchArgs(cal)
 	if err != nil {
 		return nil, err
