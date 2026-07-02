@@ -27,9 +27,9 @@ for plat in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64; do
 	sed -i.bak "s/$ph/$sha/" "$tmp" && rm -f "$tmp.bak"
 	echo "fill-formula: pinned $plat -> $sha" >&2
 done
-# Prune any platform block whose sha256 is still a REPLACE_ placeholder (that tarball was not
-# built on this runner) so the published formula is VALID — a placeholder sha256 breaks
-# `brew install`/`audit` on that platform. Pruned platforms reappear once a runner builds them.
+# Pass 1: prune any inner on_arm/on_intel block whose sha256 is still a REPLACE_ placeholder
+# (that tarball was not built on this runner) — a placeholder sha256 breaks brew on that platform.
+p1="$(mktemp)"
 awk '
 /^[[:space:]]*on_(arm|intel) do[[:space:]]*$/ { buf=$0 ORS; inblk=1; repl=0; next }
 inblk {
@@ -39,5 +39,27 @@ inblk {
   next
 }
 { print }
-' "$tmp" > "$out"
-rm -f "$tmp"
+' "$tmp" > "$p1"
+
+# Pass 2 (REL-014): drop an on_macos/on_linux wrapper left EMPTY by pass 1 (all inner blocks
+# pruned). An OS block with no url is what breaks brew ("formula requires at least a URL") and
+# takes down `brew upgrade` for the whole tap. Depth-tracked so inner `end`s do not close it early.
+p2="$(mktemp)"
+awk '
+/^[[:space:]]*on_(macos|linux) do[[:space:]]*$/ && !inos { buf=$0 ORS; inos=1; depth=1; hasurl=0; next }
+inos {
+  buf=buf $0 ORS
+  if ($0 ~ /[[:space:]]url /) hasurl=1
+  if ($0 ~ /[[:space:]]do[[:space:]]*$/) depth++
+  if ($0 ~ /^[[:space:]]*end[[:space:]]*$/) { depth--; if (depth==0) { if (hasurl) printf "%s", buf; inos=0; buf="" } }
+  next
+}
+{ print }
+' "$p1" > "$p2"
+rm -f "$tmp" "$p1"
+
+# REL-014: validate the generated formula is loadable BEFORE it is published — fails the release
+# on a leftover placeholder, no url, or an empty on_macos/on_linux block.
+"$(dirname "$0")/validate-formula.sh" "$p2"
+cat "$p2" > "$out"
+rm -f "$p2"
