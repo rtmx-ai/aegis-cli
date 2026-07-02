@@ -10,50 +10,58 @@ import (
 
 var emptyOSBlock = regexp.MustCompile(`(?s)on_(macos|linux) do\s*end`)
 
-// TestFormulaValidation → REQ-REL-014: the exact v1.9.0 regression — when a platform's tarball is
-// absent (darwin failed to build), fill-formula must NOT leave an empty on_macos/on_linux block
-// (Homebrew rejects it: "formula requires at least a URL", which broke `brew upgrade` for the whole
-// tap), and validate-formula must FAIL such a formula so a broken one is never published.
+func writeTarballs(t *testing.T, dir, version string, plats ...string) {
+	t.Helper()
+	for _, p := range plats {
+		if err := os.WriteFile(filepath.Join(dir, "aegis-"+version+"-"+p+".tar.gz"), []byte(p), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestFormulaValidation → REQ-REL-014: the release must never publish an incomplete Homebrew formula.
+// A complete build (every supported platform) passes; a PARTIAL build missing a platform — the exact
+// v1.9.0 regression where darwin failed and the formula could not load on macOS ("requires at least a
+// URL") — FAILS the release; and an empty OS block is rejected. This is the build-time gate.
 func TestFormulaValidation(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash unavailable")
 	}
 	root := repoRoot(t)
 	tmpl := filepath.Join(root, "deploy", "homebrew", "aegis.rb")
-
-	// Reproduce v1.9.0: only the linux tarballs built; both darwin tarballs absent.
-	dist := t.TempDir()
-	for _, p := range []string{"linux-amd64", "linux-arm64"} {
-		if err := os.WriteFile(filepath.Join(dist, "aegis-1.9.0-"+p+".tar.gz"), []byte(p), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	out := filepath.Join(t.TempDir(), "aegis.rb")
-	cmd := exec.Command("bash", "scripts/fill-formula.sh", "1.9.0", dist, tmpl, out)
-	cmd.Dir = root
-	if o, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("fill-formula (darwin absent) must produce a VALID formula, got error: %v\n%s", err, o)
-	}
-	filled, _ := os.ReadFile(out)
-	if emptyOSBlock.Match(filled) {
-		t.Errorf("fill-formula left an EMPTY on_macos/on_linux block (the v1.9.0 brew breakage):\n%s", filled)
+	fill := func(dist, out string) error {
+		c := exec.Command("bash", "scripts/fill-formula.sh", "1.9.0", dist, tmpl, out)
+		c.Dir = root
+		return c.Run()
 	}
 
-	// validate-formula must REJECT a formula with an empty OS block...
+	// Complete build → valid, no empty OS block.
+	full := t.TempDir()
+	writeTarballs(t, full, "1.9.0", "darwin-arm64", "linux-arm64", "linux-amd64")
+	outFull := filepath.Join(t.TempDir(), "full.rb")
+	if err := fill(full, outFull); err != nil {
+		t.Fatalf("a complete build must produce a valid formula: %v", err)
+	}
+	if b, _ := os.ReadFile(outFull); emptyOSBlock.Match(b) {
+		t.Errorf("complete formula must have no empty OS block:\n%s", b)
+	}
+
+	// Partial build (darwin absent — the v1.9.0 regression) → must FAIL, so a formula that can't load
+	// on macOS is never published.
+	partial := t.TempDir()
+	writeTarballs(t, partial, "1.9.0", "linux-arm64", "linux-amd64")
+	if err := fill(partial, filepath.Join(t.TempDir(), "partial.rb")); err == nil {
+		t.Error("a build missing the darwin platform MUST fail the release (would break brew on macOS)")
+	}
+
+	// An empty on_macos block is rejected directly by the validator.
 	broken := filepath.Join(t.TempDir(), "broken.rb")
-	if err := os.WriteFile(broken, []byte("class A < Formula\n  version \"1.0\"\n  on_macos do\n  end\n  on_linux do\n    url \"http://x\"\n    sha256 \"ab\"\n  end\nend\n"), 0o644); err != nil {
+	if err := os.WriteFile(broken, []byte("class A < Formula\n  version \"1.0\"\n  on_macos do\n  end\n  on_linux do\n    url \"x-linux-arm64.tar.gz\"\n    sha256 \"ab\"\n  end\nend\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	v := exec.Command("bash", "scripts/validate-formula.sh", broken)
 	v.Dir = root
 	if err := v.Run(); err == nil {
 		t.Error("validate-formula must FAIL on a formula with an empty on_macos block")
-	}
-
-	// ...and ACCEPT the (valid, linux-only) generated formula.
-	v2 := exec.Command("bash", "scripts/validate-formula.sh", out)
-	v2.Dir = root
-	if err := v2.Run(); err != nil {
-		t.Errorf("validate-formula must ACCEPT the valid generated formula: %v", err)
 	}
 }

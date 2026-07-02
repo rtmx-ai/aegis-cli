@@ -24,4 +24,12 @@ inos {
 END { exit bad ? 1 : 0 }
 ' "$f" || fail "an on_macos/on_linux block has no url (breaks brew: 'formula requires at least a URL')"
 
-echo "validate-formula: OK ($f)" >&2
+# REL-014: the formula must serve EVERY supported platform. A formula missing a platform's url cannot
+# LOAD on that platform (macOS with only linux urls errors "requires at least a URL" too) — so a partial
+# build (e.g. darwin failed) must FAIL the release, not silently publish a formula that breaks a platform.
+required="${AEGIS_REQUIRED_PLATFORMS:-darwin-arm64 linux-arm64 linux-amd64}"
+for plat in $required; do
+	grep -qF "$plat.tar.gz" "$f" || fail "missing url for required platform '$plat' — incomplete release (would break brew on that platform)"
+done
+
+echo "validate-formula: OK ($f) — all required platforms present [$required]" >&2

@@ -32,8 +32,11 @@ func TestTapFormulaPinned(t *testing.T) {
 		t.Skip("bash unavailable")
 	}
 	dist := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dist, "aegis-1.2.3-linux-amd64.tar.gz"), []byte("bundle"), 0o644); err != nil {
-		t.Fatal(err)
+	// All supported platforms must be present or fill-formula fails (REL-014, complete release).
+	for _, p := range []string{"darwin-arm64", "linux-arm64", "linux-amd64"} {
+		if err := os.WriteFile(filepath.Join(dist, "aegis-1.2.3-"+p+".tar.gz"), []byte(p), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	out := filepath.Join(t.TempDir(), "aegis.rb")
 	cmd := exec.Command("bash", "scripts/fill-formula.sh", "1.2.3", dist, tmpl, out)
