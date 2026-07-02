@@ -1,0 +1,56 @@
+{
+  "site": "rtmx.ai",
+  "base_repo": "github.com/rtmx-ai/aegis-cli",
+  "principle": "Reference the vendored aegis-cli submodule docs; never duplicate — single source of truth, no drift (SITE-001).",
+  "pages": [
+    {
+      "slug": "aegis",
+      "title": "Overview",
+      "requirement": "SITE-006",
+      "summary": "What aegis is, the three non-negotiables, the architecture diagram.",
+      "canonical": ["README.md", "CLAUDE.md"]
+    },
+    {
+      "slug": "aegis/getting-started",
+      "title": "Getting Started",
+      "requirement": "SITE-006",
+      "summary": "Install, quickstart (first TUI run + one requirement to green), core concepts.",
+      "canonical": ["README.md", "docs/operator-guide.md"]
+    },
+    {
+      "slug": "aegis/using",
+      "title": "Using aegis",
+      "requirement": "SITE-007",
+      "summary": "TUI, the rtmx loop, headless runs & budgets, decomposition, long-running tasks, codebase indexing, CLI reference.",
+      "canonical": ["docs/operator-guide.md", "docs/runbook.md", "skills/rtmx-loop/SKILL.md", "docs/requirements/polyglot-retrieval.md"]
+    },
+    {
+      "slug": "aegis/operator",
+      "title": "Operator & Air-Gap",
+      "requirement": "SITE-008",
+      "summary": "Enclave deployment, air-gap setup, hardware, serving/calibration, provisioning, the day-2 runbook.",
+      "canonical": ["docs/airgap-setup.md", "docs/enclave-deployment.md", "docs/hardware-purchase-spec.md", "docs/readiness.md", "skills/serving-calibration/SKILL.md"]
+    },
+    {
+      "slug": "aegis/security",
+      "title": "Security & Compliance",
+      "requirement": "SITE-009",
+      "summary": "Air-gap guarantees (EGRESS=0), ITAR posture, signing + SBOM, sandboxed execution, audit, model provenance.",
+      "canonical": ["docs/release-signing.md", "docs/model-compliance.md", "docs/requirements/opencode-aegis-hardening.md", "docs/requirements/e2e-test-suite.md", "skills/airgap-hygiene/SKILL.md"]
+    },
+    {
+      "slug": "aegis/reference",
+      "title": "Reference",
+      "requirement": "SITE-010",
+      "summary": "Architecture, the control loop, the metrics dashboard, serving internals, the model corpus & bake-off.",
+      "canonical": ["CLAUDE.md", "docs/models.md", "docs/serve-016-bakeoff.md", "skills/metrics-eval/SKILL.md"]
+    },
+    {
+      "slug": "aegis/evaluate",
+      "title": "Evaluate",
+      "requirement": "SITE-011",
+      "summary": "Business case, compare, benchmarks, design decisions (ADRs), roadmap.",
+      "canonical": ["docs/business-case.md", "docs/intent-bench.md", "docs/decisions"]
+    }
+  ]
+}
