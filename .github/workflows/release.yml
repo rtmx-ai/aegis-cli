@@ -97,9 +97,16 @@ jobs:
           for s in dist/SHA256SUMS.minisig dist/SHA256SUMS.asc; do
             [ -f "$s" ] && assets="$assets $s"
           done
-          gh release create "$GITHUB_REF_NAME" $assets \
-            --title "$GITHUB_REF_NAME" \
-            --notes "Automated release. Static binaries (linux amd64/arm64, macOS Intel + Apple Silicon, windows amd64), Debian .deb packages, CycloneDX SBOM, and SHA-256 checksums. Verify downloads against SHA256SUMS."
+          notes="Automated release. Static binaries + bundles (linux amd64/arm64, macOS Apple Silicon arm64), Debian .deb packages, CycloneDX SBOM, and SHA-256 checksums with a minisign signature. Verify downloads against SHA256SUMS."
+          # REL-015: idempotent publish — a re-run/retry (e.g. after a transient bundle-build flake) must
+          # UPDATE the existing release, not fail with "release already exists" (which strands the newly
+          # built assets and skips the tap publish, exactly what stranded v1.9.0's darwin bottle).
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" $assets --clobber
+            gh release edit "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "$notes"
+          else
+            gh release create "$GITHUB_REF_NAME" $assets --title "$GITHUB_REF_NAME" --notes "$notes"
+          fi
 
       # REL-007/010: pin + publish the Homebrew tap formula to github.com/rtmx-ai/homebrew-tap.
       # dist/ now holds every platform's bundle tarball (the matrix artifacts ingested above), so
