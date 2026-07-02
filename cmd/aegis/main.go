@@ -408,10 +408,15 @@ func cmdTUI(stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, opencode.MissingGuidance)
 		return 1
 	}
+	// OC-048: show the "Loading aegis…" splash the instant the harness is confirmed present, so the
+	// operator sees activity immediately rather than a blank terminal during the model spin-up below.
+	// Stopped as soon as the model is up, just before OpenCode paints its TUI.
+	stopSplash := opencode.LaunchSplash(stderr)
 	// OC-023 ("Auto"): bring the recommended model up before opening the UI, so bare `aegis` just
 	// works instead of opening an empty UI that thrashes on "Cannot connect to API". If no model can
 	// be resolved, guide the operator to provision one rather than launching an unusable TUI.
 	stop, modelID, serr := ensureModelServing(cfg, stderr)
+	stopSplash() // model resolution done — clear the splash before any further output / the TUI paint
 	if serr != nil {
 		if !errors.Is(serr, errNoModel) {
 			fmt.Fprintf(stderr, "aegis: %v\n", serr)

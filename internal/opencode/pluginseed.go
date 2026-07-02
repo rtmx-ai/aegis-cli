@@ -30,8 +30,9 @@ const StagedConfigSeedRelPath = "deploy/opencode/oc-config/opencode"
 const ContextEfficiencyPluginFile = "aegis-context-efficiency.js"
 
 // contextEfficiencyPlugin trims the model context before each model call (opencode's
-// experimental.chat.messages.transform hook), all deterministically — no LLM, no egress: it strips
-// stale reasoning parts (PERF-005), bounds oversized tool results (PERF-004), dedupes repeated
+// experimental.chat.messages.transform hook), all deterministically — no LLM, no egress: it keeps
+// reasoning on the recent turns for the reasoning model but strips it from older history (PERSONA-002
+// tempering PERF-005), bounds oversized tool results (PERF-004), dedupes repeated
 // identical tool calls (re-reading the same file), and elides the stale middle of a long observation
 // stream keeping the first-N and recent-M (LONGRUN-002). Deterministic pruning runs so opencode's
 // expensive LLM compaction triggers later, keeping the prompt cache valid for more turns.
@@ -41,10 +42,19 @@ const contextEfficiencyPlugin = `export const ContextEfficiency = async () => ({
     const KEEP_FIRST = 2, KEEP_RECENT = 6
     const trunc = (s) => s.slice(0, MAX) + "\n... [aegis: truncated " + (s.length - MAX) + " chars to preserve context]"
     const msgs = (output && output.messages) || []
-    // PERF-005 + PERF-004: strip reasoning; bound oversized tool output.
-    for (const msg of msgs) {
+    // PERSONA-002: gemma is a reasoning model — its substance and cross-turn continuity live in the
+    // reasoning parts. Keep reasoning on the most-recent turns; strip it only from OLDER history to
+    // reclaim context (PERF-005). KEEP_REASONING is how many recent reasoning-bearing turns survive.
+    const KEEP_REASONING = 3
+    const reasoningMsgs = []
+    msgs.forEach((m, i) => { if (m && Array.isArray(m.parts) && m.parts.some((p) => p && p.type === "reasoning")) reasoningMsgs.push(i) })
+    // keepFrom = index of the oldest reasoning turn we preserve; -1 keeps them all (few enough to afford).
+    const keepFrom = reasoningMsgs.length > KEEP_REASONING ? reasoningMsgs[reasoningMsgs.length - KEEP_REASONING] : -1
+    // PERF-004: bound oversized tool output on every message; strip only STALE (pre-window) reasoning.
+    for (let i = 0; i < msgs.length; i++) {
+      const msg = msgs[i]
       if (!msg || !Array.isArray(msg.parts)) continue
-      msg.parts = msg.parts.filter((p) => p && p.type !== "reasoning")
+      if (i < keepFrom) msg.parts = msg.parts.filter((p) => p && p.type !== "reasoning")
       for (const p of msg.parts) {
         if (!p) continue
         const inv = p.toolInvocation

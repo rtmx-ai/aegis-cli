@@ -20,7 +20,7 @@ func TestContextEfficiencyPluginStaged(t *testing.T) {
 	}
 	for _, want := range []string{
 		"experimental.chat.messages.transform", // opencode's per-call messages hook
-		`p.type !== "reasoning"`,               // PERF-005: drop stale reasoning
+		`p.type !== "reasoning"`,               // PERF-005/PERSONA-002: drop stale (pre-window) reasoning
 		"toolInvocation",                       // PERF-004: bound tool results
 		"truncated",                            // the truncation marker
 	} {
