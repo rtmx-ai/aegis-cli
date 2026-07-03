@@ -671,7 +671,9 @@ func servedCtxSize(endpoint string) int {
 			model = cal.Model
 		}
 	}
-	return serving.ResolveCtxSize(catalogCtxSizeForGGUF(model))
+	// SELF-CONFIG: fall back to the memory-fitted window (same cap the serve path applies), so OpenCode's
+	// limit.context matches what aegis would actually serve even when /props is momentarily unavailable.
+	return fitCtxSize(serving.ResolveCtxSize(catalogCtxSizeForGGUF(model)), model)
 }
 
 // servingModelID resolves the catalog id of the model the active calibration points at, so an
@@ -1079,7 +1081,15 @@ func buildServeCommand(calPath string) (*exec.Cmd, error) {
 	// whatever the persisted calibration held. This heals a STALE calibration ctx_size (an old 16384
 	// that survived an aegis upgrade and pinned the window to a 16k default, the field bug) — the
 	// served window now always follows AEGIS_CTX_SIZE > the model's catalog num_ctx > DefaultCtxSize.
-	cal.CtxSize = serving.ResolveCtxSize(catalogCtxSizeForGGUF(cal.Model))
+	desiredCtx := serving.ResolveCtxSize(catalogCtxSizeForGGUF(cal.Model))
+	// SELF-CONFIG: cap that window to what actually FITS this host's memory for this model, computed
+	// fresh every launch off live RAM + the on-disk model size — so a big model on a small box (a 24B
+	// Q4 model on a 24 GB Mac) auto-sizes its context instead of serving 32k and OOMing.
+	cal.CtxSize = fitCtxSize(desiredCtx, cal.Model)
+	if cal.CtxSize < desiredCtx {
+		fmt.Fprintf(os.Stderr, "aegis: context sized to %d tokens to fit this host's memory for %s (wanted %d)\n",
+			cal.CtxSize, filepath.Base(cal.Model), desiredCtx)
+	}
 	argv, err := serving.LaunchArgs(cal)
 	if err != nil {
 		return nil, err

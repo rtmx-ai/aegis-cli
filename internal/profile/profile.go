@@ -225,6 +225,18 @@ func deriveParams(id string, sizeBytes uint64, bpp float64) (total, active uint6
 	return total, active
 }
 
+// KVCacheBytes estimates the KV-cache size (bytes) at ctxTokens for a model of totalParams. Exported so
+// the launch-time context self-config (cmd/aegis) sizes the served window to the host memory using the
+// SAME estimate the profiler uses — one KV model, no duplication.
+func KVCacheBytes(totalParams uint64, ctxTokens int) uint64 { return kvBytes(totalParams, ctxTokens) }
+
+// EstimateTotalParams estimates a model's total parameter count from its on-disk GGUF size + filename
+// quant (the robust size÷bytes-per-param path). Exported for the same launch-time context fit.
+func EstimateTotalParams(id, file string, sizeBytes uint64) uint64 {
+	total, _ := deriveParams(id, sizeBytes, bytesPerParam(file))
+	return total
+}
+
 // kvBytes estimates KV-cache bytes at a context length, scaling per-token KV with model size.
 func kvBytes(totalParams uint64, ctxTokens int) uint64 {
 	if ctxTokens <= 0 {
