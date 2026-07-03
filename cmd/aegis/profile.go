@@ -103,7 +103,7 @@ func printProfile(w io.Writer, rec profile.Recommendation) {
 		float64(p.MemBandwidthBps)/1e9, dashIfEmpty(p.Accel))
 	fmt.Fprintf(w, "context %d tokens   floors: interactive ≥%.0f tok/s, unattended ≥%.0f tok/s\n\n",
 		rec.CtxTokens, rec.Floors.InteractiveTokPerSec, rec.Floors.UnattendedTokPerSec)
-	fmt.Fprintf(w, "%-26s %6s %6s %8s  %-11s %-10s\n", "model (US-origin)", "need", "fits", "~tok/s", "interactive", "unattended")
+	fmt.Fprintf(w, "%-26s %6s %6s %8s  %-11s %-10s\n", "model (origin-allowed)", "need", "fits", "~tok/s", "interactive", "unattended")
 	anyMeasured := false
 	for _, f := range rec.Fits {
 		tps := fmt.Sprintf("%.1f", f.PredictedTokPerSec)

@@ -100,6 +100,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cmdServe(rest, stdout, stderr)
 	case "profile":
 		return cmdProfile(rest, stdout, stderr)
+	case "bakeoff":
+		return cmdBakeoff(rest, stdout, stderr)
 	case "provision":
 		return cmdProvision(rest, stdout, stderr)
 	case "verify-env":
