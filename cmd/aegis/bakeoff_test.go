@@ -66,12 +66,34 @@ func TestTranscriptTurnsTokens(t *testing.T) {
 	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	turns, tokens := transcriptTurnsTokens(p)
-	if turns != 4 || tokens != 1550 {
-		t.Errorf("turns=%d tokens=%d, want 4 / 1550", turns, tokens)
+	turns, total, out := transcriptStats(p)
+	if turns != 4 || total != 1550 || out != 350 {
+		t.Errorf("turns=%d total=%d out=%d, want 4 / 1550 / 350 (out=decode only, for honest tok/s)", turns, total, out)
 	}
-	// A missing transcript is benign (0/0), not a crash.
-	if turns, tokens := transcriptTurnsTokens(filepath.Join(dir, "nope.jsonl")); turns != 0 || tokens != 0 {
-		t.Errorf("missing transcript must yield 0/0, got %d/%d", turns, tokens)
+	// A missing transcript is benign (0/0/0), not a crash.
+	if turns, total, out := transcriptStats(filepath.Join(dir, "nope.jsonl")); turns != 0 || total != 0 || out != 0 {
+		t.Errorf("missing transcript must yield 0/0/0, got %d/%d/%d", turns, total, out)
+	}
+}
+
+// TestGitEditedCountIgnoresDotPaths → REQ-BENCH-010: files-edited counts real source changes only, not
+// tool droppings — a .opencode/ dir the harness may create in the workdir must NOT inflate the agency
+// metric (the v1.9.4 bug where phantom edits made a no-op model look like it wrote code).
+func TestGitEditedCountIgnoresDotPaths(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git unavailable")
+	}
+	ws := t.TempDir()
+	if err := seedTask(ws, defaultSuite()[0]); err != nil {
+		t.Fatal(err)
+	}
+	// A harness dropping (dot-dir) + a real edit: only the real edit counts.
+	if err := os.MkdirAll(filepath.Join(ws, ".opencode"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(ws, ".opencode", "state.json"), []byte("{}"), 0o644)
+	_ = os.WriteFile(filepath.Join(ws, "add.go"), []byte("package task\n\nfunc Add(a, b int) int { return a + b }\n"), 0o644)
+	if got := gitEditedCount(ws); got != 1 {
+		t.Errorf("files-edited must count only the real source change (1), not the .opencode dropping; got %d", got)
 	}
 }

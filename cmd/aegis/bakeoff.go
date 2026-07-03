@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rtmx-ai/aegis-cli/internal/bakeoff"
+	"github.com/rtmx-ai/aegis-cli/internal/serving"
 )
 
 // defaultSuite is the fixed bake-off task set (BENCH-010): small, deterministic Go tasks that each fail
@@ -87,7 +89,8 @@ func cmdBakeoff(args []string, stdout, stderr io.Writer) int {
 	suite := defaultSuite()
 	var reports []bakeoff.CandidateReport
 	for _, m := range ms {
-		fmt.Fprintf(stderr, "bakeoff: %s\n", m)
+		served := probeServedModel(*endpoint)
+		fmt.Fprintf(stderr, "bakeoff: %s  (endpoint is serving: %s)\n", m, orQ(served))
 		var outs []bakeoff.Outcome
 		for _, task := range suite {
 			o := runBakeoffCell(self, *endpoint, m, task, *timeout)
@@ -101,7 +104,7 @@ func cmdBakeoff(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "  %-8s %s  edited=%d wall=%.0fs tokens=%d%s\n",
 				task.Name, status, o.FilesEdited, float64(o.WallMs)/1000, o.Tokens, errSuffix(o.Error))
 		}
-		reports = append(reports, bakeoff.Aggregate(m, outs))
+		reports = append(reports, bakeoff.Aggregate(m, served, outs))
 	}
 	cmp := bakeoff.Compare("default", hostLabel, reports)
 	fmt.Fprint(stdout, cmp.Table())
@@ -133,9 +136,18 @@ func runBakeoffCell(bin, endpoint, model string, task bakeoff.Task, timeout time
 		o.Error = "precondition: task passed before the run"
 		return o
 	}
-	cfg := filepath.Join(ws, "cfg.json")
+	// Rig artifacts (cfg + transcript) live OUTSIDE the git workdir so they never pollute the
+	// files-edited count — otherwise every task shows +2 phantom edits and a model that wrote NOTHING
+	// would still score edited>0 (the exact failure the metric exists to catch).
+	meta, err := os.MkdirTemp("", "bakeoff-meta-")
+	if err != nil {
+		o.Error = err.Error()
+		return o
+	}
+	defer os.RemoveAll(meta)
+	cfg := filepath.Join(meta, "cfg.json")
 	_ = os.WriteFile(cfg, []byte(fmt.Sprintf(`{"endpoint":%q,"harness":"opencode","model_id":%q,"allow_egress":false}`, endpoint, model)), 0o644)
-	tpath := filepath.Join(ws, "transcript.jsonl")
+	tpath := filepath.Join(meta, "transcript.jsonl")
 
 	t0 := time.Now()
 	cmd := exec.Command(bin, "run", "--config", cfg, "--workdir", ws, "--model", model,
@@ -147,7 +159,7 @@ func runBakeoffCell(bin, endpoint, model string, task bakeoff.Task, timeout time
 	o.FilesEdited = gitEditedCount(ws)
 	o.Closed = runVerify(ws, task.Verify)
 	o.FirstPass = o.Closed
-	o.Turns, o.Tokens = transcriptTurnsTokens(tpath)
+	o.Turns, o.Tokens, o.OutTokens = transcriptStats(tpath)
 	if o.Turns > 0 {
 		o.ToolCalls = o.Turns // best-effort proxy until the transcript exposes tool-call validity
 		if o.FilesEdited > 0 {
@@ -192,11 +204,35 @@ func gitEditedCount(ws string) int {
 	}
 	n := 0
 	for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
-		if strings.TrimSpace(line) != "" {
-			n++
+		if len(line) < 4 {
+			continue
 		}
+		// Porcelain is "XY PATH"; count only real source changes, not tool droppings (a dot-prefixed
+		// path like .opencode/ that the harness may create in the workdir).
+		path := strings.TrimSpace(line[3:])
+		if path == "" || strings.HasPrefix(path, ".") {
+			continue
+		}
+		n++
 	}
 	return n
+}
+
+// probeServedModel returns the model id the endpoint is ACTUALLY serving (GET /v1/models via the
+// loopback-guarded client), or "" if it cannot be read. Recorded per candidate so Compare can detect the
+// same-endpoint trap (two candidates served by one model).
+func probeServedModel(endpoint string) string {
+	c, err := serving.NewClient(endpoint)
+	if err != nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	info, err := c.ModelInfo(ctx)
+	if err != nil {
+		return ""
+	}
+	return info.ID
 }
 
 // runVerify runs the task's verify command in ws; exit 0 = closed.
@@ -211,12 +247,13 @@ func runVerify(ws string, argv []string) bool {
 	return c.Run() == nil
 }
 
-// transcriptTurnsTokens reads the final {"type":"result",...} line of an intent-bench transcript for the
-// turn count + total tokens (mirrors internal/bench transcript format; std parse, no interpretation).
-func transcriptTurnsTokens(path string) (turns, tokens int) {
+// transcriptStats reads the final {"type":"result",...} line of an intent-bench transcript for the turn
+// count, TOTAL tokens (input+output, for TCR/cost), and OUTPUT tokens (decode, for honest tok/s — input
+// is prefill and must not be counted as throughput). Mirrors the internal/bench transcript format.
+func transcriptStats(path string) (turns, total, out int) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return 0, 0
+		return 0, 0, 0
 	}
 	for _, line := range strings.Split(string(b), "\n") {
 		line = strings.TrimSpace(line)
@@ -232,10 +269,10 @@ func transcriptTurnsTokens(path string) (turns, tokens int) {
 			} `json:"usage"`
 		}
 		if json.Unmarshal([]byte(line), &d) == nil && d.Type == "result" {
-			return d.NumTurns, d.Usage.In + d.Usage.Out
+			return d.NumTurns, d.Usage.In + d.Usage.Out, d.Usage.Out
 		}
 	}
-	return 0, 0
+	return 0, 0, 0
 }
 
 func writeComparison(path string, cmp bakeoff.Comparison) error {
@@ -266,4 +303,11 @@ func errSuffix(e string) string {
 		return ""
 	}
 	return " (" + e + ")"
+}
+
+func orQ(s string) string {
+	if s == "" {
+		return "?(unreachable)"
+	}
+	return s
 }

@@ -41,28 +41,35 @@ type Outcome struct {
 	ToolCalls      int    `json:"tool_calls"`
 	ValidToolCalls int    `json:"valid_tool_calls"`
 	Turns          int    `json:"turns"`
-	Tokens         int    `json:"tokens"`
+	Tokens         int    `json:"tokens"`     // total (input+output) — cost per requirement (TCR)
+	OutTokens      int    `json:"out_tokens"` // output/decode tokens — for honest tok/s (not prefill)
 	WallMs         int64  `json:"wall_ms"`
 	Error          string `json:"error,omitempty"`
 }
 
 // CandidateReport aggregates a model's outcomes over the suite.
 type CandidateReport struct {
-	Model     string         `json:"model"`
-	Attempts  int            `json:"attempts"`
-	Edited    int            `json:"edited"`      // cells where >=1 file changed
-	EditRate  float64        `json:"edit_rate"`   // did it write code? (headline)
-	TokPerSec float64        `json:"tok_per_sec"` // measured throughput (tokens / wall)
-	Report    metrics.Report `json:"report"`      // ACR/TCVR/FPVR/MTC/WCR/TCR — reused
-	Outcomes  []Outcome      `json:"outcomes"`
+	Model string `json:"model"`
+	// ServedModel is the model the endpoint ACTUALLY served (from GET /v1/models) while these outcomes
+	// were collected — recorded so a comparison can prove each candidate ran on its own model. Two
+	// candidates reporting the SAME served model means the endpoint was never swapped (the results are
+	// the same model twice) and Compare invalidates the head-to-head.
+	ServedModel string         `json:"served_model"`
+	Attempts    int            `json:"attempts"`
+	Edited      int            `json:"edited"`      // cells where >=1 file changed
+	EditRate    float64        `json:"edit_rate"`   // did it write code? (headline)
+	TokPerSec   float64        `json:"tok_per_sec"` // OUTPUT tokens / wall — honest decode-ish throughput
+	Report      metrics.Report `json:"report"`      // ACR/TCVR/FPVR/MTC/WCR/TCR — reused
+	Outcomes    []Outcome      `json:"outcomes"`
 }
 
 // Aggregate builds a CandidateReport from a model's outcomes, feeding internal/metrics for the dashboard
-// so the bake-off and CI report the SAME metric definitions (no divergent math).
-func Aggregate(model string, outs []Outcome) CandidateReport {
+// so the bake-off and CI report the SAME metric definitions (no divergent math). servedModel is what the
+// endpoint reported serving during the run (for the same-model guard); "" if it could not be probed.
+func Aggregate(model, servedModel string, outs []Outcome) CandidateReport {
 	col := metrics.NewCollector()
 	edited := 0
-	var wallMs, tokens int64
+	var wallMs, outTokens int64
 	for _, o := range outs {
 		col.Record(metrics.Attempt{
 			RequirementID:  o.Task,
@@ -79,19 +86,20 @@ func Aggregate(model string, outs []Outcome) CandidateReport {
 			edited++
 		}
 		wallMs += o.WallMs
-		tokens += int64(o.Tokens)
+		outTokens += int64(o.OutTokens)
 	}
 	tps := 0.0
 	if wallMs > 0 {
-		tps = float64(tokens) / (float64(wallMs) / 1000.0)
+		// OUTPUT tokens / wall — not (input+output)/wall, which is prefill-dominated and meaningless.
+		tps = float64(outTokens) / (float64(wallMs) / 1000.0)
 	}
 	er := 0.0
 	if n := len(outs); n > 0 {
 		er = float64(edited) / float64(n)
 	}
 	return CandidateReport{
-		Model: model, Attempts: len(outs), Edited: edited, EditRate: er,
-		TokPerSec: tps, Report: col.Report(), Outcomes: outs,
+		Model: model, ServedModel: servedModel, Attempts: len(outs), Edited: edited,
+		EditRate: er, TokPerSec: tps, Report: col.Report(), Outcomes: outs,
 	}
 }
 
@@ -125,6 +133,13 @@ func Compare(suite, host string, reports []CandidateReport) Comparison {
 		return a.Report.WCR < b.Report.WCR
 	})
 	c := Comparison{Suite: suite, Host: host, Candidates: ranked}
+	// Same-model guard: if two candidates report the SAME served model, the endpoint was never swapped —
+	// the run measured one model twice, so any "winner" is noise. Refuse to rank (this is the exact trap
+	// the first bake-off fell into: near-identical token counts because both cells hit one served model).
+	if dup := duplicateServedModel(ranked); dup != "" {
+		c.Basis = "INVALID: multiple candidates were served by the same model (" + dup + ") — the endpoint was not swapped between candidates, so this is one model measured twice. Serve each candidate on its own endpoint (or use --serve) and re-run."
+		return c
+	}
 	if len(ranked) == 0 || ranked[0].EditRate == 0 {
 		c.Basis = "no candidate edited a file on any task — the whole field failed the agency bar (check serving/template, not the models)"
 		return c
@@ -134,17 +149,37 @@ func Compare(suite, host string, reports []CandidateReport) Comparison {
 	return c
 }
 
+// duplicateServedModel returns a served-model id shared by >1 candidate (the same-endpoint trap), or "".
+func duplicateServedModel(rs []CandidateReport) string {
+	seen := map[string]int{}
+	for _, r := range rs {
+		if r.ServedModel != "" {
+			seen[r.ServedModel]++
+		}
+	}
+	for m, n := range seen {
+		if n > 1 {
+			return m
+		}
+	}
+	return ""
+}
+
 // Table renders the head-to-head as a fixed-width table, agency columns first (the question that matters).
 func (c Comparison) Table() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "bake-off: %s on %s\n", c.Suite, c.Host)
-	fmt.Fprintf(&b, "%-24s %8s %7s %7s %8s %10s %10s\n",
-		"model", "edited", "ACR", "TCVR", "tok/s", "wall/req", "tok/req")
+	fmt.Fprintf(&b, "%-22s %8s %7s %7s %9s %9s %-18s\n",
+		"model", "edited", "ACR", "TCVR", "out-tok/s", "wall/req", "served-as")
 	for _, r := range c.Candidates {
-		fmt.Fprintf(&b, "%-24s %5d/%-2d %6.0f%% %6.0f%% %8.1f %9.0fs %10.0f\n",
-			trunc(r.Model, 24), r.Edited, r.Attempts,
+		served := r.ServedModel
+		if served == "" {
+			served = "?"
+		}
+		fmt.Fprintf(&b, "%-22s %5d/%-2d %6.0f%% %6.0f%% %9.1f %8.0fs %-18s\n",
+			trunc(r.Model, 22), r.Edited, r.Attempts,
 			r.Report.ACR*100, r.Report.TCVR*100, r.TokPerSec,
-			r.Report.WCR.Seconds(), r.Report.TCR)
+			r.Report.WCR.Seconds(), trunc(served, 18))
 	}
 	if c.Winner != "" {
 		fmt.Fprintf(&b, "winner: %s\n  (%s)\n", c.Winner, c.Basis)
