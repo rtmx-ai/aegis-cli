@@ -16,6 +16,20 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
+# retry runs a command up to 3 times with exponential backoff (REL-013): CI runners flake on git
+# fetch and registry installs, and a transient network error must not sink a whole release build.
+retry() {
+	local n=1 max=3 delay=5
+	until "$@"; do
+		if [ "$n" -ge "$max" ]; then
+			echo "build-opencode: '$*' failed after $max attempts" >&2
+			return 1
+		fi
+		echo "build-opencode: '$1 …' failed (attempt $n/$max); retrying in ${delay}s" >&2
+		sleep "$delay"; n=$((n + 1)); delay=$((delay * 2))
+	done
+}
+
 REF="$(tr -d ' \n' < deploy/opencode/OPENCODE_REF)"
 SRC="${OPENCODE_SRC:-build/opencode-src}"
 OUT="deploy/opencode/bin/opencode"
@@ -28,11 +42,17 @@ if ! command -v bun >/dev/null 2>&1; then
 	exit 0
 fi
 
-# Pinned source only.
+# Pinned source only. Clone with retry + clean between attempts (REL-013: a partial clone from a
+# runner flake must not wedge the build — each attempt starts from a clean tree).
 if [ ! -d "$SRC/.git" ]; then
-	git clone "$SOURCE_REPO" "$SRC"
+	n=1
+	until git clone "$SOURCE_REPO" "$SRC"; do
+		[ "$n" -ge 3 ] && { echo "build-opencode: clone failed after 3 attempts" >&2; exit 1; }
+		echo "build-opencode: clone attempt $n failed; cleaning + retrying" >&2
+		rm -rf "$SRC"; sleep $((5 * n)); n=$((n + 1))
+	done
 fi
-git -C "$SRC" fetch --tags origin
+retry git -C "$SRC" fetch --tags origin
 # Clear any conflicted/unmerged state from a prior run (e.g. a stash-pop conflict) so the
 # checkout + the patch apply (OC-017) are idempotent; then pin to a pristine tree.
 git -C "$SRC" reset --hard -q 2>/dev/null || true
@@ -65,7 +85,7 @@ fi
 # clone (it only passes locally because a prior run already updated build/opencode-src).
 # Determinism is anchored by the pinned bun + pinned source (OPENCODE_REF) + the built binary's
 # checksum in SHA256SUMS, not by the stale upstream lockfile.
-( cd "$SRC" && bun install --no-frozen-lockfile )
+( cd "$SRC" && retry bun install --no-frozen-lockfile )
 
 # OC-002: bake air-gap protections into the build (defense in depth with the
 # shipped deploy/opencode/opencode.json config).

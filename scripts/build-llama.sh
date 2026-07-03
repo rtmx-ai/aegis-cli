@@ -11,6 +11,20 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
+# retry runs a command up to 3 times with exponential backoff (REL-013): a transient git fetch flake
+# on a CI runner must not sink a release build.
+retry() {
+	local n=1 max=3 delay=5
+	until "$@"; do
+		if [ "$n" -ge "$max" ]; then
+			echo "build-llama: '$*' failed after $max attempts" >&2
+			return 1
+		fi
+		echo "build-llama: '$1 …' failed (attempt $n/$max); retrying in ${delay}s" >&2
+		sleep "$delay"; n=$((n + 1)); delay=$((delay * 2))
+	done
+}
+
 REFFILE="deploy/llama-server/LLAMA_REF"
 REF="${LLAMA_REF:-$(tr -d ' \n' <"$REFFILE" 2>/dev/null || echo master)}"
 SRC="${LLAMA_SRC:-build/llama.cpp}"
@@ -28,11 +42,17 @@ if [ "$REF" = "master" ]; then
 	echo "build-llama: llama.cpp release tag in $REFFILE for an auditable build." >&2
 fi
 
-# Pinned source (shallow at the ref — faster, less data to stage for air-gap).
+# Pinned source (shallow at the ref — faster, less data to stage for air-gap). Clone with retry +
+# clean between attempts so a partial clone from a runner flake can't wedge the build (REL-013).
 if [ ! -d "$SRC/.git" ]; then
-	git clone --depth 1 --branch "$REF" "$SOURCE_REPO" "$SRC"
+	n=1
+	until git clone --depth 1 --branch "$REF" "$SOURCE_REPO" "$SRC"; do
+		[ "$n" -ge 3 ] && { echo "build-llama: clone failed after 3 attempts" >&2; exit 1; }
+		echo "build-llama: clone attempt $n failed; cleaning + retrying" >&2
+		rm -rf "$SRC"; sleep $((5 * n)); n=$((n + 1))
+	done
 else
-	git -C "$SRC" fetch --depth 1 origin "$REF"
+	retry git -C "$SRC" fetch --depth 1 origin "$REF"
 	git -C "$SRC" checkout -q FETCH_HEAD
 fi
 echo "build-llama: building llama.cpp @ $REF"
