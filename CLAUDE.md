@@ -70,7 +70,10 @@ produce; we never maintain a forked harness or reimplement tool-calling/editing/
 | Orchestrator | **aegis-cli (this repo, Go)** | Single static air-gappable binary. |
 
 **Build targets.** Built **initially** on `linux-cpu` — Ryzen 5950X / Ubuntu / 64 GB —
-and **ready** to target `darwin-metal` — MBP 16" M5 Max / 128 GB unified. One
+and **ready** to target `darwin-metal` — MacBook Pro M5 Pro / **24 GB** unified (the actual
+interactive box; **not** the 128 GB M5 Max earlier drafts assumed — model selection and the
+memory budget must assume 24 GB, so a 24B model fits only at ~Q4 and the context self-sizes
+to ~16k, per SERVE-023). One
 `calibration.json` (with a `target` field) plus `internal/serving` drives both; the only
 difference is at launch (CPU + `taskset` vs. all-layers-on-Metal, no pinning). Build and
 validate on the Ryzen first; the Mac path is wired and waiting.
@@ -91,8 +94,10 @@ process's egress independently auditable.
 Almost all compute lives in the inference worker. aegis-cli itself is I/O-bound and
 uses negligible CPU, so "optimal resource use" is never about the orchestrator. The
 binding constraint is **memory bandwidth** on both targets — the DDR4 bus feeding the
-CPU on the Ryzen, the 614 GB/s unified memory feeding the Metal GPU on the Mac — so
-two bandwidth-heavy stages running at once each get slower. Governance follows:
+CPU on the Ryzen, the unified memory (~150–270 GB/s on the M5 Pro) feeding the Metal GPU
+on the Mac — so two bandwidth-heavy stages running at once each get slower. On 24 GB the
+constraint is also **capacity**: a dense 24B model at Q4 (~14 GB) plus KV leaves room for
+only ~16k context, which aegis sizes to fit at launch (SERVE-023). Governance follows:
 
 - **Calibrate, don't guess.** `scripts/bench.sh` auto-detects the target and sweeps the
   right knobs once — thread/batch with `-ngl 0` on `linux-cpu`, batch with all layers on

@@ -23,6 +23,23 @@
       "active_params": 4000000000
     },
     {
+      "id": "devstral-small-2507",
+      "name": "Devstral-Small-2507 (IQ4_XS)",
+      "file": "Devstral-Small-2507-IQ4_XS.gguf",
+      "url": "https://huggingface.co/unsloth/Devstral-Small-2507-GGUF/resolve/main/Devstral-Small-2507-IQ4_XS.gguf",
+      "sha256": "47e03bcb00955b2adc4361e567fe7597e4975356c52ab917bc66b8a219b871b5",
+      "size": 12779896032,
+      "recommended": false,
+      "note": "Non-PRC agentic coder (Mistral AI, France; Apache-2.0). Purpose-built for tool-calling software engineering (OpenHands scaffold); the unsloth GGUF ships chat-template/tool-call fixes. 24B DENSE (~24B active) -> ~6x gemma-MoE compute/token; IQ4_XS (~12.8GB) chosen for 24GB hosts to buy back context. SERVE-016 bake-off challenger vs gemma.",
+      "ollama": "devstral-small",
+      "tuning": {
+        "temperature": 0.15,
+        "top_p": 0.95,
+        "num_ctx": 32768
+      },
+      "origin": "FR"
+    },
+    {
       "id": "qwen3-coder-30b-a3b",
       "name": "Qwen3-Coder-30B-A3B (UD-Q4_K_XL)",
       "file": "Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf",

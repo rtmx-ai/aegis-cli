@@ -9,7 +9,20 @@
         "name": "Gemma-4-26B-A4B (QAT Q4_K_XL)",
         "release_date": "2026-01-01",
         "attachment": false,
-        "reasoning": true,
+        "reasoning": false,
+        "temperature": true,
+        "tool_call": true,
+        "limit": {
+          "context": 32768,
+          "output": 8192
+        }
+      },
+      "devstral-small-2507": {
+        "id": "devstral-small-2507",
+        "name": "Devstral-Small-2507 (IQ4_XS)",
+        "release_date": "2026-01-01",
+        "attachment": false,
+        "reasoning": false,
         "temperature": true,
         "tool_call": true,
         "limit": {
