@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -115,12 +116,20 @@ func cmdBakeoff(args []string, stdout, stderr io.Writer) int {
 	if hostLabel == "" {
 		hostLabel = bakeoffHostLabel()
 	}
-	// Auto-serve owns the endpoint (it starts a llama-server per candidate). If something is already
-	// serving there, REFUSE — our servers can't take the port, so every candidate would silently measure
-	// the running model. Tell the operator to free it (this was the same-model-served bug in the wild).
-	if !*noServe && endpointReady(*endpoint, 2*time.Second) {
-		fmt.Fprintf(stderr, "aegis bakeoff: %s is already serving a model — bakeoff needs that port to serve each candidate. Quit any running aegis / model server, or use --no-serve with an explicit --models against the live endpoint.\n", *endpoint)
-		return 1
+	// Bake-off serves each candidate itself on a DEDICATED free port, so it never fights a model server a
+	// TUI or a prior session left on the default port — that collision was the "…did not release the port"
+	// failure, where every candidate saw a stale gemma on :8080. --no-serve measures --endpoint as-is.
+	effEndpoint := *endpoint
+	if !*noServe {
+		port, perr := freePort()
+		if perr != nil {
+			fmt.Fprintf(stderr, "aegis bakeoff: could not reserve a serving port: %v\n", perr)
+			return 1
+		}
+		effEndpoint = fmt.Sprintf("http://127.0.0.1:%d", port)
+		if verb >= 1 {
+			fmt.Fprintf(stderr, "  %s serving each candidate on %s\n", p.Dim("·"), effEndpoint)
+		}
 	}
 
 	// Serve-path chatter (download progress, ctx-sizing) is silenced at quiet.
@@ -137,9 +146,9 @@ func cmdBakeoff(args []string, stdout, stderr io.Writer) int {
 		served := m
 		stop := func() {}
 		if *noServe {
-			served = probeServedModel(*endpoint)
+			served = probeServedModel(effEndpoint)
 		} else {
-			s, sm, serr := serveModelForBakeoff(m, !*noDownload, *endpoint, serveOut)
+			s, sm, serr := serveModelForBakeoff(m, !*noDownload, effEndpoint, serveOut)
 			if serr != nil {
 				fmt.Fprintf(stderr, "    %s %s — %v\n", p.Red("✗ skip"), m, serr)
 				continue
@@ -151,7 +160,7 @@ func cmdBakeoff(args []string, stdout, stderr io.Writer) int {
 		}
 		var outs []bakeoff.Outcome
 		for _, task := range suite {
-			o := runBakeoffCell(self, *endpoint, m, task, *timeout)
+			o := runBakeoffCell(self, effEndpoint, m, task, *timeout)
 			outs = append(outs, o)
 			if verb >= 1 {
 				mark := p.Green("✓")
@@ -169,6 +178,11 @@ func cmdBakeoff(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 		stop()
+		if !*noServe {
+			// Ensure the port is actually released before the next candidate binds (belt for a slow
+			// server teardown, so the swap is deterministic).
+			waitPortFree(effEndpoint, 12*time.Second)
+		}
 		reports = append(reports, bakeoff.Aggregate(m, served, outs))
 	}
 	if len(reports) == 0 {
@@ -384,6 +398,29 @@ func writeBakeoffCalibration(gguf, dir string, port int) (string, error) {
 	return p, nil
 }
 
+// freePort reserves an OS-assigned free localhost TCP port (closed immediately). A small TOCTOU window is
+// acceptable: a bind failure surfaces as a loud per-candidate skip via the served-model check.
+func freePort() (int, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port, nil
+}
+
+// waitPortFree blocks until the endpoint stops answering (the previous candidate's server released the
+// port) or the timeout elapses, so the next candidate binds cleanly.
+func waitPortFree(endpoint string, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !endpointReady(endpoint, 1*time.Second) {
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 // endpointPort extracts the TCP port from a loopback endpoint URL (0 if absent/unparseable).
 func endpointPort(endpoint string) int {
 	if u, err := url.Parse(endpoint); err == nil {
@@ -596,4 +633,3 @@ func errSuffix(e string) string {
 	}
 	return " (" + e + ")"
 }
-

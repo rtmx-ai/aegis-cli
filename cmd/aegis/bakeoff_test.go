@@ -136,6 +136,16 @@ func TestBakeoffServeHelpers(t *testing.T) {
 		t.Errorf("endpointPort must be 0 for an unparseable endpoint")
 	}
 
+	// freePort reserves a usable, distinct localhost port — bake-off serves each candidate here instead of
+	// fighting a model server left on :8080 (the "did not release the port" failure).
+	p1, err := freePort()
+	if err != nil || p1 <= 0 {
+		t.Fatalf("freePort must return a usable port: %d %v", p1, err)
+	}
+	if p2, _ := freePort(); p2 <= 0 {
+		t.Errorf("freePort must keep returning usable ports: %d", p2)
+	}
+
 	dir := t.TempDir()
 	gguf := "/models/Devstral-Small-2507-IQ4_XS.gguf"
 	p, err := writeBakeoffCalibration(gguf, dir, 8091)
