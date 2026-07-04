@@ -5,8 +5,50 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+// TestIntentBenchAgentWiring → REQ-BENCH-014: the intent-bench integration (the aegis agent shim + the
+// run-suite driver) is present and honors the harness contract, so it can't silently rot before the real
+// corpus run (BENCH-009). The shim drives `aegis run` with --no-intent (intent-bench controls the A/B via
+// the workdir's seeded .mcp.json, not aegis's own repo), producing the contracted transcript; the runner
+// serves the model target-aware (darwin-metal + linux-cpu) on a port OUTSIDE bench.sh's {8080,3000,5000}
+// reclaim list, and drives both conditions (control + rtmx treatment) via `bench.sh --agent aegis`.
+func TestIntentBenchAgentWiring(t *testing.T) {
+	agent := readRepoFile(t, "deploy/intent-bench/aegis.sh")
+	for _, want := range []string{
+		"<workdir> <model> <prompt_file> <result_dir> <max_budget>", // the intent-bench agent contract
+		"aegis", "run", "--no-intent", // drives aegis; A/B is workdir-controlled
+		"--prompt-file", "--out", // reads the prompt file, writes the transcript
+		"transcript.jsonl", "stderr.log", // the two contracted artifacts
+		"AEGIS_ENDPOINT", // loopback endpoint (air-gap; no cloud model)
+	} {
+		if !strings.Contains(agent, want) {
+			t.Errorf("deploy/intent-bench/aegis.sh missing %q — the agent contract/wiring is incomplete", want)
+		}
+	}
+	if strings.Contains(agent, "anthropic") || strings.Contains(agent, "api.openai") {
+		t.Error("the aegis agent must drive a LOCAL loopback model, never a cloud endpoint")
+	}
+
+	runner := readRepoFile(t, "deploy/intent-bench/run-suite.sh")
+	for _, want := range []string{
+		"aegis", "serve", // brings the model up via the production serve path
+		"darwin-metal", "linux-cpu", // target-aware so it runs on the M5, not just linux
+		"8090",                                                 // a serving port OUTSIDE bench.sh's {8080,3000,5000} reclaim list
+		"--agent aegis",                                        // plugs aegis into intent-bench
+		"--condition control", "treatment", "--treatment rtmx", // both A/B arms
+	} {
+		if !strings.Contains(runner, want) {
+			t.Errorf("deploy/intent-bench/run-suite.sh missing %q — the BENCH-009 run wiring is incomplete", want)
+		}
+	}
+	// It must NOT serve on a port bench.sh reclaims between runs (that was the swap/collision failure mode).
+	if strings.Contains(runner, "--port 8080") || strings.Contains(runner, "PORT=8080") {
+		t.Error("run-suite must not serve on :8080 — bench.sh reclaims it between runs, killing the model server")
+	}
+}
 
 // TestIntentBenchSuiteRun → REQ-BENCH-009 (+P01/P02): the full intent-bench suite ran over
 // EVERY experiment for the aegis control + treatment conditions, recording a populated

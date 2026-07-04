@@ -60,7 +60,8 @@ printf '{"endpoint":"%s","harness":"opencode","model_id":"%s","target":"linux-cp
 exec "$AEGIS" run --no-intent \
     --config "$cfg" \
     --workdir "$workdir" \
-    --prompt "$(cat "$prompt_file")" \
+    --model "$model" \
+    --prompt-file "$prompt_file" \
     --timeout "$TIMEOUT" \
     --out "$result_dir/transcript.jsonl" \
     2> "$result_dir/stderr.log"

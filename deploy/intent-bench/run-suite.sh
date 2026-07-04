@@ -38,12 +38,19 @@ BENCH="$(cd "$BENCH" && pwd)"
 [ -f "$GGUF" ] || { echo "run-suite: GGUF not found: $GGUF" >&2; exit 1; }
 
 AEGIS="${AEGIS_BIN:-$AEGIS_ROOT_DIR/bin/aegis}"; [ -x "$AEGIS" ] || AEGIS="aegis"
-threads=$(nproc); [ "$threads" -gt 16 ] && threads=16
 
-# 1. Bring the model up via aegis serve (the production launch path: calibrated, --jinja, loopback).
+# 1. Bring the model up via aegis serve (production path: calibrated, --jinja, loopback), TARGET-AWARE so
+# this runs on the darwin-metal M5 (Metal, all layers offloaded) as well as linux-cpu. No ctx_size — aegis
+# sizes the context to the host's memory at launch (SERVE-023).
 cal="$(mktemp)"
-printf '{"target":"linux-cpu","threads":%s,"batch":512,"ngl":0,"model":"%s","port":%s,"ctx_size":16384}\n' \
-	"$threads" "$GGUF" "$PORT" > "$cal"
+if [ "$(uname -s)" = "Darwin" ]; then
+	printf '{"target":"darwin-metal","batch":512,"ngl":999,"model":"%s","port":%s}\n' \
+		"$GGUF" "$PORT" > "$cal"
+else
+	threads=$(nproc 2>/dev/null || echo 8); [ "$threads" -gt 16 ] && threads=16
+	printf '{"target":"linux-cpu","threads":%s,"batch":512,"ngl":0,"model":"%s","port":%s}\n' \
+		"$threads" "$GGUF" "$PORT" > "$cal"
+fi
 echo "run-suite: bringing up $MODEL_ID on port $PORT…" >&2
 ( cd "$AEGIS_ROOT_DIR" && exec "$AEGIS" serve --calibration "$cal" ) >"/tmp/intent-bench-serve-$MODEL_ID.log" 2>&1 &
 SERVE=$!
