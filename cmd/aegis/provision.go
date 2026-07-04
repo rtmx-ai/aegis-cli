@@ -192,7 +192,13 @@ func downloadModel(spec provisionSpec, dest string, progress io.Writer) error {
 		return err
 	}
 	h := sha256.New()
-	pt := &progressTracker{total: spec.Size, w: progress}
+	// Render an inline (single-line, \r-updated) bar when writing straight to a terminal; fall back to
+	// newline-delimited lines when piped (the in-TUI provisioning screen, OC-022, parses those lines).
+	tty := false
+	if pf, ok := progress.(*os.File); ok {
+		tty = isTTY(pf)
+	}
+	pt := &progressTracker{total: spec.Size, w: progress, tty: tty}
 	if _, err := io.Copy(io.MultiWriter(f, h, pt), resp.Body); err != nil {
 		f.Close()
 		os.Remove(tmp)
@@ -206,11 +212,13 @@ func downloadModel(spec provisionSpec, dest string, progress io.Writer) error {
 	return os.Rename(tmp, dest)
 }
 
-// progressTracker emits a download-progress line at most once a second (parseable by the TUI screen).
+// progressTracker emits a download-progress line at most once a second. On a terminal (tty) it rewrites
+// ONE line in place (\r); when piped it prints newline-delimited lines the in-TUI screen can parse.
 type progressTracker struct {
 	total, done uint64
 	start, last time.Time
 	w           io.Writer
+	tty         bool
 }
 
 func (p *progressTracker) Write(b []byte) (int, error) {
@@ -219,7 +227,8 @@ func (p *progressTracker) Write(b []byte) (int, error) {
 	if p.start.IsZero() {
 		p.start = now
 	}
-	if now.Sub(p.last) > time.Second || (p.total > 0 && p.done >= p.total) {
+	done := p.total > 0 && p.done >= p.total
+	if now.Sub(p.last) > time.Second || done {
 		p.last = now
 		pct := 0.0
 		if p.total > 0 {
@@ -234,8 +243,19 @@ func (p *progressTracker) Write(b []byte) (int, error) {
 			}
 		}
 		// The TUI parses the "downloaded X/Y GB (Z%)" prefix; the bar + rate follow for CLI-direct use.
-		fmt.Fprintf(p.w, "aegis: provision: downloaded %.1f/%.1f GB (%.0f%%) %s %.0f MB/s%s\n",
+		line := fmt.Sprintf("aegis: provision: downloaded %.1f/%.1f GB (%.0f%%) %s %.0f MB/s%s",
 			float64(p.done)/1e9, float64(p.total)/1e9, pct, progressBar(pct), mbps, eta)
+		if p.tty {
+			// \r + clear-to-end-of-line rewrites the same line; a final newline lands the shell prompt
+			// on a fresh line once the download completes.
+			end := ""
+			if done {
+				end = "\n"
+			}
+			fmt.Fprintf(p.w, "\r\033[K%s%s", line, end)
+		} else {
+			fmt.Fprintln(p.w, line)
+		}
 	}
 	return len(b), nil
 }
