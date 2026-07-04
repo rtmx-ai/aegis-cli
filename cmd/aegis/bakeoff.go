@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -61,17 +63,15 @@ func defaultSuite() []bakeoff.Task {
 func cmdBakeoff(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("bakeoff", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	models := fs.String("models", "", "comma-separated model ids to compare (each must be servable/served)")
-	endpoint := fs.String("endpoint", "http://127.0.0.1:8080", "OpenAI-compatible loopback endpoint the models are served on")
+	all := fs.Bool("all", false, "bake off ALL host-suitable models, downloading any that are missing")
+	models := fs.String("models", "", "explicit comma-separated model ids (overrides the host auto-select)")
+	noServe := fs.Bool("no-serve", false, "don't serve models; measure whatever is already at --endpoint (needs --models)")
+	noDownload := fs.Bool("no-download", false, "only bake off models already present locally (never download)")
+	endpoint := fs.String("endpoint", "http://127.0.0.1:8080", "loopback endpoint aegis serves each candidate on")
 	timeout := fs.Duration("timeout", 300*time.Second, "per-task wall-clock budget")
 	outPath := fs.String("out", "eval/bakeoff/comparison.json", "where to write the comparison JSON")
-	host := fs.String("host", "", "host label for the report (default: from `aegis profile` target)")
+	host := fs.String("host", "", "host label for the report (default: the `aegis profile` target)")
 	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-	ms := splitList(*models)
-	if len(ms) < 2 {
-		fmt.Fprintln(stderr, "aegis bakeoff: need >=2 --models to compare (e.g. --models gemma-4-26b-a4b,devstral-small-2507)")
 		return 2
 	}
 	self, err := os.Executable()
@@ -79,18 +79,43 @@ func cmdBakeoff(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "aegis bakeoff: %v\n", err)
 		return 1
 	}
+	// Candidate set: explicit --models, else the host-suitable models (--all or an interactive pick).
+	ids, rc := resolveBakeoffModels(*models, *all, *noServe, stderr)
+	if rc != 0 {
+		return rc
+	}
+	if len(ids) == 0 {
+		fmt.Fprintln(stderr, "aegis bakeoff: no models selected")
+		return 2
+	}
 	hostLabel := *host
 	if hostLabel == "" {
-		hostLabel = servingModelID() // best-effort; the profile target is nicer but this avoids a probe
-		if hostLabel == "" {
-			hostLabel = "local"
-		}
+		hostLabel = bakeoffHostLabel()
 	}
+	// Auto-serve owns the endpoint (it starts a llama-server per candidate). If something is already
+	// serving there, warn — our servers would collide with it and every candidate would measure the
+	// running model (the same-model guard would then invalidate the run).
+	if !*noServe && endpointReady(*endpoint, 2*time.Second) {
+		fmt.Fprintf(stderr, "aegis bakeoff: WARNING — %s is already serving a model; quit any running aegis first, or pass --no-serve. Proceeding, but the same-model guard may invalidate the run.\n", *endpoint)
+	}
+
 	suite := defaultSuite()
 	var reports []bakeoff.CandidateReport
-	for _, m := range ms {
-		served := probeServedModel(*endpoint)
-		fmt.Fprintf(stderr, "bakeoff: %s  (endpoint is serving: %s)\n", m, orQ(served))
+	for _, m := range ids {
+		served := m
+		stop := func() {}
+		if *noServe {
+			served = probeServedModel(*endpoint)
+		} else {
+			fmt.Fprintf(stderr, "bakeoff: bringing up %s …\n", m)
+			s, sm, serr := serveModelForBakeoff(m, !*noDownload, *endpoint, stderr)
+			if serr != nil {
+				fmt.Fprintf(stderr, "bakeoff: SKIP %s — %v\n", m, serr)
+				continue
+			}
+			stop, served = s, sm
+		}
+		fmt.Fprintf(stderr, "bakeoff: %s  (serving: %s)\n", m, orQ(served))
 		var outs []bakeoff.Outcome
 		for _, task := range suite {
 			o := runBakeoffCell(self, *endpoint, m, task, *timeout)
@@ -101,10 +126,15 @@ func cmdBakeoff(args []string, stdout, stderr io.Writer) int {
 			} else if o.FilesEdited > 0 {
 				status = "edit" // wrote code but did not pass verify (capable, imperfect)
 			}
-			fmt.Fprintf(stderr, "  %-8s %s  edited=%d wall=%.0fs tokens=%d%s\n",
-				task.Name, status, o.FilesEdited, float64(o.WallMs)/1000, o.Tokens, errSuffix(o.Error))
+			fmt.Fprintf(stderr, "  %-8s %s  edited=%d wall=%.0fs out-tok=%d%s\n",
+				task.Name, status, o.FilesEdited, float64(o.WallMs)/1000, o.OutTokens, errSuffix(o.Error))
 		}
+		stop()
 		reports = append(reports, bakeoff.Aggregate(m, served, outs))
+	}
+	if len(reports) == 0 {
+		fmt.Fprintln(stderr, "aegis bakeoff: no candidate could be served/measured")
+		return 1
 	}
 	cmp := bakeoff.Compare("default", hostLabel, reports)
 	fmt.Fprint(stdout, cmp.Table())
@@ -114,6 +144,185 @@ func cmdBakeoff(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stderr, "bakeoff: recorded -> %s\n", *outPath)
 	return 0
+}
+
+// modelChoice is a host-suitable candidate for the interactive picker.
+type modelChoice struct {
+	ID          string
+	TokPerSec   float64
+	Interactive bool
+	Present     bool
+}
+
+// suitableModels returns the origin-allowed catalog models that FIT this host's memory (from the
+// profiler), largest-first, with predicted throughput + local-presence. Capacity is the bar, not
+// throughput — the whole point of the bake-off is to measure whether a slow-but-fitting model is usable,
+// so we don't pre-exclude it; the picker shows tok/s so the operator can decide.
+func suitableModels() ([]modelChoice, error) {
+	rec, err := computeRecommendation(16384)
+	if err != nil {
+		return nil, err
+	}
+	var cs []modelChoice
+	for _, f := range rec.Fits {
+		if !f.FitsCapacity || !f.OriginAllowed {
+			continue
+		}
+		cs = append(cs, modelChoice{ID: f.ID, TokPerSec: f.PredictedTokPerSec, Interactive: f.FitsInteractive, Present: modelPresent(f.ID)})
+	}
+	return cs, nil
+}
+
+// modelPresent reports whether the catalog model's GGUF is already downloaded (size-matched).
+func modelPresent(id string) bool {
+	spec, err := resolveProvisionSpec(id)
+	if err != nil {
+		return false
+	}
+	fi, err := os.Stat(filepath.Join(modelDownloadDir(), spec.File))
+	return err == nil && fi.Size() > 0
+}
+
+// resolveBakeoffModels picks the candidate ids: explicit --models, else the host-suitable set via --all
+// or an interactive selector (TTY). --no-serve requires explicit --models (it measures the live endpoint).
+func resolveBakeoffModels(models string, all, noServe bool, stderr io.Writer) ([]string, int) {
+	if models != "" {
+		return splitList(models), 0
+	}
+	if noServe {
+		fmt.Fprintln(stderr, "aegis bakeoff: --no-serve needs explicit --models (it measures the already-served endpoint)")
+		return nil, 2
+	}
+	choices, err := suitableModels()
+	if err != nil {
+		fmt.Fprintf(stderr, "aegis bakeoff: %v\n", err)
+		return nil, 1
+	}
+	if len(choices) == 0 {
+		fmt.Fprintln(stderr, "aegis bakeoff: no host-suitable models (see `aegis profile`)")
+		return nil, 1
+	}
+	if all {
+		ids := make([]string, len(choices))
+		for i, c := range choices {
+			ids[i] = c.ID
+		}
+		return ids, 0
+	}
+	if !isTTY(os.Stdin) {
+		fmt.Fprintln(stderr, "aegis bakeoff: not a terminal — pass --all (every suitable model) or --models a,b")
+		return nil, 2
+	}
+	return selectModelsInteractive(choices, os.Stdin, stderr), 0
+}
+
+// selectModelsInteractive prints the host-suitable models and reads a selection line ("1,3" or "all").
+func selectModelsInteractive(choices []modelChoice, in io.Reader, out io.Writer) []string {
+	fmt.Fprintln(out, "Host-suitable models (from `aegis profile`):")
+	for i, c := range choices {
+		speed := "slow"
+		if c.Interactive {
+			speed = "interactive"
+		}
+		state := "download"
+		if c.Present {
+			state = "present"
+		}
+		fmt.Fprintf(out, "  %d. %-22s ~%5.1f tok/s  %-11s  [%s]\n", i+1, c.ID, c.TokPerSec, speed, state)
+	}
+	fmt.Fprint(out, "Select models to bake off (e.g. 1,3 or 'all'): ")
+	line, _ := bufio.NewReader(in).ReadString('\n')
+	return parseModelSelection(line, choices)
+}
+
+// parseModelSelection turns a selection line into model ids: "all", 1-based indices, and/or bare ids.
+func parseModelSelection(input string, choices []modelChoice) []string {
+	input = strings.TrimSpace(strings.ToLower(input))
+	if input == "" {
+		return nil
+	}
+	if input == "all" || input == "a" {
+		ids := make([]string, len(choices))
+		for i, c := range choices {
+			ids[i] = c.ID
+		}
+		return ids
+	}
+	seen := map[string]bool{}
+	var ids []string
+	for _, tok := range strings.FieldsFunc(input, func(r rune) bool { return r == ',' || r == ' ' }) {
+		id := ""
+		if n, err := strconv.Atoi(tok); err == nil && n >= 1 && n <= len(choices) {
+			id = choices[n-1].ID
+		} else {
+			for _, c := range choices {
+				if strings.ToLower(c.ID) == tok {
+					id = c.ID
+					break
+				}
+			}
+		}
+		if id != "" && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// serveModelForBakeoff brings a candidate up on endpoint (BENCH-011), reusing the provision serve flow:
+// resolve-or-download the GGUF, write a seed calibration, launch llama-server (--jinja via LaunchArgs),
+// wait for readiness, and probe the served model id. Returns a stop func to tear it down before the next
+// candidate. This is what makes a one-command multi-model bake-off actually swap the served model.
+func serveModelForBakeoff(id string, allowDownload bool, endpoint string, out io.Writer) (func(), string, error) {
+	if !allowDownload && !modelPresent(id) {
+		return nil, "", fmt.Errorf("%s not present locally (omit --no-download to fetch it)", id)
+	}
+	gguf, ok := resolveOrDownload(id, "", out, out)
+	if !ok {
+		return nil, "", fmt.Errorf("could not resolve/download %s", id)
+	}
+	seed, err := writeSeedCalibration(gguf)
+	if err != nil {
+		return nil, "", err
+	}
+	cmd, err := buildServeCommand(seed)
+	if err != nil {
+		return nil, "", err
+	}
+	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
+	if err := cmd.Start(); err != nil {
+		return nil, "", fmt.Errorf("launch server: %w", err)
+	}
+	stop := func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		}
+	}
+	deadline := time.Now().Add(180 * time.Second)
+	for time.Now().Before(deadline) {
+		if endpointReady(endpoint, 4*time.Second) {
+			return stop, probeServedModel(endpoint), nil
+		}
+		time.Sleep(2 * time.Second)
+	}
+	stop()
+	return nil, "", fmt.Errorf("%s did not become ready within 180s", id)
+}
+
+// bakeoffHostLabel labels the report with the profiler's serving target, else "local".
+func bakeoffHostLabel() string {
+	if rec, err := computeRecommendation(16384); err == nil && rec.Profile.Target != "" {
+		return rec.Profile.Target
+	}
+	return "local"
+}
+
+// isTTY reports whether f is a character device (an interactive terminal).
+func isTTY(f *os.File) bool {
+	fi, err := f.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
 // runBakeoffCell drives one task for one model: seed a fresh git workdir, run `aegis run`, then measure

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,6 +74,49 @@ func TestTranscriptTurnsTokens(t *testing.T) {
 	// A missing transcript is benign (0/0/0), not a crash.
 	if turns, total, out := transcriptStats(filepath.Join(dir, "nope.jsonl")); turns != 0 || total != 0 || out != 0 {
 		t.Errorf("missing transcript must yield 0/0/0, got %d/%d/%d", turns, total, out)
+	}
+}
+
+// TestBakeoffModelSelection → REQ-BENCH-011: the auto-select UX turns a selection line into model ids —
+// "all", 1-based indices, or bare ids — so a one-command bake-off can pick host-suitable models without
+// the clunky ">=2 --models" requirement. (The serve-each orchestration it feeds is M5-validated.)
+func TestBakeoffModelSelection(t *testing.T) {
+	choices := []modelChoice{
+		{ID: "gemma-4-26b-a4b"},
+		{ID: "devstral-small-2507"},
+		{ID: "phi-4-mini"},
+	}
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{"all", []string{"gemma-4-26b-a4b", "devstral-small-2507", "phi-4-mini"}},
+		{"1,3", []string{"gemma-4-26b-a4b", "phi-4-mini"}},
+		{"2 2 2", []string{"devstral-small-2507"}}, // dedup
+		{"devstral-small-2507", []string{"devstral-small-2507"}},
+		{"", nil},
+		{"9,bogus", nil}, // out-of-range + unknown are ignored, not fatal
+	}
+	for _, tc := range cases {
+		got := parseModelSelection(tc.in, choices)
+		if len(got) != len(tc.want) {
+			t.Errorf("parseModelSelection(%q) = %v, want %v", tc.in, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("parseModelSelection(%q)[%d] = %q, want %q", tc.in, i, got[i], tc.want[i])
+			}
+		}
+	}
+
+	// Explicit --models bypasses auto-select (and never blocks on a TTY).
+	if got, rc := resolveBakeoffModels("a,b", false, false, io.Discard); rc != 0 || len(got) != 2 {
+		t.Errorf("explicit --models must pass through: got %v rc=%d", got, rc)
+	}
+	// --no-serve without --models is an error (it measures the live endpoint, nothing to auto-select).
+	if _, rc := resolveBakeoffModels("", false, true, io.Discard); rc == 0 {
+		t.Error("--no-serve without --models must error")
 	}
 }
 
