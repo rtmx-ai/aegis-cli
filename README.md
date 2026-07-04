@@ -38,8 +38,8 @@ package, and an air gap wants it staged deliberately anyway.
 # Homebrew — macOS (Apple Silicon) and Linux
 brew install rtmx-ai/tap/aegis
 
-# Debian / Ubuntu — grab aegis_<version>_<arch>.deb from the latest release (v1.8.0), then:
-sudo apt install ./aegis_1.8.0_amd64.deb      # installs aegis + the harness under /usr/lib/aegis
+# Debian / Ubuntu — grab aegis_<version>_<arch>.deb from the latest release, then:
+sudo apt install ./aegis_<version>_amd64.deb  # installs aegis + the harness under /usr/lib/aegis
 
 # Build everything from source on a connected build host (full stack):
 git clone https://github.com/rtmx-ai/aegis-cli && cd aegis-cli
@@ -119,16 +119,39 @@ Then install + run in the closed enclave per
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Model | Gemma-4-26B-A4B (default) + a curated catalog | `deploy/models/catalog.json` (Qwen3-Coder-30B-A3B, Laguna-XS.2, …); `setup.sh` strikes models that won't fit host RAM. Bake-off (SERVE-016) decides. |
+| Model | Host-chosen from a curated catalog | Gemma-4-26B-A4B (MoE, ~4B active — fast on modest hardware) is the default; Devstral-Small (non-PRC agentic coder, Apache-2.0) and others live in `deploy/models/catalog.json`. The host decides — see [Choosing a model](#choosing-a-model-for-the-host). |
 | Serving (spike) | Ollama | Fast iteration; localhost-bound; side-loaded GGUF. |
 | Serving (prod) | llama.cpp `llama-server` | From source, no telemetry. CPU on Ryzen; Metal on Mac. |
 | Harness | opencode (default) / Goose | Swappable behind `internal/harness`. Decide by bake-off. |
 | Requirements | rtmx | Static Go binary, CSV-in-git, stdio MCP server. The closed-loop engine. |
 | Orchestrator | **aegis-cli (this repo, Go)** | Single static air-gappable binary. |
 
-**Build targets.** Validated first on `linux-cpu` (Ryzen 5950X / Ubuntu / 64 GB);
-`darwin-metal` (MBP 16" M5 Max) is wired and waiting. One `calibration.json` (with a
-`target` field) plus `internal/serving` drives both.
+**Build targets.** Validated first on `linux-cpu` (Ryzen 5950X / Ubuntu / 64 GB) and runs
+on `darwin-metal` (MacBook Pro M5 Pro / 24 GB unified). One `calibration.json` (with a
+`target` field) plus `internal/serving` drives both, and aegis **sizes the served context
+to the host's memory at launch** (24 GB → ~16k, more RAM → 32k) so a big model on a small
+box fits instead of overflowing.
+
+### Choosing a model for the host
+
+Model choice is **measured, not assumed** — the host decides, because the binding
+constraint is memory (capacity + bandwidth), not preference:
+
+- **`aegis profile`** predicts, for every catalog model that clears the origin policy,
+  whether it fits this host's memory and how fast it would decode (tok/s), and recommends
+  the largest that clears an interactive/unattended throughput floor.
+- **`aegis bakeoff`** then *measures* the host-suitable models head-to-head on a fixed
+  suite of real coding tasks — scoring **files-edited** (did it actually write code, the
+  agency signal), **ACR** (did the edit pass the test), and real decode **tok/s**. Run it
+  bare to pick interactively, or `--all` to download + serve + measure every suitable model.
+
+The trade this surfaces: a dense 24B coder (Devstral) is stronger in the abstract but
+reads ~6× the bytes/token of a ~4B-active MoE (Gemma), so on a memory-bandwidth-bound box
+the MoE is often both faster *and* the pragmatic pick — while the dense coder wins on
+hardware that can feed it. Origin is a control: the catalog records each model's country
+of origin and `deploy/models/origin-policy.json` is default-deny (US + an explicit,
+auditable FR opt-in for the non-PRC Mistral coder). See [docs/models.md](docs/models.md)
+and [docs/model-compliance.md](docs/model-compliance.md).
 
 ---
 
@@ -140,6 +163,13 @@ make build           # GOFLAGS=-mod=vendor go build ./cmd/aegis
 
 # run the exact pipeline CI runs: build → vet → unit → airgap gate → golden metrics
 make ci
+
+# which catalog models fit THIS host? (memory fit + predicted tok/s per model)
+aegis profile
+
+# measure the host-suitable models head-to-head (auto-downloads + serves each):
+# files-edited (agency) + ACR + real decode tok/s → a valid, self-documenting comparison
+aegis bakeoff --all
 
 # one headless task, one-shot (≡ opencode/ollama run)
 aegis run "add a health endpoint and a test"
