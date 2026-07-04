@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -117,6 +118,41 @@ func TestBakeoffModelSelection(t *testing.T) {
 	// --no-serve without --models is an error (it measures the live endpoint, nothing to auto-select).
 	if _, rc := resolveBakeoffModels("", false, true, io.Discard); rc == 0 {
 		t.Error("--no-serve without --models must error")
+	}
+}
+
+// TestBakeoffServeHelpers → REQ-BENCH-012: the auto-serve correctness helpers — the endpoint port is
+// parsed so the temp calibration serves on the right port, and the calibration is written to a THROWAWAY
+// path (never the operator's ~/.config/aegis/calibration.json) with the model + resolved ctx. This is
+// what lets a multi-model run swap the served model per candidate instead of measuring one model twice.
+func TestBakeoffServeHelpers(t *testing.T) {
+	if endpointPort("http://127.0.0.1:8080") != 8080 {
+		t.Errorf("endpointPort must parse 8080")
+	}
+	if endpointPort("http://127.0.0.1:9191/v1") != 9191 {
+		t.Errorf("endpointPort must parse 9191 with a path")
+	}
+	if endpointPort("not a url") != 0 {
+		t.Errorf("endpointPort must be 0 for an unparseable endpoint")
+	}
+
+	dir := t.TempDir()
+	gguf := "/models/Devstral-Small-2507-IQ4_XS.gguf"
+	p, err := writeBakeoffCalibration(gguf, dir, 8091)
+	if err != nil {
+		t.Fatalf("writeBakeoffCalibration: %v", err)
+	}
+	if filepath.Dir(p) != dir {
+		t.Errorf("calibration must be written to the throwaway dir %q, got %q", dir, p)
+	}
+	body := func() string { b, _ := os.ReadFile(p); return string(b) }()
+	for _, want := range []string{gguf, `"port": 8091`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("bakeoff calibration missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, `"ctx_size": 0`) || !strings.Contains(body, `"ctx_size"`) {
+		t.Errorf("bakeoff calibration must carry a resolved ctx_size:\n%s", body)
 	}
 }
 

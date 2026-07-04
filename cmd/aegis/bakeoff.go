@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/rtmx-ai/aegis-cli/internal/bakeoff"
+	"github.com/rtmx-ai/aegis-cli/internal/install"
 	"github.com/rtmx-ai/aegis-cli/internal/serving"
 )
 
@@ -71,9 +73,30 @@ func cmdBakeoff(args []string, stdout, stderr io.Writer) int {
 	timeout := fs.Duration("timeout", 300*time.Second, "per-task wall-clock budget")
 	outPath := fs.String("out", "eval/bakeoff/comparison.json", "where to write the comparison JSON")
 	host := fs.String("host", "", "host label for the report (default: the `aegis profile` target)")
+	quiet := fs.Bool("quiet", false, "quiet: only the final result table (and any errors)")
+	fs.BoolVar(quiet, "q", false, "quiet (shorthand)")
+	verbose := fs.Bool("verbose", false, "verbose: also show serving detail, served paths, and full per-cell errors")
+	fs.BoolVar(verbose, "v", false, "verbose (shorthand)")
+	noColor := fs.Bool("no-color", false, "disable ANSI color (also honors $NO_COLOR)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	// Observability level: 0 quiet, 1 normal (default), 2 verbose.
+	verb := 1
+	if *quiet {
+		verb = 0
+	}
+	if *verbose {
+		verb = 2
+	}
+	// Color only on a real terminal, unless disabled ($NO_COLOR / --no-color).
+	color := !*noColor && os.Getenv("NO_COLOR") == ""
+	if f, ok := stdout.(*os.File); ok {
+		color = color && isTTY(f)
+	} else {
+		color = false
+	}
+	p := bakeoff.NewPalette(color)
 	self, err := os.Executable()
 	if err != nil {
 		fmt.Fprintf(stderr, "aegis bakeoff: %v\n", err)
@@ -93,41 +116,57 @@ func cmdBakeoff(args []string, stdout, stderr io.Writer) int {
 		hostLabel = bakeoffHostLabel()
 	}
 	// Auto-serve owns the endpoint (it starts a llama-server per candidate). If something is already
-	// serving there, warn — our servers would collide with it and every candidate would measure the
-	// running model (the same-model guard would then invalidate the run).
+	// serving there, REFUSE — our servers can't take the port, so every candidate would silently measure
+	// the running model. Tell the operator to free it (this was the same-model-served bug in the wild).
 	if !*noServe && endpointReady(*endpoint, 2*time.Second) {
-		fmt.Fprintf(stderr, "aegis bakeoff: WARNING — %s is already serving a model; quit any running aegis first, or pass --no-serve. Proceeding, but the same-model guard may invalidate the run.\n", *endpoint)
+		fmt.Fprintf(stderr, "aegis bakeoff: %s is already serving a model — bakeoff needs that port to serve each candidate. Quit any running aegis / model server, or use --no-serve with an explicit --models against the live endpoint.\n", *endpoint)
+		return 1
 	}
 
+	// Serve-path chatter (download progress, ctx-sizing) is silenced at quiet.
+	serveOut := io.Writer(stderr)
+	if verb == 0 {
+		serveOut = io.Discard
+	}
 	suite := defaultSuite()
 	var reports []bakeoff.CandidateReport
 	for _, m := range ids {
+		if verb >= 1 {
+			fmt.Fprintf(stderr, "\n  %s %s\n", p.Cyan("▸"), p.Bold(m))
+		}
 		served := m
 		stop := func() {}
 		if *noServe {
 			served = probeServedModel(*endpoint)
 		} else {
-			fmt.Fprintf(stderr, "bakeoff: bringing up %s …\n", m)
-			s, sm, serr := serveModelForBakeoff(m, !*noDownload, *endpoint, stderr)
+			s, sm, serr := serveModelForBakeoff(m, !*noDownload, *endpoint, serveOut)
 			if serr != nil {
-				fmt.Fprintf(stderr, "bakeoff: SKIP %s — %v\n", m, serr)
+				fmt.Fprintf(stderr, "    %s %s — %v\n", p.Red("✗ skip"), m, serr)
 				continue
 			}
 			stop, served = s, sm
 		}
-		fmt.Fprintf(stderr, "bakeoff: %s  (serving: %s)\n", m, orQ(served))
+		if verb >= 2 {
+			fmt.Fprintf(stderr, "    %s %s\n", p.Dim("serving:"), served)
+		}
 		var outs []bakeoff.Outcome
 		for _, task := range suite {
 			o := runBakeoffCell(self, *endpoint, m, task, *timeout)
 			outs = append(outs, o)
-			status := "----"
-			if o.Closed {
-				status = "PASS"
-			} else if o.FilesEdited > 0 {
-				status = "edit" // wrote code but did not pass verify (capable, imperfect)
+			if verb >= 1 {
+				mark := p.Green("✓")
+				if !o.Closed && o.FilesEdited > 0 {
+					mark = p.Yellow("~")
+				} else if !o.Closed {
+					mark = p.Red("✗")
+				}
+				extra := ""
+				if o.Error != "" && verb >= 2 {
+					extra = p.Dim("  (" + o.Error + ")")
+				}
+				fmt.Fprintf(stderr, "      %s %-9s %s edited=%d  %.0fs  %d tok%s\n",
+					mark, task.Name, p.Dim("·"), o.FilesEdited, float64(o.WallMs)/1000, o.OutTokens, extra)
 			}
-			fmt.Fprintf(stderr, "  %-8s %s  edited=%d wall=%.0fs out-tok=%d%s\n",
-				task.Name, status, o.FilesEdited, float64(o.WallMs)/1000, o.OutTokens, errSuffix(o.Error))
 		}
 		stop()
 		reports = append(reports, bakeoff.Aggregate(m, served, outs))
@@ -137,7 +176,7 @@ func cmdBakeoff(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	cmp := bakeoff.Compare("default", hostLabel, reports)
-	fmt.Fprint(stdout, cmp.Table())
+	fmt.Fprint(stdout, cmp.Table(color))
 	if err := writeComparison(*outPath, cmp); err != nil {
 		fmt.Fprintf(stderr, "aegis bakeoff: write %s: %v\n", *outPath, err)
 		return 1
@@ -282,33 +321,77 @@ func serveModelForBakeoff(id string, allowDownload bool, endpoint string, out io
 	if !ok {
 		return nil, "", fmt.Errorf("could not resolve/download %s", id)
 	}
-	seed, err := writeSeedCalibration(gguf)
+	// Temp calibration on the endpoint's port, so we neither clobber the operator's persistent
+	// ~/.config/aegis/calibration.json nor serve on the wrong port.
+	dir, err := os.MkdirTemp("", "bakeoff-cal-")
 	if err != nil {
 		return nil, "", err
 	}
-	cmd, err := buildServeCommand(seed)
+	calPath, err := writeBakeoffCalibration(gguf, dir, endpointPort(endpoint))
 	if err != nil {
+		os.RemoveAll(dir)
 		return nil, "", err
 	}
+	cmd, err := buildServeCommand(calPath)
+	if err != nil {
+		os.RemoveAll(dir)
+		return nil, "", err
+	}
+	setServeProcAttr(cmd) // own process group → killServe tears down the whole tree (BENCH-012)
 	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
 	if err := cmd.Start(); err != nil {
+		os.RemoveAll(dir)
 		return nil, "", fmt.Errorf("launch server: %w", err)
 	}
-	stop := func() {
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-			_ = cmd.Wait()
-		}
-	}
+	stop := func() { killServe(cmd); os.RemoveAll(dir) }
+	want := filepath.Base(gguf)
 	deadline := time.Now().Add(180 * time.Second)
 	for time.Now().Before(deadline) {
 		if endpointReady(endpoint, 4*time.Second) {
-			return stop, probeServedModel(endpoint), nil
+			served := probeServedModel(endpoint)
+			// Verify the endpoint serves THIS candidate. If a prior candidate's server (or an external
+			// one) still holds the port, the served model won't match — fail loudly rather than measure
+			// the wrong model (the silent bug the same-model guard had to catch after the fact).
+			if served != "" && !strings.Contains(served, want) {
+				stop()
+				return nil, "", fmt.Errorf("endpoint %s serves %q, not %s — the previous server did not release the port", endpoint, filepath.Base(served), id)
+			}
+			return stop, served, nil
 		}
 		time.Sleep(2 * time.Second)
 	}
 	stop()
 	return nil, "", fmt.Errorf("%s did not become ready within 180s", id)
+}
+
+// writeBakeoffCalibration writes a throwaway calibration for gguf on port into dir (never the operator's
+// ~/.config), reusing the host plan + the one context resolver. Returns its path.
+func writeBakeoffCalibration(gguf, dir string, port int) (string, error) {
+	cal := install.Plan(install.Detect()).Calibration
+	cal.Model = gguf
+	cal.CtxSize = serving.ResolveCtxSize(catalogCtxSizeForGGUF(gguf))
+	if port > 0 {
+		cal.Port = port
+	}
+	b, err := json.MarshalIndent(cal, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	p := filepath.Join(dir, "calibration.json")
+	if err := os.WriteFile(p, b, 0o644); err != nil {
+		return "", err
+	}
+	return p, nil
+}
+
+// endpointPort extracts the TCP port from a loopback endpoint URL (0 if absent/unparseable).
+func endpointPort(endpoint string) int {
+	if u, err := url.Parse(endpoint); err == nil {
+		if n, err := strconv.Atoi(u.Port()); err == nil {
+			return n
+		}
+	}
+	return 0
 }
 
 // bakeoffHostLabel labels the report with the profiler's serving target, else "local".
@@ -514,9 +597,3 @@ func errSuffix(e string) string {
 	return " (" + e + ")"
 }
 
-func orQ(s string) string {
-	if s == "" {
-		return "?(unreachable)"
-	}
-	return s
-}

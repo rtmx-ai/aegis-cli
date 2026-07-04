@@ -39,8 +39,8 @@ func TestAggregateAndCompare(t *testing.T) {
 	if cmp.Winner != "devstral" {
 		t.Errorf("winner = %q, want devstral (agency beats speed)", cmp.Winner)
 	}
-	if !strings.Contains(cmp.Table(), "edited") || !strings.Contains(cmp.Table(), "devstral") {
-		t.Errorf("table must render agency columns + candidates:\n%s", cmp.Table())
+	if !strings.Contains(cmp.Table(false), "edited") || !strings.Contains(cmp.Table(false), "devstral") {
+		t.Errorf("table must render agency columns + candidates:\n%s", cmp.Table(false))
 	}
 
 	// A field where NOBODY edits → no winner (a serving/template failure, not a model ranking).

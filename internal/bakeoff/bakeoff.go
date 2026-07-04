@@ -15,6 +15,7 @@ package bakeoff
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -165,29 +166,72 @@ func duplicateServedModel(rs []CandidateReport) string {
 	return ""
 }
 
-// Table renders the head-to-head as a fixed-width table, agency columns first (the question that matters).
-func (c Comparison) Table() string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "bake-off: %s on %s\n", c.Suite, c.Host)
-	fmt.Fprintf(&b, "%-22s %8s %7s %7s %9s %9s %-18s\n",
-		"model", "edited", "ACR", "TCVR", "out-tok/s", "wall/req", "served-as")
-	for _, r := range c.Candidates {
-		served := r.ServedModel
-		if served == "" {
-			served = "?"
-		}
-		fmt.Fprintf(&b, "%-22s %5d/%-2d %6.0f%% %6.0f%% %9.1f %8.0fs %-18s\n",
-			trunc(r.Model, 22), r.Edited, r.Attempts,
-			r.Report.ACR*100, r.Report.TCVR*100, r.TokPerSec,
-			r.Report.WCR.Seconds(), trunc(served, 18))
+// Palette renders ANSI color when On; a plain passthrough otherwise (piped output / NO_COLOR). Shared
+// by the table and the CLI's live per-candidate lines so the bake-off reads as one styled surface.
+type Palette struct{ On bool }
+
+// NewPalette returns a color palette (on/off).
+func NewPalette(on bool) Palette { return Palette{On: on} }
+
+func (p Palette) paint(code, s string) string {
+	if !p.On || s == "" {
+		return s
 	}
+	return "\033[" + code + "m" + s + "\033[0m"
+}
+
+// Bold/Dim/Green/Yellow/Red/Cyan wrap s in the color (or pass it through when the palette is off).
+func (p Palette) Bold(s string) string   { return p.paint("1", s) }
+func (p Palette) Dim(s string) string    { return p.paint("2", s) }
+func (p Palette) Green(s string) string  { return p.paint("32", s) }
+func (p Palette) Yellow(s string) string { return p.paint("33", s) }
+func (p Palette) Red(s string) string    { return p.paint("31", s) }
+func (p Palette) Cyan(s string) string   { return p.paint("1;36", s) }
+
+// Table renders the head-to-head as an indented, spaced, optionally-colored block — agency columns first
+// (the question that matters), the winner starred + green, the served model shown as a basename so the
+// same-model trap is obvious at a glance. color=false (piped / NO_COLOR) yields clean plain text.
+func (c Comparison) Table(color bool) string {
+	p := NewPalette(color)
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n  %s  %s\n\n", p.Cyan("BAKE-OFF"), p.Dim(c.Suite+" suite · "+c.Host))
+	hdr := fmt.Sprintf("  %-22s %6s %5s %5s %9s %8s   %s", "model", "edited", "ACR", "TCVR", "out-tok/s", "wall/req", "served-as")
+	fmt.Fprintf(&b, "%s\n  %s\n", p.Bold(hdr), p.Dim(strings.Repeat("─", 74)))
+	for _, r := range c.Candidates {
+		star := "  "
+		name := pad(trunc(r.Model, 22), 22)
+		if r.Model == c.Winner {
+			star = p.Green("★ ")
+			name = p.Green(name)
+		}
+		edited := padL(fmt.Sprintf("%d/%d", r.Edited, r.Attempts), 6)
+		switch {
+		case r.Edited == 0:
+			edited = p.Red(edited)
+		case r.Edited < r.Attempts:
+			edited = p.Yellow(edited)
+		default:
+			edited = p.Green(edited)
+		}
+		served := "?"
+		if r.ServedModel != "" {
+			served = trunc(filepath.Base(r.ServedModel), 26)
+		}
+		fmt.Fprintf(&b, "%s%s %s %4.0f%% %4.0f%% %9.1f %7.0fs   %s\n",
+			star, name, edited, r.Report.ACR*100, r.Report.TCVR*100,
+			r.TokPerSec, r.Report.WCR.Seconds(), p.Dim(served))
+	}
+	b.WriteString("\n")
 	if c.Winner != "" {
-		fmt.Fprintf(&b, "winner: %s\n  (%s)\n", c.Winner, c.Basis)
+		fmt.Fprintf(&b, "  %s %s\n  %s\n\n", p.Green("✓ winner:"), p.Bold(c.Winner), p.Dim(c.Basis))
 	} else {
-		fmt.Fprintf(&b, "winner: none — %s\n", c.Basis)
+		fmt.Fprintf(&b, "  %s\n  %s\n\n", p.Red("✗ no winner"), p.Dim(c.Basis))
 	}
 	return b.String()
 }
+
+func pad(s string, n int) string  { return fmt.Sprintf("%-*s", n, s) }
+func padL(s string, n int) string { return fmt.Sprintf("%*s", n, s) }
 
 func trunc(s string, n int) string {
 	if len(s) <= n {
